@@ -1,0 +1,90 @@
+# Example values override — a starting point for a real deploy, not something
+# to apply as-is. Copy it, fill in your own host/secrets, and pass it to
+# `helm upgrade --install` with -f. See deploy/README.md for the full walkthrough
+# and deploy/helm-chart/graph/values.yaml for every available key + its default.
+
+# The image defaults to the release named by the chart's appVersion
+# (values.yaml). Override to pin a release or digest, or to run a fork's build
+# or a local one:
+# image:
+#   repository: ghcr.io/<owner>/<repo>
+#   tag: v0.1.0
+
+# In-cluster Postgres + ClickHouse (values.yaml defaults) are the easiest way
+# to get running. Set postgres.enabled/clickhouse.enabled to false instead to
+# point at managed/external datastores via secret.databaseUrl / secret.clickhouseUrl.
+
+# Expose the UI/API. Pick an ingress class and auth mechanism your cluster
+# actually has — this repo doesn't assume nginx-ingress or any particular
+# auth proxy. Leave ingress.enabled: false and use `kubectl port-forward
+# svc/graph 8080:8080` if you just want to try it out first.
+ingress:
+  enabled: false
+  host: graph.example.com
+  tlsSecret: graph-tls
+  annotations: {}
+  # e.g. for cert-manager:
+  #   cert-manager.io/cluster-issuer: letsencrypt
+  # for an auth proxy in front of nginx-ingress:
+  #   # in-cluster Service: keep /oauth2/auth off the public host
+  #   nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy.oauth2-proxy.svc.cluster.local/oauth2/auth"
+  #   nginx.ingress.kubernetes.io/auth-signin: "https://your-oauth2-proxy/oauth2/start?rd=https://$host$escaped_request_uri"
+  #   # oauth2-proxy runs with --set-authorization-header (ID token); see
+  #   # docs/security-hardening.md#oauth2-proxy
+  #   nginx.ingress.kubernetes.io/auth-response-headers: "Authorization,X-Auth-Request-Email"
+
+config:
+  # If you're fronting this with your own oauth2-proxy (or nginx's auth-url
+  # annotation above), set the email domain(s) allowed to authenticate. Turning
+  # oauth2Proxy on also requires networkPolicy.ingressNamespace (with
+  # networkPolicy.nodeCIDRs) and ID-token verification (below) and/or
+  # secret.oauth2ProxySharedSecret.
+  oauth2Proxy: false
+  oauth2ProxyAllowedDomains: "example.com"
+  oauth2ProxyOidcIssuer: ""     # e.g. https://accounts.google.com
+  oauth2ProxyOidcAudience: ""   # oauth2-proxy's OAuth client id
+  # SSO sign-ins start as viewer; name the admins (and optionally IdP groups).
+  adminEmails: "you@example.com"
+
+# Secrets — generate real random values, don't commit them. One way to wire
+# them without touching this file: `helm upgrade ... --set-string
+# secret.secretKey=$(head -c32 /dev/urandom | base64) --set-string
+# secret.llmApiKey=$LLM_API_KEY`, plus each of the six datastore passwords as
+# `--set-string secret.<name>=$(openssl rand -hex 20)`, or template this file
+# from your own secrets manager / CI secret store before `helm upgrade -f`.
+secret:
+  secretKey: ""
+  llmApiKey: ""                  # optional; see llm.* in the chart's values.yaml
+  postgresPassword: ""           # graph, the app role serve and the worker use
+  postgresScannerPassword: ""    # graph_scanner, the scanner's role
+  postgresSuperuserPassword: ""  # postgres; only the Postgres pod reads it
+  clickhousePassword: ""         # graph, the ClickHouse app user
+  clickhouseScannerPassword: ""  # graph_scanner, the scanner's ClickHouse user
+  clickhouseMigratePassword: ""  # graph_migrate, migrate's schema user
+
+# Built-in Google / Okta sign-in instead of an auth proxy (client secrets go
+# in secret.googleClientSecret / secret.oktaClientSecret):
+# sso:
+#   google:
+#     clientId: "<id>.apps.googleusercontent.com"
+#     allowedDomains: "example.com"
+#     redirectUrl: "https://graph.example.com/api/auth/google/callback"  # required
+
+# Cloud collector auth — see deploy/README.md's "Cloud auth: OIDC" section.
+# serviceAccount:
+#   gcpServiceAccount: "graph-collector@<project>.iam.gserviceaccount.com"
+# aws:
+#   enabled: true
+#   roleArn: "arn:aws:iam::<account>:role/graph-collector"
+
+# For production, layer deploy/helm-values/hardened.yaml under this file
+# (hardened: true refuses to render until the production settings are in
+# place; docs/production-checklist.md). A production deploy typically also wants:
+#   worker.resources / serve.resources sized to your workload (values.yaml's
+#     defaults are small — see the comments there for the sizing rationale)
+#   avoidSpotNodes: true (if your cluster has preemptible/spot pools)
+#   metrics.enabled: true (Prometheus-annotation scraping)
+#   networkPolicy.ingressNamespace: your ingress controller's namespace
+#     + networkPolicy.nodeCIDRs: your node address ranges (required with it),
+#     so serve's port admits only the controller and kubelet probes (the
+#     policy itself is on by default; deploy/README.md "Network policy")

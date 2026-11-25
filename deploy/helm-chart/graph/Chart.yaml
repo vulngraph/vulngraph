@@ -1,0 +1,13 @@
+apiVersion: v2
+name: graph
+description: Vulngraph — single-binary cloud security platform (serve, worker and scanner pods)
+type: application
+version: 0.1.0
+# The image tag the chart pulls when image.tag is empty. The release workflow
+# refuses a vX.Y.Z tag unless this is "X.Y.Z".
+appVersion: "0.1.0"
+home: https://github.com/vulngraph/vulngraph
+sources:
+  - https://github.com/vulngraph/vulngraph
+maintainers:
+  - name: Vulngraph maintainers

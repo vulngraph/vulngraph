@@ -1,0 +1,190 @@
+# Notify domain (internal/app/notify). Outbound alert channels (Slack, webhook);
+# admin-only writes. Secrets (bot_token / webhook_url) are accepted on create/update
+# but NEVER returned in responses — `has_token` only signals that one is stored.
+components:
+  pathItems:
+    alertChannels:
+      get:
+        operationId: listAlertChannels
+        tags: [alerts]
+        summary: List alert channels (never includes secrets)
+        responses:
+          '200':
+            description: Alert channels.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ChannelList' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+      post:
+        operationId: createAlertChannel
+        tags: [alerts]
+        summary: Create an alert channel (admin only)
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChannelRequest' }
+        responses:
+          '201':
+            description: Channel created.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/AlertChannel' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+
+    alertChannel:
+      put:
+        operationId: updateAlertChannel
+        tags: [alerts]
+        summary: Update an alert channel (admin only)
+        description: Omitting `bot_token` / `webhook_url` (empty string) keeps the stored secret.
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChannelRequest' }
+        responses:
+          '200':
+            description: Channel updated.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/AlertChannel' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+      delete:
+        operationId: deleteAlertChannel
+        tags: [alerts]
+        summary: Delete an alert channel (admin only)
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '204': { description: Channel deleted. }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    testAlertChannel:
+      post:
+        operationId: testAlertChannel
+        tags: [alerts]
+        summary: Send a test notification through a channel (admin only)
+        description: Delivery failures (bad token, unknown Slack channel) come back as a 400 carrying the provider's error message.
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '200':
+            description: Test message delivered.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/TestResult' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+  schemas:
+    ChannelType:
+      type: string
+      enum: [slack, webhook]
+    EventType:
+      type: string
+      description: What produced a notification; used for per-channel routing.
+      enum: [phishing, finding, drift, decision, approval, connector, query_match, suppression_expiry]
+    Severity:
+      type: string
+      enum: [critical, high, medium, low, info]
+    AlertChannel:
+      type: object
+      description: Wire shape of a channel — the bot token / webhook URL is never included.
+      required: [id, type, name, channel, enabled, event_types, severities, min_score, owner_teams, environments, route_unowned, has_token]
+      properties:
+        id: { type: string }
+        type: { $ref: '#/components/schemas/ChannelType' }
+        name: { type: string }
+        channel: { type: string, description: 'Slack destination — "#alerts" or a channel ID.' }
+        enabled: { type: boolean }
+        event_types:
+          type: array
+          items: { $ref: '#/components/schemas/EventType' }
+          description: Empty = all event types.
+        severities:
+          type: array
+          items: { $ref: '#/components/schemas/Severity' }
+          description: Empty = all severities.
+        min_score: { type: integer, description: Notifications scoring below this are not delivered. }
+        owner_teams:
+          type: array
+          items: { type: string }
+          description: >-
+            Owner scope (ADR 089): only notifications about findings owned by one of
+            these (normalised) teams. Empty = no owner scope. A scoped channel does
+            not receive events that carry no owner at all (phishing, approvals).
+        environments:
+          type: array
+          items: { $ref: '#/components/schemas/RoutingEnvironment' }
+          description: Environment scope — only notifications about resources in these environments. Empty = no environment scope. `unknown` must be listed explicitly to receive unclassified resources.
+        route_unowned:
+          type: boolean
+          description: >-
+            Default channel for unowned findings — those whose owner resolved to nobody
+            or could not be resolved. Combined with owner_teams, the channel receives
+            both; alone, it receives only unowned findings.
+        last_delivered_at: { type: string, format: date-time }
+        last_status: { type: string, enum: [ok, error], description: Outcome of the most recent delivery attempt; absent before the first attempt. }
+        last_error: { type: string }
+        has_token: { type: boolean, description: Whether a secret (bot token / webhook URL) is stored; the secret itself is never returned. }
+        unwired_event_types:
+          type: array
+          items: { $ref: '#/components/schemas/EventType' }
+          description: >-
+            This channel's routed event types that nothing emits yet, so the channel
+            will never receive them. An empty event_types list routes every event type,
+            these included. Absent when every routed event type has a producer.
+    ChannelRequest:
+      type: object
+      description: Create/update body. `type` defaults to slack on create when omitted.
+      required: [name]
+      properties:
+        type: { $ref: '#/components/schemas/ChannelType' }
+        name: { type: string }
+        channel: { type: string, description: 'Slack destination — required for slack channels.' }
+        bot_token: { type: string, description: 'Slack bot token — required on create for slack channels; empty on update keeps the existing secret.' }
+        webhook_url: { type: string, description: 'Destination URL (http or https, port 80 or 443) — required on create for webhook channels; empty on update keeps the existing secret.' }
+        enabled: { type: boolean }
+        event_types:
+          type: array
+          items: { $ref: '#/components/schemas/EventType' }
+        severities:
+          type: array
+          items: { $ref: '#/components/schemas/Severity' }
+        min_score: { type: integer }
+        owner_teams:
+          type: array
+          items: { type: string }
+          description: 'Owner teams to scope to; normalised server-side ("@acme/Payments" → "payments").'
+        environments:
+          type: array
+          items: { $ref: '#/components/schemas/RoutingEnvironment' }
+        route_unowned: { type: boolean }
+    RoutingEnvironment:
+      type: string
+      enum: [prod, staging, dev, unknown]
+    ChannelList:
+      type: object
+      required: [channels, unwired_event_types]
+      properties:
+        channels:
+          type: array
+          items: { $ref: '#/components/schemas/AlertChannel' }
+        unwired_event_types:
+          type: array
+          items: { $ref: '#/components/schemas/EventType' }
+          description: Event types that can be routed but that nothing emits yet; a channel routed only to these never receives a notification.
+    TestResult:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }

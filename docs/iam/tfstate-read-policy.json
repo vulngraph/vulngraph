@@ -1,0 +1,29 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "GraphReadTfStateObjects",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": [
+        "arn:aws:s3:::*terraform-state*/*",
+        "arn:aws:s3:::*tfstate*/*"
+      ],
+      "Condition": {
+        "StringEquals": { "s3:ResourceAccount": "${aws:PrincipalAccount}" }
+      }
+    },
+    {
+      "Sid": "GraphListTfStateBuckets",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+      "Resource": [
+        "arn:aws:s3:::*terraform-state*",
+        "arn:aws:s3:::*tfstate*"
+      ],
+      "Condition": {
+        "StringEquals": { "s3:ResourceAccount": "${aws:PrincipalAccount}" }
+      }
+    }
+  ]
+}

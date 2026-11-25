@@ -1,0 +1,44 @@
+# Local development dependencies only. The graph/graph credentials below are
+# dev-only defaults: never reuse them, and never expose these services beyond
+# this machine. Ports are published on 127.0.0.1 so other hosts on the network
+# cannot reach Postgres or ClickHouse. See docs/security-hardening.md.
+name: vulngraph-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:f2f98726820d0342055351c6e9d36e705f5bfffb3dd53ff556325114b08afb6d
+    environment:
+      POSTGRES_USER: graph
+      POSTGRES_PASSWORD: graph
+      POSTGRES_DB: graph
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U graph -d graph"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.8-alpine@sha256:31d60795ca6ac748a20712b5d8d047e415c44d370a86e89a63cd251b0eaed9e9
+    environment:
+      CLICKHOUSE_DB: graph
+      CLICKHOUSE_USER: graph
+      CLICKHOUSE_PASSWORD: graph
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:8123:8123"
+    volumes:
+      - chdata:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  chdata:

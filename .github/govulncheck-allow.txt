@@ -1,0 +1,7 @@
+# Reviewed govulncheck exceptions: <OSV id>  # reason, date reviewed.
+# Only symbol-level findings need an entry. CI runs scripts/govulncheck.sh in
+# binary mode, which fails on any vulnerable symbol linked into the binary and
+# not listed here, whether or not Vulngraph calls it. Revisit each entry
+# on dependency bumps — remove it as soon as a fix exists.
+
+GO-2026-5932  # Deprecated OpenPGP remains through projectdiscovery/utils/update -> google/go-github/v30/github (also imported by nuclei). Vulngraph uses updateutils to disable version checks, not commit signing; no direct OpenPGP calls found. Removing OpenPGP from x/crypto can move the same vulnerable code to its standalone module, so a parent-module bump is not a repair. Retained exception; remove the upstream import chain when feasible. Reviewed 2026-11-25.

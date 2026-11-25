@@ -1,0 +1,221 @@
+# Govern domain (internal/app/govern). The human-governance decision queue.
+components:
+  pathItems:
+    getQueue:
+      get:
+        operationId: getQueue
+        tags: [govern]
+        summary: Decisions awaiting a human governor (parked/escalated), clustered worst-first
+        parameters:
+          - name: action_class
+            in: query
+            description: Filter to queue clusters with this action class, applied server-side ahead of the pending-scan cap. An unrecognized value 400s.
+            schema:
+              type: string
+              enum: [observe, remediate, modify, isolate, destroy]
+        responses:
+          '200':
+            description: The decision queue.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/Queue' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    resolveDecision:
+      post:
+        operationId: resolveDecision
+        tags: [govern]
+        summary: Record a governor's verdict on a queued cluster (admin)
+        description: >
+          Takes a signed-in session: a request authenticated with an API key,
+          which an agent may hold, is refused (403) before the body is read
+          and audited as auth.api_key_refused. The actor is the session's
+          user. A denial records a negative memory outcome and a pattern
+          verdict for the check, action class and resource type; once every
+          action class for a check and resource type is denied, later
+          non-urgent findings of it are suppressed for up to 90 days. An
+          approval records an approved pattern verdict and fires the approval
+          notifiers: the signed approval webhook (APPROVAL_WEBHOOK_URL) and
+          approval alerts. One admin's approval is enough for every action
+          class, isolate and destroy included: the executor's two-person rule,
+          grants and intent rows do not apply to the webhook, so a receiver
+          that acts on it must apply its own
+          (docs/security-hardening.md#approval-webhook). Vulngraph runs no fix
+          on a verdict; the executor never reads one.
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResolveRequest' }
+        responses:
+          '204': { description: Verdict recorded. }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '409': { $ref: '../openapi.yaml#/components/responses/Conflict' }
+
+    # JIT email-approval links. These are NOT session-authed: the HMAC token in
+    # the path IS the credential, which is why they carry `security: []`. They
+    # render HTML for a human in a mail client, not JSON for the API client — but
+    # they mutate governance state on POST, so leaving them undocumented left the
+    # most sensitive unauthenticated surface in the product outside the contract.
+    #
+    # GET renders a confirmation page and changes nothing (link prefetchers and
+    # mail scanners follow links, and an auto-recorded verdict would be one
+    # nobody gave). POST records the verdict after an explicit confirmation
+    # click. A link verdict does exactly what resolveDecision does with the
+    # same verdict, with the actor email-link:<recipient>; it runs no fix.
+    approveLink:
+      get:
+        operationId: getApproveLinkConfirmation
+        tags: [govern]
+        summary: Render the approve-confirmation page for an email approval link
+        security: []
+        parameters:
+          - { $ref: '#/components/parameters/LinkToken' }
+        responses:
+          '200': { $ref: '#/components/responses/ConfirmationPage' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '409': { $ref: '#/components/responses/LinkUnusablePage' }
+          '503': { $ref: '#/components/responses/LinksNotConfigured' }
+      post:
+        operationId: confirmApproveLink
+        tags: [govern]
+        summary: Record an approval verdict from a confirmed email approval link
+        description: >
+          Records the approval on the signed decisions (observe, remediate or
+          modify only) with the actor email-link:<recipient>, exactly as
+          resolveDecision would: verdict and audit rows, an approved pattern
+          verdict, and the approval webhook and approval alerts. It runs no
+          fix: the executor never reads a verdict, and a fix runs only through
+          the executor from a signed-in session or a key holding a different
+          admin's grant.
+        security: []
+        parameters:
+          - { $ref: '#/components/parameters/LinkToken' }
+        responses:
+          '303': { $ref: '#/components/responses/VerdictRecorded' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '409': { $ref: '#/components/responses/LinkUnusablePage' }
+          '503': { $ref: '#/components/responses/LinksNotConfigured' }
+
+    denyLink:
+      get:
+        operationId: getDenyLinkConfirmation
+        tags: [govern]
+        summary: Render the deny-confirmation page for an email approval link
+        security: []
+        parameters:
+          - { $ref: '#/components/parameters/LinkToken' }
+        responses:
+          '200': { $ref: '#/components/responses/ConfirmationPage' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '409': { $ref: '#/components/responses/LinkUnusablePage' }
+          '503': { $ref: '#/components/responses/LinksNotConfigured' }
+      post:
+        operationId: confirmDenyLink
+        tags: [govern]
+        summary: Record a denial verdict from a confirmed email approval link
+        security: []
+        parameters:
+          - { $ref: '#/components/parameters/LinkToken' }
+        responses:
+          '303': { $ref: '#/components/responses/VerdictRecorded' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '409': { $ref: '#/components/responses/LinkUnusablePage' }
+          '503': { $ref: '#/components/responses/LinksNotConfigured' }
+
+  parameters:
+    LinkToken:
+      name: token
+      in: path
+      required: true
+      description: |
+        Base64url HMAC token minted by the email notifier when a decision is
+        parked. It signs the exact decision set (finding ids + a hash binding
+        each to its context fingerprint), the action class, the intended
+        verdict, a single-use nonce shared with the email's other link, the
+        recipient and an expiry, and is the sole credential for these routes.
+      schema: { type: string }
+
+  responses:
+    ConfirmationPage:
+      description: An HTML page with a single confirmation button. Nothing is recorded.
+      content:
+        text/html:
+          schema: { type: string }
+    LinkUnusablePage:
+      description: |
+        The link was already used (either link of the email), or its decisions
+        were resolved or changed since it was sent. Nothing is recorded;
+        reported as HTML.
+      content:
+        text/html:
+          schema: { type: string }
+    LinksNotConfigured:
+      description: APPROVAL_TOKEN_SECRET is not set, so email approval links are off.
+      content:
+        application/problem+json:
+          schema: { $ref: '../openapi.yaml#/components/schemas/Problem' }
+    VerdictRecorded:
+      description: Verdict recorded; redirect to the decisions view.
+      headers:
+        Location:
+          schema: { type: string }
+
+  schemas:
+    Queue:
+      type: object
+      description: Pending agent decisions awaiting human authorization.
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/QueueItem' }
+    QueueItem:
+      type: object
+      description: One pending decision cluster (check + action class) awaiting a verdict.
+      required: [cluster_key, title, action_class, outcome, worst_score, blast_radius, count, resources, finding_ids, decided_at]
+      properties:
+        cluster_key: { type: string }
+        title: { type: string }
+        check_id: { type: string }
+        action_class: { type: string }
+        summary: { type: string }
+        outcome: { type: string, description: 'parked_for_approval or escalated — every queue item waits for a human (ADR 087).' }
+        confidence_band: { type: string }
+        worst_score: { type: integer, minimum: 0, maximum: 100 }
+        worst_band: { type: string }
+        blast_radius: { type: integer }
+        blast_radius_known:
+          type: boolean
+          description: >-
+            False when at least one finding in this cluster had a failed
+            blast-radius walk. blast_radius is a max across the cluster's
+            findings, so it must never be read as "small" when the true
+            state is "partially unmeasured" — render as unmeasured, not a
+            trustworthy 0.
+        cove_concerns: { type: array, items: { type: string } }
+        safety_band: { type: string, description: "Most cautious safe-to-fix band across the cluster — safe | caution | risky." }
+        unused_count: { type: integer, description: "Findings in the cluster whose resource looks decommissioned (stale / inactive / orphaned) — the evidence for confident bulk approval." }
+        count: { type: integer }
+        resources: { type: integer }
+        finding_ids: { type: array, items: { type: string } }
+        sample_targets: { type: array, items: { type: string } }
+        decided_at: { type: string, format: date-time }
+        confidence_effective_n: { type: number, description: "Decay-weighted evidence accrued so far for this cluster's (action class, dominant resource type) confidence key. 0 when unknown." }
+        confidence_gap: { type: number, description: "How much more effective-n is needed to reach the minimum evidence threshold for this cluster's confidence key. 0 once sufficient." }
+        unlocks: { type: integer, description: "Other pending clusters that share this cluster's confidence key — resolving this one grows their evidence too." }
+        confidence_known: { type: boolean, description: "False when the confidence lookup for this cluster's key failed or no reader is wired — the teaching-value fields above carry no signal and this item sorts after every item with known confidence." }
+    ResolveRequest:
+      type: object
+      description: A governor's verdict on a queued cluster.
+      required: [finding_ids, verdict]
+      properties:
+        finding_ids: { type: array, items: { type: string }, description: "Every id must have a pending decision not already resolved at its current context fingerprint, all with one action class; otherwise 409." }
+        cluster_key: { type: string, description: "Accepted and ignored — the cluster is derived from the pending decisions." }
+        check_id: { type: string, description: "Accepted and ignored — the pattern key is derived from the findings." }
+        action_class: { type: string, description: "Optional. When set it must equal the pending decisions' action class (409 otherwise); the recorded class always comes from the decisions." }
+        verdict: { type: string, enum: [approved, risk_accepted, denied] }
+        note: { type: string }

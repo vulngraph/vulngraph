@@ -1,0 +1,141 @@
+# Drift analysis domain (internal/app/driftanalysis). An LLM agent reads each
+# batch of inventory changes on one connector and judges whether exposure
+# changed and whether a scan is worth running. Every field is LLM-derived and
+# advisory: no route here, and no code path behind it, starts a scan. The API is
+# read-only. scan_recommendation unknown means not analysed, never "no scan
+# needed"; enabled false means analysis is switched off, which is not a verdict.
+components:
+  pathItems:
+    listDriftAnalyses:
+      get:
+        operationId: listDriftAnalyses
+        tags: [drift]
+        summary: Advisory LLM analyses of drift batches, newest first
+        parameters:
+          - { name: since, in: query, description: 'Lookback window as a Go duration (e.g. 24h; no d unit). Default 720h, max 2160h.', schema: { type: string } }
+          - { name: limit, in: query, description: 'Max analyses to return (1-200, default 50).', schema: { type: integer, minimum: 1, maximum: 200 } }
+        responses:
+          '200':
+            description: The analyses in the window, with whether analysis is enabled.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/DriftAnalysisList' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    getDriftAnalysis:
+      get:
+        operationId: getDriftAnalysis
+        tags: [drift]
+        summary: One drift batch analysis
+        parameters:
+          - { name: batch_id, in: path, required: true, schema: { type: string } }
+        responses:
+          '200':
+            description: The analysis.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/DriftAnalysis' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+  schemas:
+    DriftAnalysisList:
+      type: object
+      required: [enabled, analyses]
+      properties:
+        enabled:
+          type: boolean
+          description: 'False means no analysis runs. That is not a verdict on any change.'
+        analyses:
+          type: array
+          items: { $ref: '#/components/schemas/DriftAnalysis' }
+
+    DriftAnalysis:
+      type: object
+      description: One batch of inventory changes on a connector and the agent's advisory read of it.
+      required:
+        - batch_id
+        - connector_id
+        - window_start
+        - window_end
+        - status
+        - unknown_reason
+        - summary
+        - changes
+        - exposure_judgement
+        - scan_recommendation
+        - reason
+        - suggested_profile_id
+        - suggested_template_tags
+        - confidence
+        - evidence
+        - auto_scan_profile_ids
+        - truncated
+        - source
+        - advisory
+      properties:
+        batch_id: { type: string }
+        connector_id: { type: string }
+        window_start: { type: string, format: date-time }
+        window_end: { type: string, format: date-time }
+        status:
+          type: string
+          enum: [pending, analysed, unknown, baseline]
+          description: 'Only analysed carries a verdict; the verdict fields are empty otherwise.'
+        unknown_reason:
+          type: string
+          description: 'Why status is unknown: budget, llm_error, ungrounded or no_changes. Empty otherwise.'
+        summary: { type: string }
+        changes:
+          type: array
+          items: { $ref: '#/components/schemas/DriftAnalysisChange' }
+        exposure_judgement:
+          type: string
+          description: 'increased, decreased, unchanged or unknown (also empty when not analysed).'
+        scan_recommendation:
+          type: string
+          enum: [recommended, not_needed, unknown]
+          description: 'unknown means not analysed or not established. It is never "no scan needed".'
+        reason: { type: string }
+        suggested_profile_id:
+          type: string
+          description: 'An enabled scan profile the agent suggests; empty when none. A suggestion, not an action.'
+        suggested_template_tags:
+          type: array
+          items: { type: string }
+        confidence:
+          type: string
+          description: 'low, medium or high; low whenever a fact was missing.'
+        evidence:
+          type: array
+          items: { $ref: '#/components/schemas/DriftAnalysisEvidence' }
+        auto_scan_profile_ids:
+          type: array
+          items: { type: string }
+          description: 'Profiles that already scan on drift. Set by the platform, not the model.'
+        truncated:
+          type: boolean
+          description: 'More assets changed than one batch holds; the rest were not analysed.'
+        source:
+          type: string
+          enum: [llm]
+        advisory:
+          type: boolean
+          description: 'Always true: nothing LLM-derived starts a scan.'
+
+    DriftAnalysisChange:
+      type: object
+      required: [kind, asset_id, note]
+      properties:
+        kind: { type: string, description: 'new_asset, new_exposure, removed_exposure or changed.' }
+        asset_id: { type: string }
+        note: { type: string }
+
+    DriftAnalysisEvidence:
+      type: object
+      required: [source, ref, fact]
+      properties:
+        source: { type: string, enum: [asset, profile] }
+        ref: { type: string, description: 'The asset id or profile id the fact is about.' }
+        fact: { type: string }

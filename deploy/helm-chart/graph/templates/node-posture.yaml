@@ -1,0 +1,167 @@
+{{- /*
+Opt-in node posture reader (ADR 094; values.yaml nodePosture). Two DaemonSets
+running `graph node-posture`: every node, and (opt-in) control-plane nodes.
+The reader runs as its own ServiceAccount with no token, no network and
+read-only host mounts; the worker reads its stdout back through pods/log. The
+Role below grants that on every pod in the release namespace to the worker's
+ServiceAccount, so install graph in a dedicated namespace when this is enabled.
+graph's collector selects these DaemonSets by the component label, so keep
+node-posture / node-posture-control-plane in step with
+internal/collect/kubernetes/nodeposture.go.
+*/}}
+{{- define "graph.nodePostureDaemonSet" -}}
+{{- $root := .root -}}
+{{- $volumes := .spec.volumes -}}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: graph-{{ .component }}
+  labels:
+    {{- include "graph.labels" $root | nindent 4 }}
+    {{- include "graph.componentLabels" (dict "component" .component) | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "graph.selectorLabels" (dict "component" .component) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "graph.labels" $root | nindent 8 }}
+        {{- include "graph.componentLabels" (dict "component" .component) | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $root.Values.nodePosture.serviceAccountName }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      hostPID: false
+      hostIPC: false
+      hostNetwork: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      {{- if .controlPlane }}
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      {{- end }}
+      tolerations:
+        - operator: Exists
+      {{- with $root.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        {{- range $volumes }}
+        - name: {{ .name }}
+          hostPath:
+            path: {{ .hostPath | quote }}
+            type: {{ .type | quote }}
+        {{- end }}
+      containers:
+        {{- range $container := list "kubelet" "files" }}
+        {{- $mine := list }}
+        {{- range $volumes }}{{ if eq .container $container }}{{ $mine = append $mine . }}{{ end }}{{ end }}
+        {{- if $mine }}
+        - name: {{ $container }}
+          image: {{ include "graph.image" $root | quote }}
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          args:
+            - node-posture
+            - --interval={{ $root.Values.nodePosture.interval }}
+            {{- range $mine }}
+            {{- $base := printf "/host/%s" .name }}
+            {{- range .roles }}
+            - --{{ .kind }}={{ .role }}={{ if .file }}{{ $base }}/{{ .file }}{{ else }}{{ $base }}{{ end }}
+            {{- end }}
+            {{- end }}
+          securityContext:
+            {{- if eq $container "kubelet" }}
+            # uid 0 only to read a 600 root:root kubelet config. With every
+            # capability dropped it has no DAC override: mode bits bind it
+            # like any user, and it sees only these mounts.
+            runAsUser: 0
+            runAsGroup: 0
+            runAsNonRoot: false
+            {{- else }}
+            runAsUser: 65532
+            runAsGroup: 65532
+            runAsNonRoot: true
+            {{- end }}
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml $root.Values.nodePosture.resources | nindent 12 }}
+          volumeMounts:
+            {{- range $mine }}
+            - name: {{ .name }}
+              mountPath: /host/{{ .name }}
+              readOnly: true
+            {{- end }}
+        {{- end }}
+        {{- end }}
+{{- end }}
+{{- if .Values.nodePosture.enabled }}
+# The reader's own identity: no RBAC binding, no cloud identity annotations and
+# no API token, because it reads only host files and writes only to stdout.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.nodePosture.serviceAccountName }}
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+{{ include "graph.nodePostureDaemonSet" (dict "root" . "component" "node-posture" "spec" .Values.nodePosture.node "controlPlane" false) }}
+{{- if .Values.nodePosture.controlPlane.enabled }}
+---
+{{ include "graph.nodePostureDaemonSet" (dict "root" . "component" "node-posture-control-plane" "spec" .Values.nodePosture.controlPlane "controlPlane" true) }}
+{{- end }}
+---
+# The reader needs no network at all: its output leaves through the kubelet's
+# log, read by the worker through the API. Selecting the reader pods with an
+# Egress and Ingress policy that allows nothing isolates them both ways. No
+# other policy in this chart selects them; one of your own that does adds its
+# rules to this one, as NetworkPolicies always add up.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: graph-node-posture
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [node-posture, node-posture-control-plane]
+  policyTypes: [Ingress, Egress]
+---
+# The worker reads the reader's reports from pod logs in this namespace. The Role
+# grants get on pods/log for EVERY pod in the release namespace (RBAC cannot
+# narrow it by label), bound to the worker's ServiceAccount only. Install graph
+# in a dedicated namespace when nodePosture is enabled.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: graph-node-posture-logs
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: graph-node-posture-logs
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: graph-node-posture-logs
+subjects:
+  {{- include "graph.workerServiceAccountSubjects" . | nindent 2 }}
+{{- end }}

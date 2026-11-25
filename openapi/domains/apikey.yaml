@@ -1,0 +1,110 @@
+# API keys domain (internal/app/apikey).
+# Programmatic access credentials for MCP clients and external integrations.
+# Admin-scoped keys use the 'admin' scope; read-only integrations use 'read'.
+
+components:
+  pathItems:
+    apiKeys:
+      get:
+        operationId: listAPIKeys
+        tags: [apikeys]
+        summary: List API keys for the current user
+        responses:
+          '200':
+            description: API key list
+            content:
+              application/json:
+                schema:
+                  type: array
+                  items: { $ref: '#/components/schemas/APIKey' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+      post:
+        operationId: createAPIKey
+        tags: [apikeys]
+        summary: Create a new API key
+        description: >
+          A key may not carry more privilege than its creator's role, and the
+          scope must be one of read/write/admin/inventory. An inventory key may only submit package inventory (PUT /api/assets/{id}/package-inventory, PUT /api/package-inventory, MCP submit_package_inventory) and only an admin can create one. Every key expires: omit
+          `expires_at` to get the maximum lifetime (API_KEY_MAX_LIFETIME_DAYS,
+          default 90 days); an `expires_at` in the past or beyond the maximum is
+          400. Creating a key needs a session: a request authenticated with an
+          API key gets 403, so a leaked key cannot mint successors. Requests made with a key act as
+          the key's owner (audit identity is the owning user), with the key's
+          scope capped at the owner's current role; a disabled owner's keys stop
+          working.
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateAPIKeyPayload' }
+        responses:
+          '201':
+            description: Key created. The plaintext key is returned once only.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/CreateAPIKeyResponse' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+
+    apiKey:
+      delete:
+        operationId: deleteAPIKey
+        tags: [apikeys]
+        summary: Revoke an API key
+        description: >
+          Needs a session: a request authenticated with an API key gets 403, so
+          a leaked key cannot revoke its owner's other keys.
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '204': { description: Key revoked. }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+  schemas:
+    APIKeyScope:
+      type: string
+      enum: [read, write, admin, inventory]
+    APIKey:
+      type: object
+      required: [id, name, prefix, scopes, last_used_at, expires_at, created_at]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        prefix: { type: string, description: "First 8 chars of key (gph_xxxx)" }
+        scopes: { $ref: '#/components/schemas/APIKeyScope' }
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            Last successful authentication, accurate to a minute: a use within
+            a minute of the stored value does not rewrite it. Null when never
+            used.
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            When the key stops authenticating: its own expiry capped at
+            created_at + the maximum lifetime. Keys created before the cap with
+            no expiry report created_at + maximum.
+        created_at: { type: string, format: date-time }
+    CreateAPIKeyPayload:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        scopes: { $ref: '#/components/schemas/APIKeyScope' }
+        expires_at: { type: string, format: date-time }
+    CreateAPIKeyResponse:
+      description: The created key's fields plus the one-time plaintext `key`.
+      allOf:
+        - $ref: '#/components/schemas/APIKey'
+        - type: object
+          required: [key]
+          properties:
+            key: { type: string, description: "Plaintext key — shown once, store securely." }

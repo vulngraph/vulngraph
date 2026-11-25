@@ -1,0 +1,474 @@
+# Explore domain (internal/app/explore). Safe, bounded graph queries + NL translation.
+components:
+  pathItems:
+    queryGraph:
+      post:
+        operationId: queryGraph
+        tags: [explore]
+        summary: Run a graph query spec
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GraphQuerySpec' }
+        responses:
+          '200':
+            description: Query result.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/GraphResult' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    translateQuery:
+      post:
+        operationId: translateQuery
+        tags: [explore]
+        summary: Translate a natural-language question into a query spec (does not run it)
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TranslateRequest' }
+        responses:
+          '200':
+            description: A query spec for the client to review and submit.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/GraphQuerySpec' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '429': { $ref: '../openapi.yaml#/components/responses/TooManyRequests' }
+
+    queryCypher:
+      post:
+        operationId: queryCypher
+        tags: [explore]
+        summary: Execute a raw Cypher query against the Ladybug graph engine
+        description: |
+          Runs a Cypher query directly against the embedded Ladybug property graph.
+          Read-only: queries containing CREATE, MERGE, SET, DELETE, DROP, COPY,
+          ALTER, or CALL are rejected with 400 (as are multiple statements and
+          query shapes the engine cannot run safely). A query the engine cannot
+          parse or bind (syntax error, unknown label, property, variable or
+          function) is also a 400, with the engine's message as `detail`. A query
+          that exceeds the engine's per-query timeout is a 504. Results are capped
+          at max_nodes/max_edges. Returns 503 when the Ladybug graph engine is
+          unavailable and 500 when it fails.
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [query]
+                properties:
+                  query:
+                    type: string
+                    description: Cypher query string (MATCH ... RETURN ...).
+                    example: "MATCH (n:Asset)-[:ExposedToInternet]->() WHERE n.score > 60 RETURN n.name, n.type, n.score ORDER BY n.score DESC LIMIT 10"
+                  max_nodes:
+                    type: integer
+                    description: Node result cap (default 500, max 2000).
+                  max_edges:
+                    type: integer
+                    description: Edge result cap (default 2000, max 5000).
+        responses:
+          '200':
+            description: Query result with nodes, edges, and truncation flag.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/GraphResult' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '429': { $ref: '../openapi.yaml#/components/responses/TooManyRequests' }
+          '503': { $ref: '../openapi.yaml#/components/responses/ServiceUnavailable' }
+          '504': { $ref: '../openapi.yaml#/components/responses/GatewayTimeout' }
+
+    queryNL:
+      post:
+        operationId: queryNL
+        tags: [explore]
+        summary: Ask a question in natural language; get Cypher + results
+        description: |
+          Translates a natural-language question into a read-only Ladybug Cypher
+          query via the configured LLM, runs it against the graph, and returns both the
+          results and the generated Cypher so the analyst can see, copy, and
+          refine exactly what ran. Returns 400 when translation is unavailable
+          (no LLM provider configured) or 503 when the Ladybug engine is unavailable.
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [question]
+                properties:
+                  question:
+                    type: string
+                    description: A plain-English question about the asset graph.
+                    example: "internet-exposed assets whose role can escalate to another role"
+                  max_nodes: { type: integer, description: "Node result cap (default 500, max 2000)." }
+                  max_edges: { type: integer, description: "Edge result cap (default 2000, max 5000)." }
+        responses:
+          '200':
+            description: Query results plus the generated Cypher.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/NLResult' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '429': { $ref: '../openapi.yaml#/components/responses/TooManyRequests' }
+          '503': { $ref: '../openapi.yaml#/components/responses/ServiceUnavailable' }
+
+    expandNode:
+      get:
+        operationId: expandNode
+        tags: [explore]
+        summary: Expand a node's neighbourhood
+        parameters:
+          - name: id
+            in: query
+            required: true
+            schema: { type: string }
+          - name: dir
+            in: query
+            schema: { $ref: '#/components/schemas/Direction' }
+          - name: edge_type
+            in: query
+            description: Repeatable; restricts the expansion to these edge types.
+            schema:
+              type: array
+              items: { type: string }
+        responses:
+          '200':
+            description: The neighbourhood.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/GraphResult' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    graphStatus:
+      get:
+        operationId: getGraphStatus
+        tags: [graph]
+        summary: Graph engine readiness (authenticated; infrastructure probes use /readyz)
+        responses:
+          '200':
+            description: Whether the graph engine has a built graph to serve, plus its build state when the engine answered.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/GraphStatus' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    graphQueriesHealth:
+      get:
+        operationId: getGraphQueriesHealth
+        tags: [graph]
+        summary: Probe every named Cypher query (returns no data, only health; probe errors are logged, not returned)
+        description: >-
+          An operator diagnostic. No frontend page calls it: Explore marks a
+          library query broken only after a user runs it.
+        responses:
+          '200':
+            description: Per-query health results.
+            content:
+              application/json:
+                schema:
+                  type: array
+                  items: { $ref: '#/components/schemas/QueryHealth' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '429': { $ref: '../openapi.yaml#/components/responses/TooManyRequests' }
+          '503': { $ref: '../openapi.yaml#/components/responses/ServiceUnavailable' }
+
+    graphStats:
+      get:
+        operationId: getGraphStats
+        tags: [graph]
+        summary: Graph node counts and readiness
+        responses:
+          '200':
+            description: Node counts by kind, whether a built graph is loaded, and the last build time.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/GraphStats' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '503': { $ref: '../openapi.yaml#/components/responses/ServiceUnavailable' }
+
+    dspmSummary:
+      get:
+        operationId: getDSPMSummary
+        tags: [graph]
+        summary: Data Security (DSPM) tile counts, computed server-side
+        description: >-
+          Classified-store population, classification confidence, exposure and
+          encryption-at-rest counts for the Data Security page. Every number is a
+          server-side aggregate over the graph, so the counts are testable and
+          not assembled from raw Cypher in the browser.
+        responses:
+          '200':
+            description: The DSPM summary.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/DSPMSummary' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '429': { $ref: '../openapi.yaml#/components/responses/TooManyRequests' }
+    dspmStores:
+      get:
+        operationId: getDSPMStores
+        tags: [graph]
+        summary: Data Security worklist for one lens
+        description: >-
+          Classified stores matching one lens, ranked with confirmed-public
+          first. The lens predicate is the same expression the corresponding tile
+          counts, so a tile and its list cannot disagree.
+        parameters:
+          - name: lens
+            in: query
+            required: false
+            schema:
+              type: string
+              enum: [all, sensitive, secret-vault, public-confirmed, public-possible, public-unobserved, network-exposed, unencrypted, encryption-unknown]
+              default: sensitive
+        responses:
+          '200':
+            description: Matching stores and their ContainsData edges.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/GraphResult' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '429': { $ref: '../openapi.yaml#/components/responses/TooManyRequests' }
+
+  schemas:
+    DSPMSummary:
+      type: object
+      required: [stores, confidence, exposure, encryption, classes, method, caveat]
+      properties:
+        stores:
+          type: object
+          required: [total, sensitive, secret_vault, internal]
+          properties:
+            total: { type: integer, description: "Every store carrying a data classification." }
+            sensitive: { type: integer, description: "Data stores whose CONTENTS were inferred or tagged sensitive. Excludes credential vaults." }
+            secret_vault: { type: integer, description: "Credential stores classified by resource type (Secrets Manager, SSM, GCP Secret Manager)." }
+            internal: { type: integer, description: "Stores with no sensitive class." }
+        confidence:
+          type: object
+          required: [asserted, inferred, unknown]
+          properties:
+            asserted: { type: integer, description: "Class came from an operator tag or the resource type." }
+            inferred: { type: integer, description: "Class came from a resource-name pattern — a lead, not a finding." }
+            unknown: { type: integer, description: "Edge with no confidence recorded." }
+        exposure:
+          type: object
+          required: [public_confirmed, public_possible, public_unobserved, network_exposed, public_or_exposed]
+          properties:
+            public_confirmed: { type: integer, description: "Unauthenticated access observed (public bucket policy or ACL)." }
+            public_possible: { type: integer, description: "Configuration permits exposure but nothing proved it." }
+            public_unobserved: { type: integer, description: "Exposure configuration could not be read — a coverage gap, not an exposure." }
+            network_exposed: { type: integer, description: "A graph internet-exposure PATH reaches this store — a different measurement from public." }
+            public_or_exposed: { type: integer, description: "Union of public and network-exposed. Not a tile." }
+        encryption:
+          type: object
+          required: [unencrypted, encrypted, unknown, observed_types, coverage_pct]
+          properties:
+            unencrypted: { type: integer, description: "Observed to have no encryption at rest." }
+            encrypted: { type: integer, description: "Observed encrypted." }
+            unknown: { type: integer, description: "Never observed — neither an alarm nor a pass." }
+            observed_types:
+              type: array
+              description: The only classified store types whose encryption-at-rest is collected.
+              items: { type: string }
+            coverage_pct: { type: integer, description: "Observed share of the sensitive population." }
+        classes:
+          type: array
+          items: { $ref: '#/components/schemas/DSPMClassCount' }
+        method: { type: string, description: "How classifications are derived." }
+        caveat: { type: string, description: "The heuristic caveat, served with the numbers so no client can render an inference as a scan." }
+    DSPMClassCount:
+      type: object
+      required: [class, stores, asserted, inferred, sensitive]
+      properties:
+        class: { type: string, description: "Data class without the sentinel prefix: pii, financial, credentials, health, pci, internal." }
+        stores: { type: integer }
+        asserted: { type: integer }
+        inferred: { type: integer }
+        sensitive: { type: boolean }
+    GraphStatus:
+      type: object
+      required: [ready, state]
+      properties:
+        ready: { type: boolean, description: 'A graph engine is configured AND reports a completed build that loaded at least one node. A configured engine alone is not ready.' }
+        state:
+          type: string
+          enum: [not_configured, unknown, not_ready, ready]
+          description: >-
+            not_configured: no graph engine is wired (Cypher answers 503).
+            unknown: the engine's build state could not be read (the worker is unreachable, or predates its /internal/graph/health route). Cypher may still answer.
+            not_ready: the engine answered but has no non-empty build loaded (restoring, rebuilding, or the last build loaded no nodes).
+            ready: a built graph is serving.
+        node_count: { type: integer, description: 'Asset nodes in the loaded graph. Absent when the state is not_configured or unknown.' }
+        last_built_at: { type: string, format: date-time, description: 'When the loaded graph was built. Absent when the graph was never built or its state is unknown, never a substitute "now".' }
+        stale_seconds: { type: integer, description: Seconds since last_built_at; absent with it. }
+        multi_hop_may_be_incomplete: { type: boolean, description: 'True when a node table of the loaded graph holds more rows than one graph-engine node group (131,072), so multi-hop and variable-length matches (attack paths, blast_radius_deep, saved queries, detections, NL-to-Cypher, raw Cypher) may return fewer paths than exist (ladybug#1341). False is a measurement. Absent when no build has recorded its table sizes, or the state is unknown.' }
+        oversized_node_tables:
+          type: array
+          description: 'The node tables above one node group, sorted by label. Absent when there are none or nothing was measured.'
+          items: { $ref: '#/components/schemas/OversizedNodeTable' }
+    OversizedNodeTable:
+      type: object
+      required: [label, rows]
+      properties:
+        label: { type: string, description: 'Graph node table, e.g. Package.' }
+        rows: { type: integer, description: 'Rows in the table after the last load.' }
+    QueryHealth:
+      type: object
+      required: [name, healthy, probed]
+      properties:
+        name: { type: string }
+        healthy: { type: boolean, description: 'The query was probed and the probe ran without error. Does NOT mean the query returns anything — see `empty`. False when `probed` is false.' }
+        probed: { type: boolean, description: 'False for parameterised queries, which cannot be probed without values; nothing was measured, so `healthy` is false.' }
+        empty: { type: boolean, description: 'The query parses and runs but returned no nodes and no rows — a dead query (missing edges, unpopulated rel table), not a pass.' }
+        error: { type: string, description: 'Fixed category when a probe failed ("probe failed (see server logs)" or "probe timed out"); the raw engine error is logged, not returned.' }
+    GraphStats:
+      type: object
+      required: [nodes, last_rebuilt, ready, multi_hop_may_be_incomplete, oversized_node_tables]
+      properties:
+        nodes:
+          type: object
+          required: [assets, roles, repos]
+          properties:
+            assets: { type: integer }
+            roles: { type: integer }
+            repos: { type: integer }
+        last_rebuilt: { type: string, format: date-time, nullable: true, description: 'When the loaded graph was built; null when it was never built.' }
+        ready: { type: boolean, description: 'The engine reports a completed build that loaded at least one node.' }
+        multi_hop_may_be_incomplete: { type: boolean, nullable: true, description: 'As in GraphStatus; null when no build has recorded its table sizes.' }
+        oversized_node_tables:
+          type: array
+          description: 'The node tables above one node group, sorted by label; empty when there are none or nothing was measured.'
+          items: { $ref: '#/components/schemas/OversizedNodeTable' }
+    Direction:
+      type: string
+      enum: [out, in, both]
+    NodeMatch:
+      type: object
+      description: Selects seed assets. Empty fields are wildcards; ids take precedence.
+      properties:
+        ids:
+          type: array
+          items: { type: string }
+        types:
+          type: array
+          items: { type: string }
+        provider: { type: string }
+    Traverse:
+      type: object
+      description: One ordered hop expansion from the current frontier.
+      properties:
+        edge_types:
+          type: array
+          items: { type: string }
+        direction: { $ref: '#/components/schemas/Direction' }
+        max_hops: { type: integer }
+    GraphQuerySpec:
+      type: object
+      required: [seed]
+      properties:
+        seed: { $ref: '#/components/schemas/NodeMatch' }
+        traverse:
+          type: array
+          items: { $ref: '#/components/schemas/Traverse' }
+        max_nodes: { type: integer }
+        max_edges: { type: integer }
+    GraphNode:
+      type: object
+      required: [id, type, name, provider]
+      properties:
+        id: { type: string }
+        type: { type: string }
+        name: { type: string }
+        provider: { type: string }
+        region: { type: string }
+        account_id: { type: string, description: "Cloud ownership boundary (AWS account / GCP project / Azure subscription); used for grouping." }
+        exposed: { type: boolean, description: "Asset is reachable from the internet." }
+        has_kev: { type: boolean, description: "Asset carries a known-exploited-vulnerability finding (CISA KEV)." }
+        exploitable: { type: boolean, description: "An active nuclei scan confirmed a high/critical exposure on the asset." }
+        toxic_combo: { type: boolean, description: "Internet-exposed and carries a privilege-escalation path." }
+        max_score: { type: integer, description: "Worst enriched finding score on the asset (0-100)." }
+        privesc_count: { type: integer, description: "Count of privilege-escalation (ciem_privesc) findings on the asset." }
+        encryption:
+          type: string
+          enum: [unencrypted, encrypted, unknown]
+          description: "Encryption-at-rest state of an Asset node. unencrypted and encrypted are observations, collected only for S3 buckets (SSE configuration) and for RDS instances and RDS, DocumentDB and Neptune clusters (storage_encrypted); unknown means never observed (every other asset type, or a describe that did not report it) and is neither an alarm nor a pass. Absent on node labels that carry no such signal."
+        public: { type: boolean, description: "Config-level public accessibility of a data store (public S3 bucket, publicly-accessible RDS/CloudSQL); distinct from exposed." }
+        public_tier: { type: integer, description: "Grades public: 0 not public, 1 possible (S3 public-access-block missing/unlocked, no public policy/ACL observed), 2 confirmed unauthenticated access." }
+        trust_entry: { type: string, description: "IAM roles only — who can assume the role, from its trust policy: public (wildcard), mixed, federated (IdP-only: Okta/Identity Center/OIDC), cross_account, same_account, service." }
+    GraphEdge:
+      type: object
+      required: [src_id, dst_id, edge_type]
+      properties:
+        src_id: { type: string }
+        dst_id: { type: string }
+        edge_type: { type: string }
+        confidence:
+          type: string
+          enum: [high, medium, low]
+          description: >-
+            How the edge was established, when the relationship carries it: high
+            (asserted — an operator tag, or the resource type itself), medium
+            (guessed — e.g. a resource-name pattern), low (a default floor).
+            Absent for relationships that do not record it.
+    GraphResult:
+      type: object
+      required: [nodes, edges, truncated, columns, rows]
+      properties:
+        nodes:
+          type: array
+          items: { $ref: '#/components/schemas/GraphNode' }
+        edges:
+          type: array
+          items: { $ref: '#/components/schemas/GraphEdge' }
+        truncated: { type: boolean }
+        columns:
+          type: array
+          description: "Column order for scalar/tabular results (aggregates like count/sum, or bare-property RETURNs). Empty for pure graph results."
+          items: { type: string }
+        rows:
+          type: array
+          description: "Scalar/tabular result rows, one object per row keyed by column name. Empty for pure graph results."
+          items:
+            type: object
+            additionalProperties: true
+        multi_hop_may_be_incomplete: { type: boolean, description: 'Present and true when the graph engine that answered has a node table above one node group: a multi-hop or variable-length match in this query may have missed relationships (see GraphStatus). Absent otherwise, including for results that did not come from the graph engine.' }
+    NLResult:
+      type: object
+      description: A graph result plus the Cypher that was generated and run.
+      required: [nodes, edges, truncated, columns, rows, generated_cypher]
+      properties:
+        nodes:
+          type: array
+          items: { $ref: '#/components/schemas/GraphNode' }
+        edges:
+          type: array
+          items: { $ref: '#/components/schemas/GraphEdge' }
+        truncated: { type: boolean }
+        columns:
+          type: array
+          description: "Column order for scalar/tabular results. Empty for pure graph results."
+          items: { type: string }
+        rows:
+          type: array
+          description: "Scalar/tabular result rows, one object per row keyed by column name. Empty for pure graph results."
+          items:
+            type: object
+            additionalProperties: true
+        multi_hop_may_be_incomplete: { type: boolean, description: 'Present and true when the graph engine that answered has a node table above one node group: a multi-hop or variable-length match in this query may have missed relationships (see GraphStatus). Absent otherwise, including for results that did not come from the graph engine.' }
+        generated_cypher: { type: string, description: "The Cypher query Claude generated and executed." }
+    TranslateRequest:
+      type: object
+      required: [natural_language]
+      properties:
+        natural_language: { type: string }

@@ -1,0 +1,382 @@
+benchmark: cis-gke
+name: CIS Google Kubernetes Engine (GKE) Benchmark
+version: "2.0.0"
+family: cis
+providers: [gcp, kubernetes]
+source: https://www.cisecurity.org/benchmark/kubernetes
+controls:
+  # ── 3 Worker nodes ───────────────────────────────────────────────────────
+  - id: "3.1.1"
+    title: Node kubeconfig file mode restricted
+    service: worker-node
+    status: covered
+    check_ids: [k8s-node-kubelet-kubeconfig]
+    reason: "Needs the opt-in node posture reader (ADR 094) with the GKE node paths (values.yaml documents COS's). One finding per cluster, firing when any node fails; unknown without the reader. 644 limit on GKE (cloud_provider gcp), as this benchmark sets it."
+    severity: medium
+  - id: "3.1.2"
+    title: Node kubelet kubeconfig owned by root
+    service: worker-node
+    status: covered
+    check_ids: [k8s-node-kubelet-kubeconfig]
+    reason: "Needs the opt-in node posture reader (ADR 094) with the GKE node paths (values.yaml documents COS's). One finding per cluster, firing when any node fails; unknown without the reader."
+    severity: medium
+  - id: "3.1.3"
+    title: Kubelet config file mode restricted
+    service: worker-node
+    status: covered
+    check_ids: [k8s-node-kubelet-config-file]
+    reason: "Needs the opt-in node posture reader (ADR 094) with the GKE node paths (values.yaml documents COS's). One finding per cluster, firing when any node fails; unknown without the reader. 644 limit on GKE (cloud_provider gcp), as this benchmark sets it."
+    severity: medium
+  - id: "3.1.4"
+    title: Kubelet config file owned by root
+    service: worker-node
+    status: covered
+    check_ids: [k8s-node-kubelet-config-file]
+    reason: "Needs the opt-in node posture reader (ADR 094) with the GKE node paths (values.yaml documents COS's). One finding per cluster, firing when any node fails; unknown without the reader."
+    severity: medium
+  # ── 4 Kubernetes policies ────────────────────────────────────────────────
+  - id: "4.1.1"
+    title: Restrict cluster-admin role bindings to necessity
+    service: rbac
+    status: covered
+    check_ids: [k8s-cluster-admin-binding, k8s-rolebinding-admin-binding]
+    reason: "The benchmark audit lists ClusterRoleBindings to cluster-admin; every non-platform one is reported (platform bindings are reverted if edited), and namespace-scoped RoleBindings to cluster-admin too (k8s-rolebinding-admin-binding, which also reports admin/edit). Whether a binding is required is the reviewer's call, as in the benchmark."
+    severity: high
+  - id: "4.1.2"
+    title: Limit who can read Secrets
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-secrets-access]
+    reason: "Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported."
+    severity: high
+  - id: "4.1.3"
+    title: Avoid wildcards in Roles and ClusterRoles
+    service: rbac
+    status: covered
+    check_ids: [k8s-cluster-role-wildcard-verbs, k8s-role-wildcard-verbs]
+    reason: "Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported."
+    severity: medium
+  - id: "4.1.4"
+    title: Keep default service accounts unused
+    service: rbac
+    status: covered
+    check_ids: [k8s-default-sa-automount, k8s-default-service-account-bound, k8s-rolebinding-default-service-account-bound]
+    reason: "The benchmark audit is each namespace's default ServiceAccount setting automountServiceAccountToken: false (k8s-default-sa-automount; system namespaces' are platform-managed and exempt); privileged roles bound to a default ServiceAccount are reported as well."
+    severity: medium
+  - id: "4.1.5"
+    title: Mount service account tokens only when needed
+    service: rbac
+    status: covered
+    check_ids: [k8s-automount-sa-token, k8s-default-sa-automount]
+    reason: "Effective automount on running or pending pods (the pod field, else its ServiceAccount's); pods inheriting it from the default SA are reported once on that SA. Whether a workload needs API access is the reviewer's call, as in the benchmark audit."
+    severity: low
+  - id: "4.1.6"
+    title: Never grant admin through system:masters group
+    service: rbac
+    status: partial
+    check_ids: [k8s-binding-system-masters]
+    reason: "Flags RBAC bindings naming Group/system:masters (the bootstrap binding exempt); client certificates carrying O=system:masters are not visible."
+    severity: high
+  - id: "4.1.7"
+    title: Limit bind, impersonate and escalate permissions
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-escalate]
+    reason: "Also counts write access to Roles/ClusterRoles/bindings, which escalates the same way. Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported."
+    severity: high
+  - id: "4.1.8"
+    title: No role bindings to unauthenticated users
+    service: rbac
+    status: covered
+    check_ids: [k8s-binding-to-unauthenticated, k8s-privileged-binding-to-everyone]
+    reason: "Any non-default binding to system:unauthenticated/system:anonymous: k8s-binding-to-unauthenticated for an unprivileged role, k8s-privileged-binding-to-everyone (which also covers system:authenticated) for a privileged one. Kubernetes' own bootstrap bindings and bindings in system namespaces are exempt."
+    severity: critical
+  - id: "4.1.9"
+    title: No role bindings to all authenticated users
+    service: rbac
+    status: covered
+    check_ids: [k8s-binding-to-authenticated, k8s-privileged-binding-to-everyone]
+    reason: "Any non-default binding to system:authenticated: k8s-binding-to-authenticated for an unprivileged role, k8s-privileged-binding-to-everyone (which also covers the unauthenticated groups) for a privileged one. Kubernetes' own bootstrap bindings (system:discovery, system:basic-user) and bindings in system namespaces are exempt."
+    severity: high
+  - id: "4.2.1"
+    title: Enforce baseline or restricted pod security
+    service: pod-security
+    status: covered
+    check_ids: [k8s-namespace-no-pod-security-enforcement]
+    reason: "Active namespaces without a baseline/restricted pod-security.kubernetes.io/enforce label; system namespaces are exempt."
+    severity: high
+  - id: "4.3.1"
+    title: Turn on network policy enforcement
+    service: network-policy
+    status: covered
+    check_ids: [gcp-gke-network-policy-disabled]
+    reason: Fires when the networkPolicy addon is off and networkConfig.datapathProvider is not ADVANCED_DATAPATH (Dataplane V2 enforces policy while reporting the addon disabled).
+    severity: medium
+  - id: "4.3.2"
+    title: Default-deny NetworkPolicy per workload namespace
+    service: network-policy
+    status: partial
+    check_ids: [k8s-namespace-no-network-policy, k8s-namespace-no-default-deny]
+    reason: "A namespace with no NetworkPolicy, or with policies but none that selects every pod and denies all ingress, fails. Egress default-deny is not evaluated, and system namespaces are exempt."
+    severity: medium
+  - id: "4.4.1"
+    title: Prefer secret volumes over environment variables
+    service: secrets
+    status: covered
+    check_ids: [k8s-pod-secret-in-env]
+    reason: "Secret names (never values) from env[].valueFrom.secretKeyRef and envFrom[].secretRef; system namespaces are exempt."
+    severity: low
+  - id: "4.4.2"
+    title: Store workload secrets in Secret Manager
+    service: secrets
+    status: manual
+    reason: Architectural choice; no API state distinguishes a deliberate in-cluster Secrets design from a gap.
+    severity: low
+  - id: "4.5.1"
+    title: Enforce image provenance with Binary Authorization
+    service: admission
+    status: covered
+    check_ids: [gcp-gke-binary-authorization-disabled]
+    reason: binaryAuthorization.evaluationMode (or the deprecated enabled flag when no mode is set) is DISABLED. Whether the project policy actually restricts images is 5.1.3.
+    severity: medium
+  - id: "4.6.1"
+    title: Use namespaces as administrative boundaries
+    service: general
+    status: manual
+    reason: Whether namespaces reflect administrative boundaries is an organisational judgement.
+    severity: low
+  - id: "4.6.2"
+    title: Pods use RuntimeDefault or approved seccomp
+    service: pod-security
+    status: covered
+    check_ids: [k8s-pod-seccomp-unrestricted]
+    reason: "Running or Pending pods whose containers lack a RuntimeDefault/Localhost profile; system namespaces are exempt. A kubelet --seccomp-default node setting is not visible, as in the benchmark audit of the pod spec."
+    severity: medium
+  - id: "4.6.3"
+    title: Workloads run with hardened security contexts
+    service: pod-security
+    status: partial
+    check_ids: [k8s-container-runs-as-root, k8s-container-allow-privilege-escalation, k8s-privileged-container, k8s-dangerous-capabilities, k8s-container-added-capabilities, k8s-container-net-raw, k8s-pod-seccomp-unrestricted, k8s-pod-apparmor-unconfined, k8s-container-writable-root-fs]
+    reason: "Root, privilege escalation, privileged, capabilities (added, dangerous, NET_RAW), seccomp, explicit AppArmor Unconfined and readOnlyRootFilesystem are evaluated; runAsGroup and SELinux options are not."
+    severity: medium
+  - id: "4.6.4"
+    title: Keep workloads out of default namespace
+    service: general
+    status: covered
+    check_ids: [k8s-workload-default-namespace]
+    reason: "Running or Pending pods in the default namespace, collapsed to their owning workload. Services there are not flagged: the built-in kubernetes Service lives in default by design."
+    severity: low
+  # ── 5 Managed services ───────────────────────────────────────────────────
+  - id: "5.1.1"
+    title: Scan Artifact Registry images for vulnerabilities
+    service: artifact-registry
+    status: covered
+    check_ids: [gcp-artifact-registry-scanning-disabled]
+    reason: Repositories whose vulnerabilityScanningConfig.enablementState is SCANNING_DISABLED — which covers both the repository opting out and the Container Scanning API being off in the project (the state reason says which). Formats Artifact Analysis cannot scan (SCANNING_UNSUPPORTED) are not graded.
+    severity: medium
+  - id: "5.1.2"
+    title: Least-privilege IAM on Artifact Registry repos
+    service: artifact-registry
+    status: partial
+    check_ids: [gcp-artifact-registry-public]
+    reason: Only public access is detected (repository IAM policies binding allUsers or allAuthenticatedUsers). Over-broad grants to named principals — writers who need only read, project-level artifactregistry roles held by many users — are not graded.
+    severity: medium
+  - id: "5.1.3"
+    title: Deploy only Binary Authorization trusted images
+    service: admission
+    status: covered
+    check_ids: [gcp-binauthz-policy-allows-all, gcp-gke-binary-authorization-disabled]
+    reason: "On a cluster enforcing the project policy, the rule that applies to it (clusterAdmissionRules[location.name], else defaultAdmissionRule, from binaryauthorization.projects.getPolicy) is ALWAYS_ALLOW or dry-run only. A cluster not enforcing at all is gcp-gke-binary-authorization-disabled's finding. The policy is read only when such a cluster exists."
+    severity: medium
+  - id: "5.2.1"
+    title: Node pools use custom least-privilege accounts
+    service: gke-iam
+    status: covered
+    check_ids: [gcp-gke-node-default-sa, gcp-gke-node-sa-privileged]
+    reason: "Node pools whose config.serviceAccount is the default Compute Engine account (High with the cloud-platform OAuth scope), and pools whose dedicated account holds Owner, Editor or an admin role (resolved from the IAM collector's roles for that account). A node account from another project is not graded for role breadth."
+    severity: high
+  - id: "5.2.2"
+    title: Use Workload Identity for pod cloud access
+    service: gke-iam
+    status: covered
+    check_ids: [gcp-gke-workload-identity-disabled, gcp-gke-metadata-server-disabled]
+    reason: Cluster workloadIdentityConfig.workloadPool unset; with it set, node pools not on GKE_METADATA are reported by gcp-gke-metadata-server-disabled.
+    severity: high
+  - id: "5.3.1"
+    title: Encrypt Secrets at application layer with KMS
+    service: gke
+    status: covered
+    check_ids: [gcp-gke-secrets-not-encrypted]
+    reason: databaseEncryption.state DECRYPTED.
+    severity: medium
+  - id: "5.4.1"
+    title: Turn on GKE metadata server for node pools
+    service: gke-node
+    status: covered
+    check_ids: [gcp-gke-metadata-server-disabled, gcp-gke-workload-identity-disabled]
+    reason: Node pools whose workloadMetadataConfig.mode is not GKE_METADATA; on a cluster with Workload Identity off the cluster-level finding carries it.
+    severity: high
+  - id: "5.5.1"
+    title: Node pools use Container-Optimized OS containerd
+    service: gke-node
+    status: covered
+    check_ids: [gcp-gke-node-image-not-cos]
+    reason: Node pools whose config.imageType is not COS_CONTAINERD.
+    severity: low
+  - id: "5.5.2"
+    title: Node auto-repair turned on
+    service: gke-node
+    status: covered
+    check_ids: [gcp-gke-node-auto-repair-disabled]
+    reason: Node pools with management.autoRepair off.
+    severity: low
+  - id: "5.5.3"
+    title: Node auto-upgrade turned on
+    service: gke-node
+    status: covered
+    check_ids: [gcp-gke-node-auto-upgrade-disabled]
+    reason: Node pools with management.autoUpgrade off.
+    severity: medium
+  - id: "5.5.4"
+    title: Enrol clusters in a release channel
+    service: gke
+    status: covered
+    check_ids: [gcp-gke-no-release-channel]
+    reason: releaseChannel.channel unset or UNSPECIFIED.
+    severity: low
+  - id: "5.5.5"
+    title: Shielded GKE nodes turned on
+    service: gke-node
+    status: covered
+    check_ids: [gcp-gke-shielded-nodes-disabled]
+    reason: Cluster shieldedNodes.enabled off.
+    severity: medium
+  - id: "5.5.6"
+    title: Shielded node integrity monitoring on
+    service: gke-node
+    status: covered
+    check_ids: [gcp-gke-node-integrity-monitoring-disabled]
+    reason: Node pools with shieldedInstanceConfig.enableIntegrityMonitoring off; a pool returned without a shieldedInstanceConfig is not graded (the default is on).
+    severity: low
+  - id: "5.5.7"
+    title: Shielded node secure boot on
+    service: gke-node
+    status: covered
+    check_ids: [gcp-gke-node-secure-boot-disabled]
+    reason: Node pools with shieldedInstanceConfig.enableSecureBoot off.
+    severity: low
+  - id: "5.6.1"
+    title: Subnet flow logs plus intranode traffic visibility
+    service: gke-network
+    status: covered
+    check_ids: [gcp-gke-intranode-visibility-disabled, gcp-subnet-flow-logs-disabled]
+    reason: networkConfig.enableIntraNodeVisibility on the cluster, and flow logs on the node subnet itself (the gcp_subnetwork asset the cluster's networkConfig.subnetwork names) — graded once on the subnet, not again per cluster. A Shared VPC subnet is graded in its host project's sweep.
+    severity: low
+  - id: "5.6.2"
+    title: Use VPC-native alias IP clusters
+    service: gke-network
+    status: covered
+    check_ids: [gcp-gke-not-vpc-native]
+    reason: ipAllocationPolicy.useIpAliases off, or no ipAllocationPolicy (a routes-based cluster).
+    severity: low
+  - id: "5.6.3"
+    title: Restrict control plane with authorized networks
+    service: gke-network
+    status: covered
+    check_ids: [gcp-gke-public-endpoint, gcp-gke-authorized-networks-disabled]
+    reason: A public endpoint with authorized networks off, or with 0.0.0.0/0 / ::/0 in the allowlist, is gcp-gke-public-endpoint; a private IP endpoint with authorized networks off is gcp-gke-authorized-networks-disabled. A DNS-endpoint-only cluster has no IP endpoint and passes. Read from masterAuthorizedNetworksConfig or controlPlaneEndpointsConfig.ipEndpointsConfig.
+    severity: high
+  - id: "5.6.4"
+    title: Use DNS-based or private control plane endpoint
+    service: gke-network
+    status: covered
+    check_ids: [gcp-gke-public-endpoint, gcp-gke-private-endpoint-disabled]
+    reason: Fires on any enabled public IP endpoint (controlPlaneEndpointsConfig.ipEndpointsConfig, falling back to privateClusterConfig.enablePrivateEndpoint); a DNS-endpoint-only or private-endpoint cluster passes.
+    severity: high
+  - id: "5.6.5"
+    title: Private nodes without external IPs
+    service: gke-network
+    status: covered
+    check_ids: [gcp-gke-private-nodes-disabled]
+    reason: "Node pools without private nodes: the pool's own networkConfig.enablePrivateNodes when set, else the cluster default (privateClusterConfig / networkConfig.defaultEnablePrivateNodes). The clusters.list body is decoded raw for that one field, since the SDK's plain bool cannot tell a pool opting out (explicit false) from one inheriting."
+    severity: medium
+  - id: "5.6.6"
+    title: Least-privilege firewall rules for nodes
+    service: gke-network
+    status: partial
+    check_ids: [gcp-firewall-open-ingress]
+    reason: "A Manual recommendation in the benchmark. Internet-sourced ingress is flagged on each rule (whatever it targets, nodes included), but rules are not scoped to the node pools' network tags or service accounts, and whether internal sources are least-privilege for the workload is a design review no API answers."
+    severity: medium
+  - id: "5.6.7"
+    title: Google-managed certificates for Ingress TLS
+    service: gke-network
+    status: covered
+    check_ids: [gcp-gke-ingress-self-managed-cert]
+    reason: Target HTTPS/SSL proxies created by the GKE Ingress controller (k8s2-ts-* / k8s-tps-*) whose certificates resolve to SELF_MANAGED gcp_ssl_certificate assets. Certificate Manager maps are not read; a certificate missing from the inventory leaves the proxy ungraded.
+    severity: low
+  - id: "5.7.1"
+    title: Cloud Logging and Monitoring turned on
+    service: gke-logging
+    status: covered
+    check_ids: [gcp-gke-logging-disabled]
+    reason: loggingService or monitoringService set to none.
+    severity: medium
+  - id: "5.7.2"
+    title: auditd logging on COS nodes
+    service: gke-logging
+    status: missing
+    reason: Detectable only via the Google-provided auditd DaemonSet in the cluster (workload listing exists; no check, name-based heuristic).
+    severity: low
+  - id: "5.8.1"
+    title: Turn off legacy client certificate auth
+    service: gke-auth
+    status: covered
+    check_ids: [gcp-gke-client-certificate-enabled]
+    reason: masterAuth.clientCertificate present or clientCertificateConfig.issueClientCertificate on; unknown when masterAuth is not returned.
+    severity: high
+  - id: "5.8.2"
+    title: Manage RBAC access via Google Groups
+    service: gke-auth
+    status: covered
+    check_ids: [gcp-gke-google-groups-rbac-disabled]
+    reason: authenticatorGroupsConfig.enabled off or absent.
+    severity: low
+  - id: "5.8.3"
+    title: Legacy ABAC authorization turned off
+    service: gke-auth
+    status: covered
+    check_ids: [gcp-gke-legacy-abac]
+    severity: high
+  - id: "5.9.1"
+    title: CMEK-protected StorageClasses for persistent disks
+    service: gke-storage
+    status: missing
+    reason: Needs StorageClass objects (parameters `disk-encryption-kms-key`) from the K8s API; the K8s collector does not list StorageClasses.
+    severity: low
+  - id: "5.9.2"
+    title: CMEK-protected boot disks for node pools
+    service: gke-storage
+    status: covered
+    check_ids: [gcp-gke-boot-disk-no-cmek]
+    reason: Node pools with no config.bootDiskKmsKey.
+    severity: low
+  - id: "5.10.1"
+    title: No alpha clusters in production
+    service: gke
+    status: covered
+    check_ids: [gcp-gke-alpha-cluster]
+    reason: enableKubernetesAlpha on. Whether the cluster runs production is not visible; alpha clusters are short-lived by design, so every one is reported.
+    severity: low
+  - id: "5.10.2"
+    title: GKE Sandbox for untrusted workloads
+    service: gke-node
+    status: manual
+    reason: "The recommendation is to consider GKE Sandbox for untrusted workloads (a Manual recommendation in the benchmark). Which workloads are untrusted is not in any API, so the absence of a gVisor node pool on a cluster running only first-party code is not a failure; flagging every cluster without one would be noise on stock configurations."
+    severity: low
+  - id: "5.10.3"
+    title: Security posture dashboard turned on
+    service: gke
+    status: covered
+    check_ids: [gcp-gke-security-posture-disabled]
+    reason: securityPostureConfig.mode DISABLED. A cluster returned without securityPostureConfig is not graded (current clusters default to BASIC; older ones predate the setting).
+    severity: low

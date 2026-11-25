@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  OPTIONAL Vulngraph disk-scan role. Off by default: deploy it only if you want
+  Vulngraph to create short-lived EBS snapshots of your volumes so it can read
+  the installed packages from the disk. Without it Vulngraph can still read
+  snapshots you already have (see GrantDiskScanRead in graph-readonly-role.yaml).
+  The IAM actions are exactly ec2:CreateSnapshot, ec2:CreateTags and
+  ec2:DeleteSnapshot, each held by a tag condition, and nothing else.
+
+# What each statement allows:
+#   ec2:CreateSnapshot on volumes     snapshot any volume in this account. IAM has
+#                                     no tag condition that can narrow this: the
+#                                     request tags apply to the new snapshot.
+#   ec2:CreateSnapshot on snapshots   only a request that tags the new snapshot
+#                                     vulngraph-disk-scan, and no other tag key.
+#   ec2:CreateTags                    only while a snapshot is being created
+#                                     (ec2:CreateAction), so the role cannot tag
+#                                     or re-tag an existing snapshot.
+#   ec2:DeleteSnapshot                only snapshots that already carry the
+#                                     vulngraph-disk-scan tag. Vulngraph also
+#                                     re-reads the live tags before every delete.
+# The role cannot read a snapshot. Vulngraph describes and reads blocks with the
+# read-only role (GrantDiskScanRead). Snapshots created here are encrypted with
+# the volume's key; reading one needs kms:Decrypt on that key for the read-only
+# role (docs/iam/disk-scan-aws.md).
+#
+# Vulngraph assumes this role from its ambient identity (the hub role), never
+# from a stored access key. The hub role must be allowed to assume it, and the
+# connector's disk_scan_role_arn must differ from its role_arn,
+# readonly_role_arn and execute_role_arn.
+
+Parameters:
+  HubRoleArn:
+    Type: String
+    Description: ARN of the hub role graph runs as. Only it may assume this role.
+    AllowedPattern: "^arn:aws[a-z-]*:iam::\\d{12}:role/.+$"
+  ExternalId:
+    Type: String
+    NoEcho: true
+    Description: The sts:ExternalId graph presents, the connector's external_id.
+    MinLength: 2
+    MaxLength: 1224
+    AllowedPattern: "^[\\w+=,.@:/-]+$"
+  RoleName:
+    Type: String
+    Default: GraphDiskScan
+    Description: Must differ from the read-only and execution role names.
+    AllowedPattern: "^[\\w+=,.@-]{1,64}$"
+  OrgId:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional AWS Organizations id (o-...). When set, the hub must also be inside
+      this organization (aws:PrincipalOrgID).
+    AllowedPattern: "^(o-[a-z0-9]{10,32})?$"
+
+Conditions:
+  HasOrgId: !Not [!Equals [!Ref OrgId, ""]]
+
+Resources:
+  GraphDiskScanRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: Vulngraph disk scanning. Creates and deletes only snapshots tagged vulngraph-disk-scan.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref HubRoleArn
+            Action: sts:AssumeRole
+            Condition: !If
+              - HasOrgId
+              - StringEquals:
+                  sts:ExternalId: !Ref ExternalId
+                  aws:PrincipalOrgID: !Ref OrgId
+              - StringEquals:
+                  sts:ExternalId: !Ref ExternalId
+      Policies:
+        - PolicyName: graph-diskscan-snapshots
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: GraphSnapshotVolumes
+                Effect: Allow
+                Action: ec2:CreateSnapshot
+                Resource: !Sub arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:volume/*
+              - Sid: GraphCreateTaggedSnapshots
+                Effect: Allow
+                Action: ec2:CreateSnapshot
+                Resource: !Sub arn:${AWS::Partition}:ec2:*::snapshot/*
+                Condition:
+                  "Null":
+                    aws:RequestTag/vulngraph-disk-scan: "false"
+                  ForAllValues:StringEquals:
+                    aws:TagKeys: [vulngraph-disk-scan]
+              - Sid: GraphTagOnCreateOnly
+                Effect: Allow
+                Action: ec2:CreateTags
+                Resource: !Sub arn:${AWS::Partition}:ec2:*::snapshot/*
+                Condition:
+                  StringEquals:
+                    ec2:CreateAction: CreateSnapshot
+              - Sid: GraphDeleteTaggedSnapshots
+                Effect: Allow
+                Action: ec2:DeleteSnapshot
+                Resource: !Sub arn:${AWS::Partition}:ec2:*::snapshot/*
+                Condition:
+                  "Null":
+                    aws:ResourceTag/vulngraph-disk-scan: "false"
+
+Outputs:
+  RoleArn:
+    Description: The disk-scan role in this account. Set it as the connector's disk_scan_role_arn.
+    Value: !GetAtt GraphDiskScanRole.Arn

@@ -1,0 +1,238 @@
+# Auth domain (internal/app/auth). Sessions + user management.
+# Path items are wired to URLs from openapi/openapi.yaml.
+components:
+  pathItems:
+    login:
+      post:
+        operationId: login
+        tags: [auth]
+        summary: Authenticate and start a session
+        description: >
+          Send the password and, for a user with TOTP enrolled, the authenticator
+          code in the same request. Every failed factor (unknown email, wrong
+          password, disabled account, missing/wrong/already-used code) returns the
+          same 401 with detail "invalid email, password or authenticator code" —
+          the API never says a code is required, since that would confirm the
+          password. Clients should always offer the optional code field. Attempts
+          are rate limited per client IP and per account (429 + Retry-After).
+          Disabled (404) when IAP or oauth2-proxy fronts the app, unless the
+          operator set PASSWORD_LOGIN_BREAK_GLASS=true.
+        security: []
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginRequest' }
+        responses:
+          '200':
+            description: Session cookie set; the authenticated user is returned.
+            headers:
+              Set-Cookie:
+                schema: { type: string }
+                description: HttpOnly `graph_session` cookie.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/User' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+          '429': { $ref: '../openapi.yaml#/components/responses/TooManyRequests' }
+
+    logout:
+      post:
+        operationId: logout
+        tags: [auth]
+        summary: End the current session
+        responses:
+          '204': { description: Session cleared. }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    getCurrentUser:
+      get:
+        operationId: getCurrentUser
+        tags: [auth]
+        summary: The authenticated user
+        responses:
+          '200':
+            description: The current user.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/User' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    users:
+      get:
+        operationId: listUsers
+        tags: [users]
+        summary: List users (admin only)
+        responses:
+          '200':
+            description: All users.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/UserList' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+      post:
+        operationId: createUser
+        tags: [users]
+        summary: Create a user (admin only)
+        description: >
+          Session-only: a request authenticated with an API key is refused
+          (403), so a leaked key cannot mint an account that outlives its
+          revocation.
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateUserRequest' }
+        responses:
+          '201':
+            description: User created.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/User' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '409': { $ref: '../openapi.yaml#/components/responses/Conflict' }
+
+    user:
+      parameters:
+        - $ref: '../openapi.yaml#/components/parameters/IdPath'
+      patch:
+        operationId: updateUser
+        tags: [users]
+        summary: Change another user's role and/or disable or re-enable them (admin only)
+        description: >
+          Send at least one of `role` and `disabled`. Disabling (offboarding) ends
+          the user's access immediately: password and SSO login are refused, every
+          session is deleted, and their API keys stop authenticating. `disabled:
+          false` re-enables the account (sessions are not restored; keys work
+          again). An admin cannot change their own row (403), and the last active
+          admin cannot be demoted or disabled (409). An unknown or malformed id is
+          404 (problem+json). Session-only: an API key is refused (403).
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpdateUserRequest' }
+        responses:
+          '200':
+            description: The user after the change.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/UserListItem' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+          '409': { $ref: '../openapi.yaml#/components/responses/Conflict' }
+      delete:
+        operationId: deleteUser
+        tags: [users]
+        summary: Delete another user, with their sessions and API keys (admin only)
+        description: >
+          Permanent. Prefer disabling (PATCH `disabled: true`), which keeps the row
+          audit history refers to. Self-delete is 403; deleting the last active
+          admin is 409; an unknown id is 404. Session-only: an API key is
+          refused (403).
+        responses:
+          '204': { description: User deleted. }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+          '409': { $ref: '../openapi.yaml#/components/responses/Conflict' }
+
+    revokeUserSessions:
+      parameters:
+        - $ref: '../openapi.yaml#/components/parameters/IdPath'
+      post:
+        operationId: revokeUserSessions
+        tags: [users]
+        summary: Sign another user out of every session (admin only)
+        description: >
+          Deletes all of the user's sessions; they must log in again. API keys are
+          separate credentials and keep working (disable the user to stop them).
+          Not allowed on your own account (403). No request body. Session-only:
+          an API key is refused (403).
+        responses:
+          '204': { description: Sessions revoked. }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    authProviders:
+      get:
+        operationId: listAuthProviders
+        tags: [auth]
+        summary: Available authentication methods (no auth — pre-login discovery)
+        description: >
+          Password login is omitted when an authenticating proxy (oauth2-proxy /
+          IAP) fronts the app (unless PASSWORD_LOGIN_BREAK_GLASS=true); OAuth
+          entries appear only when configured.
+        security: []
+        responses:
+          '200':
+            description: The login methods the frontend should render.
+            content:
+              application/json:
+                schema:
+                  type: array
+                  items: { $ref: '#/components/schemas/AuthProvider' }
+
+  schemas:
+    AuthProvider:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, enum: [password, google, okta] }
+        name: { type: string }
+    Role:
+      type: string
+      enum: [admin, analyst, viewer]
+    User:
+      type: object
+      required: [id, email, role]
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/Role' }
+    UserList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/UserListItem' }
+    UserListItem:
+      type: object
+      required: [id, email, role, totp_enabled, created_at, disabled, disabled_at]
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/Role' }
+        totp_enabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        disabled: { type: boolean, description: True when an admin has disabled (offboarded) the user. }
+        disabled_at: { type: string, format: date-time, nullable: true, description: When the user was disabled; null while active. }
+    UpdateUserRequest:
+      type: object
+      minProperties: 1
+      properties:
+        role: { $ref: '#/components/schemas/Role' }
+        disabled: { type: boolean }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+        totp_code: { type: string }
+    CreateUserRequest:
+      type: object
+      required: [email, password, role]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+        role: { $ref: '#/components/schemas/Role' }

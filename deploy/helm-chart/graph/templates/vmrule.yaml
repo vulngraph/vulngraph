@@ -1,0 +1,44 @@
+{{- if .Values.alerts.enabled }}
+# VMRule — the alerting half of the metrics loop. Requires VictoriaMetrics
+# (vmalert + the VMRule CRD), not the Prometheus Operator: metrics are scraped
+# from pod prometheus.io/* annotations by a vmagent, and alerts are evaluated
+# by vmalert from VMRule CRs. A ServiceMonitor/PodMonitor is a different
+# scrape mechanism entirely and would be inert here.
+#
+# Your vmalert's ruleSelector/ruleNamespaceSelector configuration decides which
+# VMRule CRs it actually evaluates — both the labels below (alerts.ruleLabels)
+# and the namespace (alerts.namespace) must match what it's configured to
+# select, or the rules are accepted, stored, and silently never evaluated.
+# Verify against your own vmalert config before relying on this.
+{{- /* Label values are strings; --set turns "true" or "1" into a bool or number. */}}
+{{- $alertLabels := dict }}
+{{- range $k, $v := .Values.alerts.labels }}{{ $_ := set $alertLabels $k (toString $v) }}{{ end }}
+{{- $rules := .Files.Get "alerts/rules.yaml" | replace "__NAMESPACE__" .Release.Namespace | fromYaml }}
+{{- /* The SCC feed runs only with config.sccOrgId set; its absent() rule would otherwise fire forever. */}}
+{{- $groups := list }}
+{{- range $rules.groups }}
+{{- if or (ne .name "graph-intel-scc") $.Values.config.sccOrgId }}
+{{- $groups = append $groups . }}
+{{- end }}
+{{- end }}
+{{- $_ := set $rules "groups" $groups }}
+{{- range $rules.groups }}
+{{- range .rules }}
+{{- $_ := set . "labels" (merge (dict) (.labels | default dict) $alertLabels) }}
+{{- end }}
+{{- end }}
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  # alerts.namespace is shared by every install (default monitoring), so the
+  # name carries the release namespace and name, like the ClusterRoles.
+  name: {{ include "graph.clusterScopedName" (dict "suffix" "alerts" "Release" .Release) }}
+  namespace: {{ .Values.alerts.namespace }}
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+    {{- range $k, $v := .Values.alerts.ruleLabels }}
+    {{ $k }}: {{ toString $v | quote }}
+    {{- end }}
+spec:
+  {{- toYaml $rules | nindent 2 }}
+{{- end }}

@@ -1,0 +1,265 @@
+# Asset domain (internal/app/asset). Inventory + blast radius.
+components:
+  pathItems:
+    listAssets:
+      get:
+        operationId: listAssets
+        tags: [assets]
+        summary: List assets, filtered + paginated
+        parameters:
+          - { name: provider, in: query, schema: { type: string } }
+          - { name: type, in: query, schema: { type: string } }
+          - { name: region, in: query, schema: { type: string } }
+          - { name: account_id, in: query, schema: { type: string } }
+          - { name: q, in: query, description: case-insensitive substring on name or id, schema: { type: string } }
+          - { name: exposed, in: query, description: '`true` restricts to assets with a fresh exposed_to_internet edge.', schema: { type: boolean } }
+          - { name: min_score, in: query, description: Minimum asset risk score. Not supported with sort=risk (400)., schema: { type: integer, minimum: 0 } }
+          - { name: sort, in: query, description: '`risk` returns assets with findings, worst-score first (a single ranked page, no cursor); otherwise the keyset inventory. It ranks the whole estate, so combining it with any inventory filter (provider, type, region, account_id, q, exposed, min_score, cursor) is a 400 rather than a silently unfiltered result.', schema: { type: string, enum: [risk] } }
+          - { name: limit, in: query, schema: { type: integer, minimum: 0 } }
+          - { name: cursor, in: query, description: opaque keyset cursor from a prior page's next_cursor, schema: { type: string } }
+        responses:
+          '200':
+            description: A page of assets.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/AssetPage' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    getAssetsSummary:
+      get:
+        operationId: getAssetsSummary
+        tags: [assets]
+        summary: Asset inventory counts by provider and type
+        description: >-
+          Live inventory only: dead ephemeral resources (pods/containers/jobs past
+          the liveness cutoff) and IaC declaration rows are excluded, and assets are
+          counted by distinct id. total is exact; the by_provider figures can sum
+          higher than it, because an asset discovered under two providers (a package
+          seen in both a container image and a GitHub SBOM) genuinely belongs to both.
+        responses:
+          '200':
+            description: Inventory breakdown.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/AssetSummary' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    getAsset:
+      get:
+        operationId: getAsset
+        tags: [assets]
+        summary: Get one asset
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '200':
+            description: The asset.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/Asset' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    getBlastRadius:
+      get:
+        operationId: getBlastRadius
+        tags: [assets]
+        summary: Assets reachable from a seed asset
+        parameters:
+          - { $ref: '../openapi.yaml#/components/parameters/IdPath' }
+          - name: depth
+            in: query
+            description: Max traversal hops (default 3).
+            schema: { type: integer }
+          - name: direction
+            in: query
+            description: "Traversal direction: out (what this asset can reach, default), in (what can reach it), or both."
+            schema: { type: string, enum: [out, in, both] }
+        responses:
+          '200':
+            description: The blast radius.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/BlastRadius' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    getAssetChanges:
+      get:
+        operationId: getAssetChanges
+        tags: [assets]
+        summary: Per-field change history for an asset (drift timeline)
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '200':
+            description: The asset's change history, newest first (up to 100 entries).
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/AssetChangeList' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    listDriftEvents:
+      get:
+        operationId: listDriftEvents
+        tags: [assets]
+        summary: Inventory drift events (new assets, exposure changes, changed assets)
+        parameters:
+          - { name: since, in: query, description: 'Lookback window as a Go duration (e.g. 24h). Default 24h, capped at 720h (30 days).', schema: { type: string } }
+          - { name: limit, in: query, description: 'Max events to return (1-500, default 200).', schema: { type: integer, minimum: 1, maximum: 500 } }
+        responses:
+          '200':
+            description: Drift events within the window.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/DriftEventList' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+  schemas:
+    AssetPage:
+      type: object
+      description: A page of assets. next_cursor is present only when more may follow.
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Asset' }
+        next_cursor: { type: string }
+    AssetSummary:
+      type: object
+      description: Inventory counts total, by provider, and by type (drives the filter UI).
+      required: [total, by_provider, by_type]
+      properties:
+        total: { type: integer }
+        by_provider:
+          type: object
+          additionalProperties: { type: integer }
+        by_type:
+          type: object
+          additionalProperties: { type: integer }
+    Asset:
+      type: object
+      required: [id, name, type, provider, region, risk_score, last_seen, environment, environment_source]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        type: { type: string }
+        provider: { type: string }
+        region: { type: string }
+        account_id: { type: string }
+        endpoint: { type: string }
+        public_ip: { type: string }
+        private_ip: { type: string }
+        domain: { type: string }
+        risk_score: { type: integer, minimum: 0, maximum: 100, deprecated: true, description: "Stored base score before graph propagation: the correlate sweep raises it to 80 (critical) or 60 (high) from the asset's worst finding, and CIEM raises it from privilege-escalation paths. The latest asset write wins, so a sync re-ingest can reset it to 0 until those run again; 0 is not a measurement of safety. Use finding_count/max_score." }
+        finding_count: { type: integer, description: Number of findings on this asset (its real risk). }
+        max_score: { type: integer, minimum: 0, maximum: 100, description: Highest enriched finding score on this asset. }
+        risk_band: { type: string, description: Score band of the worst finding on this asset. }
+        tags:
+          type: object
+          additionalProperties: { type: string }
+        metadata:
+          type: object
+          description: Type-specific context (e.g. k8s namespace/cluster_ip/selector, dns target).
+          additionalProperties: { type: string }
+        last_seen: { type: string, format: date-time }
+        environment:
+          type: string
+          enum: [prod, staging, dev, unknown]
+          description: >-
+            Deployment environment, classified from env/environment/stage/tier tags
+            (incl. namespaced keys), then metadata, then the Kubernetes namespace,
+            then a named account/project id. "unknown" is a real state (nothing
+            matched, or the evidence conflicted) and is treated as production
+            wherever it guards a change.
+        environment_source:
+          type: string
+          description: The evidence for environment, e.g. "tag:env", "metadata:environment", "namespace", "account_id", "conflict:tag". Empty when nothing matched.
+        owner: { $ref: '#/components/schemas/AssetOwner' }
+    OwnerSource:
+      type: string
+      description: >-
+        Which tier named the owner (ADR 089): `tag` (an explicit owner/team tag),
+        `codeowners` (the defining repo's CODEOWNERS rule for the declaring file),
+        `iac` (the repo that declares the resource via defined_in), or `none` —
+        every tier was consulted and none named an owner (unowned is a real,
+        visible state). The empty string means resolution has not run yet.
+      enum: ['', tag, codeowners, iac, none]
+    AssetOwner:
+      type: object
+      description: >-
+        The asset's single resolved owner. Served on the single-asset read only;
+        absent when resolution failed (a failed lookup is not "unowned").
+      required: [team, source]
+      properties:
+        team: { type: string, description: 'Normalised owner team (lower-case; "@org/team" handles reduced to "team"; "repo:org/name" when only the declaring repo is known). Empty when source is none.' }
+        source: { $ref: '#/components/schemas/OwnerSource' }
+        confidence: { type: string, enum: [high, medium, low] }
+        evidence: { type: string, description: 'The exact claim, e.g. "tag:team", "codeowners:org/repo:/infra/", "defined_in:org/repo".' }
+    Edge:
+      type: object
+      required: [src_id, dst_id, edge_type]
+      properties:
+        src_id: { type: string }
+        dst_id: { type: string }
+        edge_type: { type: string }
+    BlastRadius:
+      type: object
+      required: [seed_id, max_depth, truncated, assets, edges]
+      properties:
+        seed_id: { type: string }
+        max_depth: { type: integer }
+        truncated: { type: boolean }
+        assets:
+          type: array
+          items: { $ref: '#/components/schemas/Asset' }
+        edges:
+          type: array
+          items: { $ref: '#/components/schemas/Edge' }
+    AssetChangeList:
+      type: object
+      required: [changes]
+      properties:
+        changes:
+          type: array
+          items: { $ref: '#/components/schemas/AssetChange' }
+    AssetChange:
+      type: object
+      required: [field, old_value, new_value, changed_at]
+      properties:
+        field: { type: string, description: Which asset field changed. }
+        old_value: { type: string }
+        new_value: { type: string }
+        changed_at: { type: string, format: date-time }
+    DriftEventList:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/DriftEvent' }
+    DriftEvent:
+      type: object
+      required: [kind, asset_id, asset_name, asset_type, provider, account_id, detected_at, findings_count, max_score, findings_known]
+      properties:
+        kind:
+          type: string
+          enum: [new_asset, new_exposure, removed_exposure, changed]
+        asset_id: { type: string, description: 'Full resource identifier — ARN for AWS, resource name for GCP.' }
+        asset_name: { type: string }
+        asset_type: { type: string }
+        provider: { type: string }
+        account_id: { type: string }
+        region: { type: string }
+        public_ip: { type: string }
+        private_ip: { type: string }
+        domain: { type: string }
+        endpoint: { type: string }
+        detected_at: { type: string, format: date-time }
+        findings_count: { type: integer, description: Open findings on this asset. Meaningful only when findings_known is true. }
+        max_score: { type: integer, description: Worst enriched score (0 = none). Meaningful only when findings_known is true. }
+        findings_known: { type: boolean, description: False when the findings lookup failed; findings_count and max_score are then 0 because nothing was read. }
+        why: { type: string, description: Human-readable explanation of the change. }
+        old_value: { type: string }
+        new_value: { type: string }
+        field: { type: string, description: What field changed. }

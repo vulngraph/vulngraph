@@ -1,0 +1,10 @@
+# Known differences between a matrix and its recorded upstream (ADR 092).
+# TestMatricesMatchUpstreamSnapshot fails on any difference NOT listed here;
+# benchmark-watch keeps reporting listed ones as drift until the matrix owner
+# reconciles them. Remove an entry in the same change that adds or drops the
+# row: an entry that is no longer a difference fails the test too.
+cis-gke:
+  missing_from_matrix:
+    "4.1.10": "In kube-bench gke-1.9.0 only. The matrix pins CIS GKE 2.0.0 (IDs from Tenable's audit listing, ADR 090), which kube-bench does not publish yet."
+    "5.1.4": "In kube-bench gke-1.9.0 only. The matrix pins CIS GKE 2.0.0 (IDs from Tenable's audit listing, ADR 090), which kube-bench does not publish yet."
+    "5.10.4": "In kube-bench gke-1.9.0 only. The matrix pins CIS GKE 2.0.0 (IDs from Tenable's audit listing, ADR 090), which kube-bench does not publish yet."

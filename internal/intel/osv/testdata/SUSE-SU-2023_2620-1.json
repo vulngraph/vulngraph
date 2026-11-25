@@ -1,0 +1,49 @@
+{
+  "id": "SUSE-SU-2023:2620-1",
+  "summary": "Security update for openssl-3",
+  "upstream": [
+    "CVE-2023-1255",
+    "CVE-2023-2650"
+  ],
+  "severity": null,
+  "affected": [
+    {
+      "package": {
+        "name": "openssl-3",
+        "ecosystem": "SUSE:Linux Enterprise Module for Basesystem 15 SP5"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {
+              "introduced": "0"
+            },
+            {
+              "fixed": "3.0.8-150500.5.3.1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "package": {
+        "name": "openssl-3",
+        "ecosystem": "openSUSE:Leap 15.5"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {
+              "introduced": "0"
+            },
+            {
+              "fixed": "3.0.8-150500.5.3.1"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

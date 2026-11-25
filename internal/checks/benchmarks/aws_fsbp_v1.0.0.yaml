@@ -1,0 +1,2610 @@
+benchmark: aws-fsbp
+name: AWS Foundational Security Best Practices
+version: "1.0.0"
+family: fsbp
+providers: [aws]
+source: https://docs.aws.amazon.com/securityhub/latest/userguide/fsbp-standard.html
+controls:
+  - id: "Account.1"
+    title: "Security contact registered for the account"
+    service: account
+    status: covered
+    check_ids: [aws-account-no-security-contact]
+    reason: "account:GetAlternateContact (SECURITY) on aws_account_settings."
+    severity: medium
+  - id: "ACM.1"
+    title: "Certificates renewed before expiry window"
+    service: acm
+    status: covered
+    check_ids: [acm-cert-expiring-soon]
+    reason: "Collector sets expiring_soon at <=30 days (FSBP default daysToExpiration=30) for issued and imported certificates."
+    severity: medium
+  - id: "ACM.2"
+    title: "ACM RSA certificates use keys of 2048+ bits"
+    service: acm
+    status: covered
+    check_ids: [aws-acm-rsa-key-too-short]
+    reason: "`key_algorithm` RSA_<n> with n < 2048. ListCertificates now passes every key type (the API default lists RSA_2048 only, which hid RSA_1024 certificates)."
+    severity: high
+  - id: "APIGateway.1"
+    title: "API Gateway stage execution logging enabled"
+    service: apigateway
+    status: covered
+    check_ids: [aws-apigateway-stage-execution-logging-disabled]
+    reason: "apigateway:GetStages / apigatewayv2:GetStages per API on api_gateway_stage. REST: the */* loggingLevel (unset = OFF) must be ERROR or INFO and no method override may set OFF; WebSocket: defaultRouteSettings.LoggingLevel, route overrides likewise. HTTP API stages have no execution logging and are not graded. Low (audit hygiene)."
+    severity: medium
+  - id: "APIGateway.2"
+    title: "REST stages use client certificate for backend"
+    service: apigateway
+    status: covered
+    check_ids: [aws-apigateway-stage-no-client-certificate]
+    reason: "REST stage clientCertificateId empty (apigateway:GetStages). Low: backend authentication of API Gateway is defence in depth."
+    severity: medium
+  - id: "APIGateway.3"
+    title: "REST stages have X-Ray tracing enabled"
+    service: apigateway
+    status: covered
+    check_ids: [aws-apigateway-stage-xray-disabled]
+    reason: "REST stage tracingEnabled=false (apigateway:GetStages). Low."
+    severity: low
+  - id: "APIGateway.4"
+    title: "API Gateway associated with a WAF web ACL"
+    service: apigateway
+    status: covered
+    check_ids: [aws-apigateway-stage-no-waf]
+    reason: "REST stage webAclArn empty (apigateway:GetStages, which reports the associated WAF web ACL). Low: reachability is aws-apigateway-public-endpoint's finding."
+    severity: medium
+  - id: "APIGateway.5"
+    title: "REST API cache encrypted at rest"
+    service: apigateway
+    status: covered
+    check_ids: [aws-apigateway-stage-cache-unencrypted]
+    reason: "REST stage with the cache cluster on and a methodSettings entry with cachingEnabled and not cacheDataEncrypted; methods with caching off are not graded (as the control), and method caching without a cache cluster caches nothing so is not graded either. Low."
+    severity: medium
+  - id: "APIGateway.8"
+    title: "API Gateway V2 routes specify authorization"
+    service: apigateway
+    status: covered
+    check_ids: [aws-apigatewayv2-route-no-authorization]
+    reason: "apigatewayv2:GetRoutes rolled up on the v2 api_gateway asset (one finding per API naming the routes). Authorization type NONE or unset fails; on WebSocket APIs only $connect is graded (no other route can carry an authorizer) and a WebSocket API with no $connect route fails as anonymous. Medium (the FSBP grade); aws-apigateway-public-endpoint steps aside for the same API. An API with its execute-api endpoint disabled and no custom domain mapped (apigatewayv2:GetDomainNames + GetApiMappings) answers on no URL and is not graded; unread mappings keep it reachable. A failed route read leaves the keys absent."
+    severity: medium
+  - id: "APIGateway.9"
+    title: "API Gateway V2 stages have access logging"
+    service: apigateway
+    status: partial
+    check_ids: [aws-apigateway-access-logging-off]
+    reason: "Every v2 (HTTP and WebSocket) stage the control covers is graded: apigatewayv2:GetStages accessLogSettings.destinationArn as access_log_destination on api_gateway_stage (\"\" when off, absent when unread), one finding per stage. Partial, not covered, by choice: the same check also fires on REST stages, which CIS AWS 4.10 needs and APIGateway.9 does not cover, so mapping this row is broader than the control (an api_type=REST finding is CIS 4.10 evidence only). Splitting it would put two findings on every v2 stage."
+    severity: medium
+  - id: "APIGateway.10"
+    title: "V2 private integrations use HTTPS"
+    service: apigateway
+    status: covered
+    check_ids: [aws-apigatewayv2-private-integration-no-tls]
+    reason: "apigatewayv2:GetIntegrations: VPC_LINK integrations with no TlsConfig, rolled up on the API. Low."
+    severity: medium
+  - id: "APIGateway.11"
+    title: "Custom domains use recommended TLS policy"
+    service: apigateway
+    status: covered
+    check_ids: [aws-apigateway-domain-weak-tls-policy]
+    reason: "apigateway:GetDomainNames (covers custom domains of REST, HTTP and WebSocket APIs) securityPolicy outside the five 2025 enhanced policies the control accepts. TLS_1_0 Medium, any other Low."
+    severity: medium
+  - id: "AppSync.2"
+    title: "AppSync field-level logging enabled"
+    service: appsync
+    status: covered
+    check_ids: [aws-appsync-field-logging-disabled]
+    reason: "appsync:ListGraphqlApis logConfig.fieldLogLevel NONE, or no log configuration at all. ERROR, ALL, INFO and DEBUG all count as enabled."
+    severity: medium
+  - id: "AppSync.5"
+    title: "AppSync GraphQL APIs avoid API-key auth"
+    service: appsync
+    status: covered
+    check_ids: [aws-appsync-api-key-auth]
+    reason: "appsync:ListGraphqlApis authenticationType or any additionalAuthenticationProviders entry is API_KEY."
+    severity: high
+  - id: "Athena.4"
+    title: "Athena workgroup logging enabled"
+    service: athena
+    status: covered
+    check_ids: [aws-athena-workgroup-no-metrics]
+    reason: "athena:ListWorkGroups + GetWorkGroup PublishCloudWatchMetricsEnabled (absent in a read configuration = off). The stock primary workgroup is graded only when athena:ListQueryExecutions shows a query ran in it, so unused Athena is not reported in every region."
+    severity: medium
+  - id: "AutoScaling.1"
+    title: "Load-balanced ASGs use ELB health checks"
+    service: autoscaling
+    status: covered
+    check_ids: [aws-asg-no-elb-health-check]
+    reason: "autoscaling:DescribeAutoScalingGroups: a group with load balancers or target groups (or ELB traffic sources) whose HealthCheckType does not include ELB."
+    severity: low
+  - id: "AutoScaling.2"
+    title: "ASG spans multiple Availability Zones"
+    service: autoscaling
+    status: covered
+    check_ids: [aws-asg-single-az]
+    reason: "DescribeAutoScalingGroups AvailabilityZones count < 2 (the FSBP default minimum)."
+    severity: medium
+  - id: "AutoScaling.3"
+    title: "ASG launch configurations require IMDSv2"
+    service: autoscaling
+    status: covered
+    check_ids: [aws-asg-launch-config-imdsv1]
+    reason: "autoscaling:DescribeLaunchConfigurations: HttpTokens optional or no metadata options (FSBP fails both); a disabled endpoint is exempt. Medium when a group uses the configuration, Low otherwise."
+    severity: high
+  - id: "Autoscaling.5"
+    title: "ASG launch configurations assign no public IPs"
+    service: autoscaling
+    status: covered
+    check_ids: [aws-asg-launch-config-public-ip]
+    reason: "DescribeLaunchConfigurations AssociatePublicIpAddress=true. Medium when a group uses the configuration, Low otherwise."
+    severity: high
+  - id: "AutoScaling.6"
+    title: "ASG uses multiple instance types across AZs"
+    service: autoscaling
+    status: covered
+    check_ids: [aws-asg-single-instance-type]
+    reason: "A group without a mixed instances policy of two or more distinct types (attribute-based InstanceRequirements count as multiple). Info."
+    severity: medium
+  - id: "AutoScaling.9"
+    title: "ASG uses EC2 launch templates"
+    service: autoscaling
+    status: covered
+    check_ids: [aws-asg-uses-launch-configuration]
+    reason: "A group launching from LaunchConfigurationName rather than a launch template or a mixed instances policy's template."
+    severity: medium
+  - id: "Backup.1"
+    title: "Backup recovery points encrypted at rest"
+    service: backup
+    status: covered
+    check_ids: [aws-backup-recovery-points-unencrypted]
+    reason: "backup:ListRecoveryPointsByBackupVault per vault (skipped for vaults ListBackupVaults reports empty), counting recovery points with IsEncrypted=false; one finding per vault with the count as evidence. A partially read listing leaves the count absent."
+    severity: medium
+  - id: "Bedrock.1"
+    title: "Bedrock data sources encrypted with a customer managed KMS key"
+    service: bedrock
+    status: missing
+    reason: "No Bedrock knowledge-base collector: needs bedrock-agent:ListKnowledgeBases, ListDataSources and GetDataSource (serverSideEncryptionConfiguration.kmsKeyArn) per region. Not collected, so not graded."
+    severity: medium
+  - id: "BedrockAgentCore.1"
+    title: "AgentCore runtimes use VPC network mode"
+    service: bedrockagentcore
+    status: covered
+    check_ids: [aws-agentcore-runtime-public-network]
+    reason: "GetAgentRuntime NetworkConfiguration.NetworkMode=PUBLIC; runtimes with a CapacityProviderConfiguration are excluded, as the control specifies."
+    severity: high
+  - id: "BedrockAgentCore.2"
+    title: "AgentCore gateways require inbound authorization"
+    service: bedrockagentcore
+    status: covered
+    check_ids: [aws-agentcore-gateway-no-inbound-auth]
+    reason: "ListGateways authorizerType=NONE."
+    severity: high
+  - id: "BedrockAgentCore.5"
+    title: "AgentCore custom browsers avoid public network mode"
+    service: bedrockagentcore
+    status: covered
+    check_ids: [aws-agentcore-browser-public-network]
+    reason: "ListBrowsers (type CUSTOM) + GetBrowser NetworkConfiguration.NetworkMode=PUBLIC."
+    severity: high
+  - id: "BedrockAgentCore.6"
+    title: "AgentCore custom browsers record sessions"
+    service: bedrockagentcore
+    status: covered
+    check_ids: [aws-agentcore-browser-no-session-recording]
+    reason: "GetBrowser recording disabled or absent, or enabled without an S3 location (custom browsers)."
+    severity: medium
+  - id: "BedrockAgentCore.7"
+    title: "AgentCore custom code interpreters use a private network"
+    service: bedrock-agentcore
+    status: missing
+    reason: "The AgentCore collector lists runtimes, gateways and custom browsers only; custom code interpreters (bedrock-agentcore-control:ListCodeInterpreters + GetCodeInterpreter networkConfiguration.networkMode, PUBLIC or SANDBOX fails) are not collected yet."
+    severity: high
+  - id: "CloudFormation.3"
+    title: "CloudFormation stacks have termination protection"
+    service: cloudformation
+    status: covered
+    check_ids: [aws-cfn-stack-no-termination-protection]
+    reason: "`EnableTerminationProtection` false on a root stack (nested stacks inherit it from the root). The unfiltered DescribeStacks listing may leave the flag out, so a root stack listed without it is described on its own (bounded, 4 at a time); a failed describe leaves it unknown."
+    severity: medium
+  - id: "CloudFormation.4"
+    title: "CloudFormation stacks use a service role"
+    service: cloudformation
+    status: covered
+    check_ids: [aws-cfn-stack-no-service-role]
+    reason: "cloudformation:DescribeStacks `RoleARN` empty on a root stack (nested stacks use the root's role). A stack named like a StackSet stack instance (StackSet-<set>-<id>) is graded Info rather than Low: a StackSet deploys through its execution or service-linked role, never the caller's credentials, but the name is the only evidence a member account can read (ListStackInstances needs the StackSet admin account) and anyone can choose it, so it lowers the grade and never silences the finding."
+    severity: medium
+  - id: "CloudFront.1"
+    title: "CloudFront distribution sets a default root object"
+    service: cloudfront
+    status: covered
+    check_ids: [aws-cloudfront-no-default-root-object]
+    reason: "GetDistributionConfig DefaultRootObject empty on a distribution with an S3 origin (the root can list or error out the bucket), Low. Distributions with only application origins are skipped: the application answers the root itself. Unread config = key absent."
+    severity: high
+  - id: "CloudFront.3"
+    title: "CloudFront requires HTTPS to viewers"
+    service: cloudfront
+    status: covered
+    check_ids: [aws-cloudfront-viewer-http-allowed]
+    reason: "Default and every ordered cache behaviour from the ListDistributions summary; any ViewerProtocolPolicy allow-all fires, naming the behaviours."
+    severity: medium
+  - id: "CloudFront.4"
+    title: "CloudFront origin failover configured"
+    service: cloudfront
+    status: covered
+    check_ids: [aws-cloudfront-no-origin-failover]
+    reason: "OriginGroups.Quantity = 0 from the summary; Info (resilience only)."
+    severity: low
+  - id: "CloudFront.5"
+    title: "CloudFront access logging enabled"
+    service: cloudfront
+    status: covered
+    check_ids: [aws-cloudfront-logging-disabled]
+    reason: "Logged = legacy Logging.Enabled (GetDistributionConfig) OR a standard-logging v2 delivery whose source names the distribution ARN (logs:DescribeDeliverySources + DescribeDeliveries, us-east-1). Fires only when both were read and neither is on; either read failing leaves logging_enabled absent unless the other proves it on."
+    severity: medium
+  - id: "CloudFront.6"
+    title: "CloudFront distribution has WAF attached"
+    service: cloudfront
+    status: covered
+    check_ids: [aws-cloudfront-no-waf]
+    reason: "WebACLId empty in the summary (v2 ARN or Classic id both count); Low, defense in depth."
+    severity: medium
+  - id: "CloudFront.7"
+    title: "CloudFront uses a custom TLS certificate"
+    service: cloudfront
+    status: covered
+    check_ids: [aws-cloudfront-default-certificate]
+    reason: "ViewerCertificate.CloudFrontDefaultCertificate = true."
+    severity: low
+  - id: "CloudFront.8"
+    title: "CloudFront serves HTTPS via SNI"
+    service: cloudfront
+    status: covered
+    check_ids: [aws-cloudfront-dedicated-ip-ssl]
+    reason: "Custom certificate with SSLSupportMethod vip or static-ip; Info. Default-certificate distributions are CloudFront.7's."
+    severity: low
+  - id: "CloudFront.9"
+    title: "CloudFront encrypts traffic to custom origins"
+    service: cloudfront
+    status: covered
+    check_ids: [aws-cloudfront-origin-unencrypted]
+    reason: "Custom origins with OriginProtocolPolicy http-only, or match-viewer where a behaviour routing to the origin (directly or via an origin group) is allow-all. S3 website endpoints are custom HTTP-only origins and fire, as in the control. VPC origins (protocol on a separate resource) are not graded."
+    severity: medium
+  - id: "CloudFront.10"
+    title: "CloudFront avoids deprecated SSL to custom origins"
+    service: cloudfront
+    status: covered
+    check_ids: [aws-cloudfront-origin-sslv3]
+    reason: "SSLv3 in a custom origin's OriginSslProtocols; http-only origins are CloudFront.9's finding (they never negotiate TLS)."
+    severity: medium
+  - id: "CloudFront.12"
+    title: "CloudFront S3 origins point to existing buckets"
+    service: cloudfront
+    status: covered
+    check_ids: [aws-cloudfront-dangling-s3-origin]
+    reason: "Every S3 origin bucket (REST and static-website endpoints, a superset of the control, which covers REST only; both are claimable) is probed with s3:HeadBucket: 404 = missing (fires, High; Low on a disabled distribution); 403/301 = exists, and is cross-checked against the account's own buckets (s3:ListBuckets): owned passes, not owned is another account's bucket behind the distribution (fires, Medium, possible takeover); anything else, or an unreadable bucket list, = unknown (key absent unless another bucket is proven missing or foreign)."
+    severity: high
+  - id: "CloudFront.13"
+    title: "CloudFront S3 origins use origin access control"
+    service: cloudfront
+    status: covered
+    check_ids: [aws-cloudfront-s3-origin-no-oac]
+    reason: "S3 REST origins (S3OriginConfig set or an S3 REST endpoint) with no OriginAccessControlId; a legacy OAI does not count, per the control. An origin whose bucket is proven missing is reported by aws-cloudfront-dangling-s3-origin instead."
+    severity: medium
+  - id: "CloudFront.15"
+    title: "CloudFront uses the recommended TLS policy"
+    service: cloudfront
+    status: covered
+    check_ids: [aws-cloudfront-weak-viewer-tls]
+    reason: "Custom-certificate distributions whose MinimumProtocolVersion is older than TLSv1.2_2021 (explicit list, so newer policies such as TLSv1.2_2025/TLSv1.3_2025 pass). Medium when TLS 1.0/1.1 or SSLv3 remain, Low for TLSv1.2_2018/2019. Default-certificate distributions cannot set a policy and are CloudFront.7's."
+    severity: medium
+  - id: "CloudFront.16"
+    title: "CloudFront Lambda URL origins use OAC"
+    service: cloudfront
+    status: covered
+    check_ids: [aws-cloudfront-lambda-url-origin-no-oac]
+    reason: "Origins on *.lambda-url.<region>.on.aws without OriginAccessControlId."
+    severity: medium
+  - id: "CloudFront.17"
+    title: "CloudFront signed URLs use trusted key groups"
+    service: cloudfront
+    status: covered
+    check_ids: [aws-cloudfront-legacy-trusted-signers]
+    reason: "Any cache behaviour with TrustedSigners.Enabled = true (root CloudFront key pairs) instead of trusted key groups."
+    severity: medium
+  - id: "CloudTrail.1"
+    title: "Multi-Region trail logging read and write management events"
+    service: cloudtrail
+    status: covered
+    check_ids: [aws-cloudtrail-no-multiregion-trail, aws-cloudtrail-not-logging]
+    reason: "Account-level on aws_account_settings, including an account with no trail: no multi-region trail is logging, or none that is logging records read AND write management events (cloudtrail:GetEventSelectors, basic ReadWriteType All with IncludeManagementEvents, or an advanced Management selector without a readOnly filter and with no other condition; graded Low). Excluded management event sources count as incomplete.."
+    severity: high
+  - id: "CloudTrail.2"
+    title: "CloudTrail logs encrypted with KMS"
+    service: cloudtrail
+    status: covered
+    check_ids: [aws-cloudtrail-no-kms-encryption]
+    reason: "KmsKeyId from DescribeTrails stored as `kms_key_id`."
+    severity: medium
+  - id: "CloudTrail.4"
+    title: "CloudTrail log file validation enabled"
+    service: cloudtrail
+    status: covered
+    check_ids: [aws-cloudtrail-no-log-validation]
+    severity: low
+  - id: "CloudTrail.5"
+    title: "Trails deliver to CloudWatch Logs"
+    service: cloudtrail
+    status: covered
+    check_ids: [aws-cloudtrail-no-cloudwatch-logs]
+    reason: "`cloudwatch_log_group` is written empty when the trail has none."
+    severity: medium
+  - id: "CodeBuild.1"
+    title: "CodeBuild Bitbucket source URLs hold no credentials"
+    service: codebuild
+    status: covered
+    check_ids: [aws-codebuild-source-url-credentials]
+    reason: "codebuild:BatchGetProjects source.location and every secondarySources location; fires on any URL carrying userinfo (user:password@ or token@), Bitbucket and other providers alike. Only source identifiers are stored, never the credential."
+    severity: critical
+  - id: "CodeBuild.2"
+    title: "CodeBuild env vars hold no plaintext credentials"
+    service: codebuild
+    status: covered
+    check_ids: [aws-codebuild-plaintext-aws-credentials]
+    reason: "codebuild:BatchGetProjects environment.environmentVariables: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY of type PLAINTEXT (an omitted type is PLAINTEXT). Variable names only are stored."
+    severity: critical
+  - id: "CodeBuild.3"
+    title: "CodeBuild S3 logs encrypted"
+    service: codebuild
+    status: covered
+    check_ids: [aws-codebuild-s3-logs-unencrypted]
+    reason: "codebuild:BatchGetProjects logsConfig.s3Logs: status ENABLED with encryptionDisabled=true (omitted = encrypted, the API default)."
+    severity: low
+  - id: "CodeBuild.4"
+    title: "CodeBuild projects configure logging"
+    service: codebuild
+    status: covered
+    check_ids: [aws-codebuild-logging-disabled]
+    reason: "codebuild:BatchGetProjects logsConfig: fires only when both cloudWatchLogs and s3Logs report DISABLED."
+    severity: medium
+  - id: "CodeBuild.7"
+    title: "CodeBuild report exports encrypted at rest"
+    service: codebuild
+    status: covered
+    check_ids: [aws-codebuild-report-export-unencrypted]
+    reason: "codebuild:ListReportGroups + BatchGetReportGroups exportConfig: S3 export with s3Destination.encryptionDisabled=true. Neither SecurityAudit nor ViewOnlyAccess grants these two reads; the read-only role carries them as a supplemental statement."
+    severity: medium
+  - id: "Cognito.1"
+    title: "Cognito threat protection enforced for standard authentication"
+    service: cognito
+    status: covered
+    check_ids: [aws-cognito-threat-protection-not-enforced]
+    reason: "cognito-idp:DescribeUserPool UserPoolAddOns.AdvancedSecurityMode not ENFORCED (OFF when no add-ons). The same per-pool check covers custom authentication (Cognito.4): one finding per pool for either gap."
+    severity: medium
+  - id: "Cognito.2"
+    title: "Cognito identity pools disallow unauthenticated identities"
+    service: cognito
+    status: covered
+    check_ids: [aws-cognito-identity-pool-guest-access]
+    reason: "cognito-identity:ListIdentityPools + DescribeIdentityPool AllowUnauthenticatedIdentities=true."
+    severity: medium
+  - id: "Cognito.3"
+    title: "Cognito user pools enforce strong passwords"
+    service: cognito
+    status: covered
+    check_ids: [aws-cognito-weak-password-policy]
+    reason: "cognito-idp:DescribeUserPool Policies.PasswordPolicy against the Security Hub defaults: MinimumLength >= 8, all four character classes required, TemporaryPasswordValidityDays <= 7."
+    severity: medium
+  - id: "Cognito.4"
+    title: "Cognito threat protection fully enforced"
+    service: cognito
+    status: covered
+    check_ids: [aws-cognito-threat-protection-not-enforced]
+    reason: "cognito-idp:DescribeUserPool UserPoolAddOns: threat protection OFF (no add-ons = never activated), or AdvancedSecurityAdditionalFlows.CustomAuthMode not ENFORCED."
+    severity: medium
+  - id: "Cognito.5"
+    title: "Cognito user pools require MFA"
+    service: cognito
+    status: covered
+    check_ids: [aws-cognito-user-pool-no-mfa]
+    reason: "cognito-idp:DescribeUserPool: MfaConfiguration OFF on a pool whose sign-in policy offers PASSWORD as the only first factor (no sign-in policy = PASSWORD only, the API default). OPTIONAL counts as MFA enabled, as in the Config rule."
+    severity: medium
+  - id: "Cognito.6"
+    title: "Cognito user pools have deletion protection"
+    service: cognito
+    status: covered
+    check_ids: [aws-cognito-no-deletion-protection]
+    reason: "cognito-idp:DescribeUserPool DeletionProtection=INACTIVE."
+    severity: medium
+  - id: "Config.1"
+    title: "AWS Config enabled with service-linked role"
+    service: config
+    status: covered
+    check_ids: [aws-config-recorder-off, aws-config-not-service-linked-role]
+    reason: "Per region on aws_region_settings: a customer recorder that records every supported type, is recording, has a delivery channel and has not last failed (aws-config-recorder-off), and uses AWSServiceRoleForConfig (aws-config-not-service-linked-role, Info). Security Hub's own service-linked recorder is ignored, so an account relying only on it reads as having no recorder."
+    severity: critical
+  - id: "Connect.2"
+    title: "Connect instances log to CloudWatch"
+    service: connect
+    status: covered
+    check_ids: [aws-connect-flow-logs-disabled]
+    reason: "connect:ListInstances + ListInstanceAttributes `CONTACTFLOW_LOGS` false on ACTIVE instances (ListInstanceAttributes, not DescribeInstanceAttribute, is what ViewOnlyAccess grants)."
+    severity: medium
+  - id: "DataFirehose.1"
+    title: "Firehose delivery streams encrypted at rest"
+    service: datafirehose
+    status: covered
+    check_ids: [aws-firehose-not-encrypted]
+    reason: "firehose:ListDeliveryStreams + DescribeDeliveryStream DeliveryStreamEncryptionConfiguration.Status DISABLED / ENABLING_FAILED (no block = never enabled) on Direct PUT streams. Streams sourced from a Kinesis data stream or MSK store no records themselves (SSE cannot be enabled on them); their data at rest is the source's, graded by Kinesis.1."
+    severity: medium
+  - id: "DataSync.1"
+    title: "DataSync tasks have logging enabled"
+    service: datasync
+    status: covered
+    check_ids: [aws-datasync-task-logging-disabled]
+    reason: "datasync:ListTasks + DescribeTask: fires on log level OFF, or a Basic-mode task with no `CloudWatchLogGroupArn` (Enhanced-mode tasks log to /aws/datasync without one)."
+    severity: medium
+  - id: "DMS.1"
+    title: "DMS replication instances not public"
+    service: dms
+    status: covered
+    check_ids: [aws-dms-replication-instance-public]
+    reason: "dms:DescribeReplicationInstances PubliclyAccessible. Graded Low as network reachability: the instance holds no client login of its own."
+    severity: critical
+  - id: "DMS.6"
+    title: "DMS instances auto-upgrade minor versions"
+    service: dms
+    status: covered
+    check_ids: [aws-dms-auto-minor-upgrade-disabled]
+    reason: "dms:DescribeReplicationInstances AutoMinorVersionUpgrade."
+    severity: medium
+  - id: "DMS.7"
+    title: "DMS target-database task logging enabled"
+    service: dms
+    status: covered
+    check_ids: [aws-dms-task-target-logging-disabled]
+    reason: "dms:DescribeReplicationTasks ReplicationTaskSettings: Logging.EnableLogging and TARGET_APPLY + TARGET_LOAD at LOGGER_SEVERITY_DEFAULT, DEBUG or DETAILED_DEBUG; a component missing from LogComponents fails. Unreadable settings stay unknown."
+    severity: medium
+  - id: "DMS.8"
+    title: "DMS source-database task logging enabled"
+    service: dms
+    status: covered
+    check_ids: [aws-dms-task-source-logging-disabled]
+    reason: "dms:DescribeReplicationTasks ReplicationTaskSettings: Logging.EnableLogging and SOURCE_CAPTURE + SOURCE_UNLOAD at LOGGER_SEVERITY_DEFAULT or above; a missing component fails."
+    severity: medium
+  - id: "DMS.9"
+    title: "DMS endpoints use SSL"
+    service: dms
+    status: covered
+    check_ids: [aws-dms-endpoint-no-ssl]
+    reason: "dms:DescribeEndpoints SslMode = none, on engines whose transport is the SslMode setting (relational engines, MongoDB, DocumentDB, Db2, Sybase, Babelfish). HTTPS-API targets (S3, DynamoDB, Kinesis, OpenSearch, Neptune), Redshift (always SSL), Kafka (own SecurityProtocol) and Redis (DMS.12) report SslMode none by construction and are not graded."
+    severity: medium
+  - id: "DMS.10"
+    title: "DMS Neptune endpoints use IAM authorization"
+    service: dms
+    status: covered
+    check_ids: [aws-dms-neptune-endpoint-no-iam-auth]
+    reason: "dms:DescribeEndpoints NeptuneSettings.IamAuthEnabled (API default false) on neptune endpoints."
+    severity: medium
+  - id: "DMS.11"
+    title: "DMS MongoDB endpoints require authentication"
+    service: dms
+    status: covered
+    check_ids: [aws-dms-mongodb-endpoint-no-auth]
+    reason: "dms:DescribeEndpoints MongoDbSettings.AuthType = no (an omitted AuthType is the API default, password)."
+    severity: medium
+  - id: "DMS.12"
+    title: "DMS Redis endpoints use TLS"
+    service: dms
+    status: covered
+    check_ids: [aws-dms-redis-endpoint-no-tls]
+    reason: "dms:DescribeEndpoints RedisSettings.SslSecurityProtocol = plaintext (an omitted value is the API default, ssl-encryption)."
+    severity: medium
+  - id: "DMS.13"
+    title: "DMS replication instances use Multi-AZ"
+    service: dms
+    status: covered
+    check_ids: [aws-dms-replication-instance-single-az]
+    reason: "dms:DescribeReplicationInstances MultiAZ."
+    severity: medium
+  - id: "DocumentDB.1"
+    title: "DocumentDB clusters encrypted at rest"
+    service: documentdb
+    status: covered
+    check_ids: [aws-docdb-cluster-not-encrypted]
+    reason: "rds:DescribeDBClusters (engine docdb) StorageEncrypted, on docdb_cluster."
+    severity: medium
+  - id: "DocumentDB.2"
+    title: "DocumentDB backup retention long enough"
+    service: documentdb
+    status: covered
+    check_ids: [aws-docdb-cluster-short-backup-retention]
+    reason: "BackupRetentionPeriod < 7 (the default parameter)."
+    severity: medium
+  - id: "DocumentDB.3"
+    title: "DocumentDB manual cluster snapshots not public"
+    service: documentdb
+    status: covered
+    check_ids: [aws-rds-snapshot-public]
+    reason: "rds:DescribeDBClusterSnapshots (manual, no engine filter) returns docdb cluster snapshots as rds_snapshot assets, and the check reads their restore attribute regardless of engine."
+    severity: critical
+  - id: "DocumentDB.4"
+    title: "DocumentDB publishes audit logs"
+    service: documentdb
+    status: covered
+    check_ids: [aws-docdb-cluster-no-audit-log-export]
+    reason: "EnabledCloudwatchLogsExports lacks audit."
+    severity: medium
+  - id: "DocumentDB.5"
+    title: "DocumentDB clusters have deletion protection"
+    service: documentdb
+    status: covered
+    check_ids: [aws-docdb-cluster-no-deletion-protection]
+    reason: "DeletionProtection false."
+    severity: medium
+  - id: "DocumentDB.6"
+    title: "DocumentDB clusters encrypt data in transit"
+    service: documentdb
+    status: covered
+    check_ids: [aws-docdb-cluster-tls-not-required]
+    reason: "rds:DescribeDBClusterParameters tls is disabled or enabled (unset = enabled), or a member's parameter group is not in sync."
+    severity: medium
+  - id: "DynamoDB.1"
+    title: "DynamoDB tables auto-scale capacity"
+    service: dynamodb
+    status: covered
+    check_ids: [aws-dynamodb-no-autoscaling]
+    reason: "Fires on a PROVISIONED table (an omitted BillingModeSummary is the provisioned default) lacking an Application Auto Scaling target for table read or write capacity (application-autoscaling:DescribeScalableTargets, read once per region); on-demand tables pass. Default parameters only: no minimum capacity or target utilization is required, and global secondary index capacity is not graded."
+    severity: medium
+  - id: "DynamoDB.2"
+    title: "DynamoDB tables have point-in-time recovery"
+    service: dynamodb
+    status: covered
+    check_ids: [aws-dynamodb-no-pitr]
+    reason: "dynamodb:DescribeContinuousBackups PointInTimeRecoveryStatus = DISABLED."
+    severity: medium
+  - id: "DynamoDB.3"
+    title: "DAX clusters encrypted at rest"
+    service: dynamodb
+    status: covered
+    check_ids: [aws-dax-not-encrypted-at-rest]
+    reason: "dax:DescribeClusters SSEDescription.Status = DISABLED; SSE is opt-in at creation, so an omitted SSEDescription is recorded as DISABLED."
+    severity: medium
+  - id: "DynamoDB.6"
+    title: "DynamoDB tables have deletion protection"
+    service: dynamodb
+    status: covered
+    check_ids: [aws-dynamodb-no-deletion-protection]
+    reason: "dynamodb:DescribeTable DeletionProtectionEnabled = false."
+    severity: medium
+  - id: "DynamoDB.7"
+    title: "DAX clusters encrypt data in transit"
+    service: dynamodb
+    status: covered
+    check_ids: [aws-dax-not-encrypted-in-transit]
+    reason: "dax:DescribeClusters ClusterEndpointEncryptionType = NONE (an empty value is the pre-TLS NONE default)."
+    severity: medium
+  - id: "EC2.1"
+    title: "EBS snapshots not publicly restorable"
+    service: ec2
+    status: covered
+    check_ids: [aws-ebs-snapshot-public]
+    severity: critical
+  - id: "EC2.2"
+    title: "Default security groups allow no traffic"
+    service: ec2
+    status: covered
+    check_ids: [aws-sg-default-allows-traffic]
+    reason: "Rule counts are collected on every group so zero rules is an observation."
+    severity: high
+  - id: "EC2.3"
+    title: "Attached EBS volumes encrypted at rest"
+    service: ec2
+    status: covered
+    check_ids: [aws-ebs-unencrypted]
+    reason: "Fires on every unencrypted volume, attached (in-use) ones included; detached unencrypted volumes are reported too, a superset of the control."
+    severity: medium
+  - id: "EC2.4"
+    title: "Long-stopped EC2 instances removed"
+    service: ec2
+    status: covered
+    check_ids: [aws-ec2-stopped-long]
+    reason: "Stop time is parsed from StateTransitionReason (DescribeInstances); a stop reason with no timestamp leaves the age unknown and the instance ungraded."
+    severity: medium
+  - id: "EC2.6"
+    title: "VPC flow logs enabled in every VPC"
+    service: ec2
+    status: covered
+    check_ids: [aws-vpc-flow-logs-disabled]
+    reason: "ec2:DescribeFlowLogs: an ACTIVE VPC-level flow log capturing REJECT or ALL (the control's default trafficType), per VPC. Unused default VPCs (no network interfaces) are skipped."
+    severity: medium
+  - id: "EC2.7"
+    title: "EBS encryption by default enabled"
+    service: ec2
+    status: covered
+    check_ids: [aws-ebs-default-encryption-disabled]
+    reason: "ec2:GetEbsEncryptionByDefault per region on aws_region_settings."
+    severity: medium
+  - id: "EC2.8"
+    title: "EC2 instances require IMDSv2"
+    service: ec2
+    status: covered
+    check_ids: [aws-ec2-imdsv2-not-required, aws-eks-node-imdsv1-registry-write]
+    reason: "The two checks split http_tokens=optional between ordinary instances and EKS nodes with ECR push; instances with HttpEndpoint=disabled are exempt."
+    severity: high
+  - id: "EC2.9"
+    title: "EC2 instances have no public IPv4"
+    service: ec2
+    status: covered
+    check_ids: [aws-ec2-public-ip]
+    reason: "Every collected instance with a public IPv4 fires (terminated/shutting-down are not inventory). Running = Medium; stopped (keeps an Elastic IP, exposed again on start) = Low with its own title."
+    severity: high
+  - id: "EC2.10"
+    title: "VPC endpoint for EC2 service configured"
+    service: ec2
+    status: covered
+    check_ids: [aws-vpc-missing-service-endpoints]
+    reason: "ec2:DescribeVpcEndpoints per region -> vpc `endpoint_services` (live endpoints, any type). One Info finding per VPC lists every missing FSBP endpoint service (ec2, ecr.api, ecr.dkr, ssm, ssm-contacts, ssm-incidents); key absent when the listing fails."
+    severity: medium
+  - id: "EC2.15"
+    title: "Subnets do not auto-assign public IPs"
+    service: ec2
+    status: covered
+    check_ids: [aws-subnet-auto-assign-public-ip]
+    severity: medium
+  - id: "EC2.16"
+    title: "Unused network ACLs removed"
+    service: ec2
+    status: covered
+    check_ids: [aws-nacl-unused]
+    reason: "ec2:DescribeNetworkAcls -> network_acl `subnet_association_count`; default ACLs exempt (as in FSBP)."
+    severity: low
+  - id: "EC2.17"
+    title: "EC2 instances use a single ENI"
+    service: ec2
+    status: covered
+    check_ids: [aws-ec2-multiple-enis]
+    reason: "DescribeInstances eni_count > 1. Kubernetes worker nodes are not reported: their secondary ENIs are attached by the VPC CNI by design, which the control text itself names as the case to suppress."
+    severity: low
+  - id: "EC2.18"
+    title: "Security groups open to world only on authorized ports"
+    service: ec2
+    status: covered
+    check_ids: [aws-sg-open-unauthorized-port, aws-sg-open-high-risk-ports, aws-security-group-world-open-admin-port, aws-sg-open-database-ports, aws-sg-open-all-ports]
+    reason: "World-open TCP outside 80/443 and any world-open UDP port (the FSBP defaults; not configurable here). A port a more specific check owns is reported by that check, per port, so the remaining ports of the same group still fire."
+    severity: high
+  - id: "EC2.19"
+    title: "Security groups block world access to high-risk ports"
+    service: ec2
+    status: covered
+    check_ids: [aws-sg-open-high-risk-ports, aws-security-group-world-open-admin-port, aws-sg-open-database-ports, aws-sg-open-all-ports]
+    reason: "One shared high-risk port list (every FSBP EC2.19 port plus CIFS/NetBIOS, Redshift, WinRM, Redis, MongoDB, CouchDB); admin and database ports are reported by their dedicated checks, the rest by aws-sg-open-high-risk-ports."
+    severity: critical
+  - id: "EC2.20"
+    title: "Both Site-to-Site VPN tunnels up"
+    service: ec2
+    status: covered
+    check_ids: [aws-vpn-tunnel-down]
+    reason: "ec2:DescribeVpnConnections VgwTelemetry: an available connection with any tunnel not UP. No telemetry in the response leaves `tunnels_down` absent (unknown)."
+    severity: medium
+  - id: "EC2.21"
+    title: "Network ACLs block world ingress to 22/3389"
+    service: ec2
+    status: covered
+    check_ids: [aws-nacl-world-open-admin-port]
+    reason: "network_acl ingress entries evaluated in rule-number order per internet family (0.0.0.0/0, ::/0): the first entry at which the allowed or the denied ranges covering TCP 22/3389 (and WinRM 5985/5986) add up to the whole family decides, so a lower-numbered world deny shadows the allow and split ranges (0.0.0.0/1 + 128.0.0.0/1) count as the world. Only ACLs with subnets. Default ACLs fire at Info (FSBP exempts them; CIS 6.2 does not); Medium when a filtered subnet is public or its routing is unread (route-table facts), Low only when all are known private."
+    severity: medium
+  - id: "EC2.23"
+    title: "Transit gateways do not auto-accept attachments"
+    service: ec2
+    status: covered
+    check_ids: [aws-tgw-auto-accept-shared-attachments]
+    reason: "ec2:DescribeTransitGateways Options.AutoAcceptSharedAttachments=enable on gateways this account owns (a gateway shared in is graded by its owner)."
+    severity: high
+  - id: "EC2.24"
+    title: "No paravirtual EC2 instance types"
+    service: ec2
+    status: covered
+    check_ids: [aws-ec2-paravirtual]
+    severity: medium
+  - id: "EC2.25"
+    title: "Launch templates do not assign public IPs"
+    service: ec2
+    status: covered
+    check_ids: [aws-ec2-launch-template-public-ip]
+    reason: "ec2:DescribeLaunchTemplateVersions ($Default): any network interface with AssociatePublicIpAddress=true. Medium when an Auto Scaling group launches from the template, Low otherwise."
+    severity: high
+  - id: "EC2.51"
+    title: "Client VPN endpoints log connections"
+    service: ec2
+    status: covered
+    check_ids: [aws-client-vpn-connection-logging-disabled]
+    reason: "ec2:DescribeClientVpnEndpoints ConnectionLogOptions.Enabled=false; absent options are unknown."
+    severity: low
+  - id: "EC2.55"
+    title: "VPC interface endpoint for ECR API"
+    service: ec2
+    status: covered
+    check_ids: [aws-vpc-missing-service-endpoints]
+    reason: "Same per-VPC endpoint check as EC2.10: fires when `endpoint_services` lacks ecr.api."
+    severity: medium
+  - id: "EC2.56"
+    title: "VPC interface endpoint for Docker registry"
+    service: ec2
+    status: covered
+    check_ids: [aws-vpc-missing-service-endpoints]
+    reason: "Same per-VPC endpoint check as EC2.10: fires when `endpoint_services` lacks ecr.dkr."
+    severity: medium
+  - id: "EC2.57"
+    title: "VPC interface endpoint for Systems Manager"
+    service: ec2
+    status: covered
+    check_ids: [aws-vpc-missing-service-endpoints]
+    reason: "Same per-VPC endpoint check as EC2.10: fires when `endpoint_services` lacks ssm."
+    severity: medium
+  - id: "EC2.58"
+    title: "VPC endpoint for SSM Incident Manager Contacts"
+    service: ec2
+    status: covered
+    check_ids: [aws-vpc-missing-service-endpoints]
+    reason: "Same per-VPC endpoint check as EC2.10: fires when `endpoint_services` lacks ssm-contacts."
+    severity: medium
+  - id: "EC2.60"
+    title: "VPC endpoint for SSM Incident Manager"
+    service: ec2
+    status: covered
+    check_ids: [aws-vpc-missing-service-endpoints]
+    reason: "Same per-VPC endpoint check as EC2.10: fires when `endpoint_services` lacks ssm-incidents."
+    severity: medium
+  - id: "EC2.170"
+    title: "Launch templates require IMDSv2"
+    service: ec2
+    status: covered
+    check_ids: [aws-ec2-launch-template-imdsv1]
+    reason: "Default template version with MetadataOptions.HttpTokens=optional (the FSBP condition; unset takes the account/AMI default and passes); a disabled endpoint is exempt. Medium when an Auto Scaling group uses the template, Low otherwise."
+    severity: low
+  - id: "EC2.171"
+    title: "Site-to-Site VPN tunnels have logging"
+    service: ec2
+    status: covered
+    check_ids: [aws-vpn-tunnel-logging-disabled]
+    reason: "ec2:DescribeVpnConnections TunnelOptions[].LogOptions.CloudWatchLogOptions.LogEnabled not true on any tunnel; no tunnel options in the response is unknown."
+    severity: medium
+  - id: "EC2.172"
+    title: "VPC Block Public Access blocks IGW traffic"
+    service: ec2
+    status: covered
+    check_ids: [aws-vpc-block-public-access-off]
+    reason: "ec2:DescribeVpcBlockPublicAccessOptions InternetGatewayBlockMode=off; Info severity."
+    severity: medium
+  - id: "EC2.173"
+    title: "Spot Fleet launch specs encrypt EBS volumes"
+    service: ec2
+    status: covered
+    check_ids: [aws-ec2-spot-fleet-unencrypted-ebs]
+    reason: "ec2:DescribeSpotFleetRequests (submitted/active/modifying): an EBS mapping in the request's own launch specifications with Encrypted=false. Template-based requests and an omitted flag are skipped, as in FSBP."
+    severity: medium
+  - id: "EC2.180"
+    title: "ENIs have source/destination check enabled"
+    service: ec2
+    status: covered
+    check_ids: [aws-ec2-eni-source-dest-check-disabled]
+    reason: "DescribeInstances NetworkInterfaces[].SourceDestCheck=false on instance-attached interfaces of the user-managed types (interface, efa, branch); one finding per instance lists the ENIs. Unattached ENIs carry no traffic and are not graded."
+    severity: medium
+  - id: "EC2.181"
+    title: "Launch templates encrypt attached EBS volumes"
+    service: ec2
+    status: covered
+    check_ids: [aws-ec2-launch-template-unencrypted-ebs]
+    reason: "Default template version with an EBS block device Encrypted=false (explicit false only, as in FSBP; an omitted flag inherits the snapshot or region default)."
+    severity: medium
+  - id: "EC2.182"
+    title: "EBS snapshot block public access enabled"
+    service: ec2
+    status: covered
+    check_ids: [aws-ebs-snapshot-bpa-disabled]
+    reason: "ec2:GetSnapshotBlockPublicAccessState: anything but block-all-sharing fires (block-new-sharing at Low)."
+    severity: high
+  - id: "EC2.183"
+    title: "Site-to-Site VPN uses IKEv2"
+    service: ec2
+    status: covered
+    check_ids: [aws-vpn-ikev1-allowed]
+    reason: "Any tunnel whose IkeVersions is empty (both allowed) or includes ikev1; FSBP requires an explicit ikev2-only list on every tunnel."
+    severity: medium
+  - id: "ECR.1"
+    title: "ECR repositories scan images"
+    service: ecr
+    status: covered
+    check_ids: [aws-ecr-scanning-disabled]
+    reason: "Repository scanOnPush or a matching registry-level scan-on-push / continuous rule (ecr:GetRegistryScanningConfiguration); under ENHANCED scanning only registry rules count. An unreadable registry configuration leaves the repository ungraded."
+    severity: high
+  - id: "ECR.2"
+    title: "ECR repositories use immutable tags"
+    service: ecr
+    status: covered
+    check_ids: [aws-ecr-mutable-image-tags]
+    reason: "Fires on tag_mutability=MUTABLE; MUTABLE_WITH_EXCLUSION is not flagged."
+    severity: medium
+  - id: "ECR.3"
+    title: "ECR repositories have a lifecycle policy"
+    service: ecr
+    status: covered
+    check_ids: [aws-ecr-no-lifecycle-policy]
+    reason: "lifecycle_policy from ecr:GetLifecyclePolicy per repository (LifecyclePolicyNotFoundException = none; any other error leaves it unknown). Low: hygiene."
+    severity: medium
+  - id: "ECS.2"
+    title: "ECS services do not auto-assign public IPs"
+    service: ecs
+    status: covered
+    check_ids: [ecs-service-assign-public-ip]
+    severity: high
+  - id: "ECS.3"
+    title: "ECS tasks do not share host PID namespace"
+    service: ecs
+    status: covered
+    check_ids: [aws-ecs-task-shares-host-namespace, aws-ecs-task-definition-shares-host-namespace]
+    reason: "Service-run revisions are graded on the service/container assets; the latest ACTIVE revision of every other task-definition family (ecs:ListTaskDefinitionFamilies + DescribeTaskDefinition by family, in every region) is an ecs_task_definition asset graded by aws-ecs-task-definition-shares-host-namespace. A revision a service runs is never emitted twice. Also flags networkMode=host (FSBP ECS.17)."
+    severity: high
+  - id: "ECS.4"
+    title: "ECS containers run unprivileged"
+    service: ecs
+    status: covered
+    check_ids: [aws-ecs-container-privileged, aws-ecs-task-definition-privileged]
+    reason: "Service-run revisions are graded on the service/container assets; the latest ACTIVE revision of every other task-definition family (ecs:ListTaskDefinitionFamilies + DescribeTaskDefinition by family, in every region) is an ecs_task_definition asset graded by aws-ecs-task-definition-privileged. A revision a service runs is never emitted twice."
+    severity: high
+  - id: "ECS.5"
+    title: "ECS containers use read-only root filesystems"
+    service: ecs
+    status: covered
+    check_ids: [aws-ecs-container-writable-root-fs, aws-ecs-task-definition-writable-root-fs]
+    reason: "Service-run revisions are graded on the service/container assets; the latest ACTIVE revision of every other task-definition family (ecs:ListTaskDefinitionFamilies + DescribeTaskDefinition by family, in every region) is an ecs_task_definition asset graded by aws-ecs-task-definition-writable-root-fs. A revision a service runs is never emitted twice. Windows containers are skipped, as FSBP does."
+    severity: high
+  - id: "ECS.8"
+    title: "No secrets in ECS container environment variables"
+    service: ecs
+    status: covered
+    check_ids: [aws-ecs-container-plaintext-secret-env, aws-ecs-task-definition-plaintext-secret-env]
+    reason: "Service-run revisions are graded on the service/container assets; the latest ACTIVE revision of every other task-definition family (ecs:ListTaskDefinitionFamilies + DescribeTaskDefinition by family, in every region) is an ecs_task_definition asset graded by aws-ecs-task-definition-plaintext-secret-env. A revision a service runs is never emitted twice. Fires on the FSBP credential names and on other secret-named variables with a literal value; only names are stored."
+    severity: high
+  - id: "ECS.9"
+    title: "ECS task definitions configure logging"
+    service: ecs
+    status: covered
+    check_ids: [aws-ecs-container-no-logging, aws-ecs-task-definition-no-logging]
+    reason: "Service-run revisions are graded on the service/container assets; the latest ACTIVE revision of every other task-definition family (ecs:ListTaskDefinitionFamilies + DescribeTaskDefinition by family, in every region) is an ecs_task_definition asset graded by aws-ecs-task-definition-no-logging. A revision a service runs is never emitted twice."
+    severity: high
+  - id: "ECS.10"
+    title: "Fargate services on latest platform version"
+    service: ecs
+    status: covered
+    check_ids: [aws-ecs-fargate-old-platform]
+    reason: "Fargate services: launch type FARGATE, or a capacityProviderStrategy on FARGATE / FARGATE_SPOT (ecs:DescribeServices). Fires on a platform version other than LATEST or the current one (Linux 1.4.0, Windows 1.0.0)."
+    severity: medium
+  - id: "ECS.12"
+    title: "ECS clusters use Container Insights"
+    service: ecs
+    status: covered
+    check_ids: [aws-ecs-cluster-no-container-insights]
+    reason: "containerInsights from ecs:DescribeClusters (include=SETTINGS); a cluster with no setting returned is ungraded."
+    severity: medium
+  - id: "ECS.16"
+    title: "ECS task sets do not assign public IPs"
+    service: ecs
+    status: covered
+    check_ids: [aws-ecs-task-set-public-ip]
+    reason: "Task sets come back on ecs:DescribeServices (Service.TaskSets, no extra call); fires on any with awsvpc assignPublicIp ENABLED. A service whose own configuration assigns public IPs is ecs-service-assign-public-ip's finding (step-aside)."
+    severity: high
+  - id: "ECS.18"
+    title: "ECS EFS volumes use in-transit encryption"
+    service: ecs
+    status: covered
+    check_ids: [aws-ecs-task-efs-no-transit-encryption, aws-ecs-task-definition-efs-no-transit-encryption]
+    reason: "Service-run revisions are graded on the service/container assets; the latest ACTIVE revision of every other task-definition family (ecs:ListTaskDefinitionFamilies + DescribeTaskDefinition by family, in every region) is an ecs_task_definition asset graded by aws-ecs-task-definition-efs-no-transit-encryption. A revision a service runs is never emitted twice."
+    severity: medium
+  - id: "ECS.19"
+    title: "Capacity providers enable managed termination protection"
+    service: ecs
+    status: covered
+    check_ids: [aws-ecs-capacity-provider-no-termination-protection]
+    reason: "ecs:DescribeCapacityProviders (regions with a cluster): ACTIVE Auto Scaling group providers with managedTerminationProtection DISABLED (omitted = the documented default, off). The FARGATE built-ins have no group and are not graded. Low: availability."
+    severity: medium
+  - id: "ECS.20"
+    title: "Linux ECS containers run as non-root user"
+    service: ecs
+    status: covered
+    check_ids: [aws-ecs-container-runs-as-root, aws-ecs-task-definition-runs-as-root]
+    reason: "Service-run revisions are graded on the service/container assets; the latest ACTIVE revision of every other task-definition family (ecs:ListTaskDefinitionFamilies + DescribeTaskDefinition by family, in every region) is an ecs_task_definition asset graded by aws-ecs-task-definition-runs-as-root. A revision a service runs is never emitted twice. Explicit root/UID 0 is Medium; an unset user (image decides) is Low."
+    severity: medium
+  - id: "ECS.21"
+    title: "Windows ECS containers run as non-admin user"
+    service: ecs
+    status: covered
+    check_ids: [aws-ecs-container-runs-as-root, aws-ecs-task-definition-runs-as-root]
+    reason: "Service-run revisions are graded on the service/container assets; the latest ACTIVE revision of every other task-definition family (ecs:ListTaskDefinitionFamilies + DescribeTaskDefinition by family, in every region) is an ecs_task_definition asset graded by aws-ecs-task-definition-runs-as-root. A revision a service runs is never emitted twice. ContainerAdministrator or an unset user fails."
+    severity: medium
+  - id: "EFS.1"
+    title: "EFS file data encrypted with KMS"
+    service: efs
+    status: covered
+    check_ids: [aws-efs-not-encrypted]
+    reason: "elasticfilesystem:DescribeFileSystems Encrypted = false. The control text says it checks only Encrypted (not the KmsKeyId parameter), the same field as EFS.8, so one check covers both rows."
+    severity: medium
+  - id: "EFS.2"
+    title: "EFS file systems in a backup plan"
+    service: efs
+    status: covered
+    check_ids: [aws-efs-not-in-backup-plan]
+    reason: "Fires when automatic backups are off (DescribeBackupPolicy; PolicyNotFound = off) and no AWS Backup selection assigns the file system: every plan's selections are evaluated (Resources ARN wildcards OR ListOfTags, AND every Conditions entry, minus NotResources) against the file system's ARN and tags, with service-wide and tag assignments requiring the region's EFS opt-in (backup:DescribeRegionSettings). Unreadable plans, an unknown opt-in or a non-tag condition key leave coverage unknown."
+    severity: medium
+  - id: "EFS.3"
+    title: "EFS access points enforce a root directory"
+    service: efs
+    status: covered
+    check_ids: [aws-efs-access-point-root-directory]
+    reason: "elasticfilesystem:DescribeAccessPoints RootDirectory.Path = \"/\" (an omitted RootDirectory is the \"/\" default)."
+    severity: medium
+  - id: "EFS.4"
+    title: "EFS access points enforce a user identity"
+    service: efs
+    status: covered
+    check_ids: [aws-efs-access-point-no-user-identity]
+    reason: "elasticfilesystem:DescribeAccessPoints with no PosixUser."
+    severity: medium
+  - id: "EFS.7"
+    title: "EFS automatic backups enabled"
+    service: efs
+    status: covered
+    check_ids: [aws-efs-automatic-backups-disabled, aws-efs-not-in-backup-plan]
+    reason: "Backup policy DISABLED/DISABLING (PolicyNotFound = disabled). The two checks split one root cause and together fire exactly on that condition: aws-efs-not-in-backup-plan when no plan covers the file system either, aws-efs-automatic-backups-disabled (Info) otherwise."
+    severity: medium
+  - id: "EFS.8"
+    title: "EFS file systems encrypted at rest"
+    service: efs
+    status: covered
+    check_ids: [aws-efs-not-encrypted]
+    reason: "elasticfilesystem:DescribeFileSystems Encrypted = false."
+    severity: medium
+  - id: "EKS.1"
+    title: "EKS API endpoint not publicly accessible"
+    service: eks
+    status: covered
+    check_ids: [aws-eks-public-endpoint, aws-eks-public-endpoint-restricted]
+    reason: "Any public endpoint fails, one finding per cluster: publicAccessCidrs including 0.0.0.0/0 or ::/0 is aws-eks-public-endpoint (High); a public endpoint restricted to specific CIDRs is aws-eks-public-endpoint-restricted (Low). A public endpoint whose allowlist was not returned is unknown."
+    severity: high
+  - id: "EKS.2"
+    title: "EKS clusters on supported Kubernetes version"
+    service: eks
+    status: covered
+    check_ids: [aws-eks-unsupported-version]
+    reason: "Hand-maintained EKS release calendar (internal/checks/aws_lifecycle.go); fires past end of standard support (Low in extended support, High past it). A version newer than the calendar is ungraded."
+    severity: high
+  - id: "EKS.8"
+    title: "EKS control-plane audit logging enabled"
+    service: eks
+    status: covered
+    check_ids: [aws-eks-audit-logging-disabled]
+    severity: medium
+  - id: "EKS.9"
+    title: "EKS node groups on supported version"
+    service: eks
+    status: covered
+    check_ids: [aws-eks-nodegroup-unsupported-version, aws-eks-unsupported-version]
+    reason: "eks:ListNodegroups + DescribeNodegroup (eks_nodegroup, version) graded on the same EKS release calendar as EKS.2: past standard support fails (Low in extended support, High past it). A node group on a cluster itself past standard support is covered by that cluster's aws-eks-unsupported-version finding, whose upgrade includes its node groups."
+    severity: high
+  - id: "ElastiCache.1"
+    title: "ElastiCache Redis automatic backups enabled"
+    service: elasticache
+    status: covered
+    check_ids: [aws-elasticache-cluster-no-backup, aws-elasticache-replication-group-no-backup]
+    reason: "SnapshotRetentionLimit < 1 (the FSBP default parameter) on replication groups and on standalone Redis OSS / Valkey cache clusters; nodes of a group are graded once, on the group."
+    severity: high
+  - id: "ElastiCache.2"
+    title: "ElastiCache auto minor version upgrade on"
+    service: elasticache
+    status: covered
+    check_ids: [aws-elasticache-cluster-auto-minor-upgrade-disabled, aws-elasticache-replication-group-auto-minor-upgrade-disabled]
+    reason: "AutoMinorVersionUpgrade = false on standalone Redis OSS / Valkey cache clusters, and on the replication group for its nodes (one finding per group, not per node). Memcached is out of scope, as in FSBP."
+    severity: high
+  - id: "ElastiCache.3"
+    title: "ElastiCache replication groups auto-fail over"
+    service: elasticache
+    status: covered
+    check_ids: [aws-elasticache-replication-group-no-auto-failover]
+    reason: "elasticache:DescribeReplicationGroups AutomaticFailover = disabled."
+    severity: medium
+  - id: "ElastiCache.4"
+    title: "ElastiCache replication groups encrypted at rest"
+    service: elasticache
+    status: covered
+    check_ids: [aws-elasticache-replication-group-not-encrypted-at-rest]
+    reason: "elasticache:DescribeReplicationGroups AtRestEncryptionEnabled = false."
+    severity: medium
+  - id: "ElastiCache.5"
+    title: "ElastiCache replication groups encrypted in transit"
+    service: elasticache
+    status: covered
+    check_ids: [aws-elasticache-replication-group-not-encrypted-in-transit]
+    reason: "elasticache:DescribeReplicationGroups TransitEncryptionEnabled = false."
+    severity: medium
+  - id: "ElastiCache.6"
+    title: "Older ElastiCache Redis groups use AUTH"
+    service: elasticache
+    status: covered
+    check_ids: [aws-elasticache-replication-group-redis-no-auth]
+    reason: "Redis OSS replication group whose node engine version (from DescribeCacheClusters) is below 6.0 with AuthTokenEnabled = false; Valkey and 6.0+ (RBAC) are out of scope, as in FSBP."
+    severity: medium
+  - id: "ElastiCache.7"
+    title: "ElastiCache avoids the default subnet group"
+    service: elasticache
+    status: covered
+    check_ids: [aws-elasticache-cluster-default-subnet-group, aws-elasticache-replication-group-default-subnet-group]
+    reason: "CacheSubnetGroupName = default on standalone cache clusters (every engine) and, via its nodes, on the replication group (one finding per group)."
+    severity: high
+  - id: "ElasticBeanstalk.1"
+    title: "Beanstalk enhanced health reporting enabled"
+    service: elasticbeanstalk
+    status: covered
+    check_ids: [aws-beanstalk-basic-health-reporting]
+    reason: "elasticbeanstalk:DescribeEnvironments (live) + DescribeConfigurationSettings aws:elasticbeanstalk:healthreporting:system SystemType=basic (unset = basic, the documented default)."
+    severity: low
+  - id: "ElasticBeanstalk.2"
+    title: "Beanstalk managed platform updates enabled"
+    service: elasticbeanstalk
+    status: covered
+    check_ids: [aws-beanstalk-managed-updates-disabled]
+    reason: "elasticbeanstalk:DescribeConfigurationSettings aws:elasticbeanstalk:managedactions ManagedActionsEnabled=false (unset = false, the documented default); any enabled update level passes, as in the control default."
+    severity: high
+  - id: "ElasticBeanstalk.3"
+    title: "Beanstalk streams logs to CloudWatch"
+    service: elasticbeanstalk
+    status: covered
+    check_ids: [aws-beanstalk-log-streaming-disabled]
+    reason: "elasticbeanstalk:DescribeConfigurationSettings aws:elasticbeanstalk:cloudwatch:logs StreamLogs=false (unset = false, the documented default)."
+    severity: high
+  - id: "ELB.1"
+    title: "ALB redirects HTTP to HTTPS"
+    service: elb
+    status: covered
+    check_ids: [aws-elb-http-no-https-redirect]
+    reason: "elbv2:DescribeRules on every ALB HTTP listener (the default rule included): fails when any action forwards or no action redirects to HTTPS, as alb-http-to-https-redirection-check does. Medium on an internet-facing ALB, Low internal; a failed rule read leaves the balancer unknown."
+    severity: medium
+  - id: "ELB.2"
+    title: "Classic LB TLS listeners use ACM certificates"
+    service: elb
+    status: covered
+    check_ids: [aws-elb-classic-non-acm-certificate]
+    reason: "Classic Load Balancers (elasticloadbalancing:DescribeLoadBalancers) are load_balancer assets with type=classic; any HTTPS/SSL listener whose SSLCertificateId is not an ACM ARN fails. Low: certificate hygiene."
+    severity: medium
+  - id: "ELB.3"
+    title: "Classic LB listeners use HTTPS/TLS"
+    service: elb
+    status: covered
+    check_ids: [aws-elb-plaintext-listener]
+    reason: "Classic listeners on HTTP or TCP fail (plaintext_listeners). One finding per balancer, shared with the Network Load Balancer half of ELB.18; Medium when an internet-facing balancer serves HTTP, Low for TCP (may be TLS passthrough) or internal."
+    severity: medium
+  - id: "ELB.4"
+    title: "ALB drops invalid HTTP headers"
+    service: elb
+    status: covered
+    check_ids: [aws-elb-alb-invalid-headers-allowed]
+    reason: "routing.http.drop_invalid_header_fields.enabled=false (elbv2:DescribeLoadBalancerAttributes). Info, and fires only when desync mitigation is defensive/strictest: a monitor-mode ALB is reported once by aws-elb-desync-mitigation-weak (AWS advises not running ELB.4 beside ELB.12). Every default ALB fails ELB.4, hence Info."
+    severity: medium
+  - id: "ELB.5"
+    title: "Load balancer access logging enabled"
+    service: elb
+    status: covered
+    check_ids: [aws-alb-access-logs-disabled]
+    reason: "access_logs_s3_enabled on load_balancer: ALBs from elbv2:DescribeLoadBalancerAttributes access_logs.s3.enabled (elb_detail.go, ALB only), Classic Load Balancers from elb:DescribeLoadBalancerAttributes AccessLog.Enabled (elb_classic.go). NLBs and GWLBs are out of the control's scope and carry no key. A failed attribute read leaves the key absent."
+    severity: medium
+  - id: "ELB.6"
+    title: "ALB/NLB/GWLB deletion protection enabled"
+    service: elb
+    status: covered
+    check_ids: [aws-elb-no-deletion-protection]
+    reason: "deletion_protection.enabled=false on ALB/NLB/GWLB (elbv2:DescribeLoadBalancerAttributes). Low: resilience."
+    severity: medium
+  - id: "ELB.7"
+    title: "Classic LB connection draining enabled"
+    service: elb
+    status: covered
+    check_ids: [aws-elb-classic-connection-draining-disabled]
+    reason: "ConnectionDraining.Enabled=false (elasticloadbalancing:DescribeLoadBalancerAttributes). Low."
+    severity: low
+  - id: "ELB.8"
+    title: "Classic LB SSL listeners use strong policy"
+    service: elb
+    status: covered
+    check_ids: [aws-elb-weak-tls-policy]
+    reason: "Each Classic HTTPS/SSL listener's SSLNegotiationPolicyType policy (elasticloadbalancing:DescribeLoadBalancerPolicies) must reference ELBSecurityPolicy-TLS-1-2-2017-01; a custom or missing negotiation policy fails. Shared check with ELB.17: Medium when an internet-facing listener still allows TLS 1.0/1.1 (or its protocols cannot be confirmed), Low internal, Info for a TLS 1.2+ policy that is merely not the named one."
+    severity: medium
+  - id: "ELB.9"
+    title: "Classic LB cross-zone balancing enabled"
+    service: elb
+    status: covered
+    check_ids: [aws-elb-classic-cross-zone-disabled]
+    reason: "CrossZoneLoadBalancing.Enabled=false (elasticloadbalancing:DescribeLoadBalancerAttributes). Low: resilience."
+    severity: medium
+  - id: "ELB.10"
+    title: "Classic LB spans multiple AZs"
+    service: elb
+    status: covered
+    check_ids: [aws-elb-single-az]
+    reason: "Classic balancers carry availability_zone_count from DescribeLoadBalancers AvailabilityZones and are graded by the same check as ELB.13 (minimum 2)."
+    severity: medium
+  - id: "ELB.12"
+    title: "ALB desync mitigation defensive or strictest"
+    service: elb
+    status: covered
+    check_ids: [aws-elb-desync-mitigation-weak]
+    reason: "routing.http.desync_mitigation_mode not defensive/strictest on an ALB. One check with ELB.14. Low."
+    severity: medium
+  - id: "ELB.13"
+    title: "ALB/NLB/GWLB span multiple AZs"
+    service: elb
+    status: covered
+    check_ids: [aws-elb-single-az]
+    severity: medium
+  - id: "ELB.14"
+    title: "Classic LB desync mitigation defensive or strictest"
+    service: elb
+    status: covered
+    check_ids: [aws-elb-desync-mitigation-weak]
+    reason: "elb.http.desyncmitigationmode (AdditionalAttributes of elasticloadbalancing:DescribeLoadBalancerAttributes) not defensive/strictest; an attribute set without the entry is unknown, not defensive. Low."
+    severity: medium
+  - id: "ELB.17"
+    title: "ALB/NLB listeners use recommended TLS policies"
+    service: elb
+    status: covered
+    check_ids: [aws-elb-weak-tls-policy]
+    reason: "SslPolicy of every ALB HTTPS / NLB TLS listener (elbv2:DescribeListeners) checked against the fixed sslPolicies list of the control. The console default ELBSecurityPolicy-TLS13-1-2-2021-06 fails but is graded Info (TLS 1.2 floor); a policy still allowing TLS 1.0/1.1 is Medium internet-facing, Low internal."
+    severity: medium
+  - id: "ELB.18"
+    title: "ALB/NLB listeners use secure protocols"
+    service: elb
+    status: covered
+    check_ids: [aws-elb-plaintext-listener, aws-elb-http-no-https-redirect]
+    reason: "NLB listeners on TCP/UDP/TCP_UDP/TCP_QUIC fail via aws-elb-plaintext-listener (Low: may be TLS passthrough). ALB HTTP listeners are graded by aws-elb-http-no-https-redirect; deliberate deviation: an ALB HTTP listener whose only actions are an HTTPS redirect (the standard port-80 pattern, which ELB.18 itself fails) is not reported, since no application data crosses it in clear text."
+    severity: medium
+  - id: "ELB.21"
+    title: "Target group health checks use encryption"
+    service: elb
+    status: covered
+    check_ids: [aws-elb-target-group-health-check-unencrypted]
+    reason: "lb_target_group assets (elbv2:DescribeTargetGroups): HealthCheckProtocol other than HTTPS fails, Lambda groups excluded. A group whose traffic protocol is itself plaintext is reported once, by aws-elb-target-group-unencrypted (ELB.22), not twice. Low."
+    severity: medium
+  - id: "ELB.22"
+    title: "Target groups use encrypted transport"
+    service: elb
+    status: covered
+    check_ids: [aws-elb-target-group-unencrypted]
+    reason: "lb_target_group Protocol HTTP/TCP/UDP/TCP_UDP/TCP_QUIC fails; Lambda and ALB target types and GENEVE excluded, as in the control. Info: TLS termination at the balancer is a common deliberate design."
+    severity: medium
+  - id: "EMR.1"
+    title: "EMR primary nodes have no public IPs"
+    service: emr
+    status: covered
+    check_ids: [aws-emr-primary-public-ip]
+    reason: "elasticmapreduce:ListClusters (active states) + DescribeCluster + ListInstances (MASTER instance group or fleet, every page): a non-terminated primary instance with PublicIpAddress on a RUNNING or WAITING cluster."
+    severity: high
+  - id: "EMR.2"
+    title: "EMR block public access enabled"
+    service: emr
+    status: covered
+    check_ids: [aws-emr-block-public-access-off]
+    reason: "elasticmapreduce:GetBlockPublicAccessConfiguration on one emr_settings asset per region, emitted only where an active cluster runs: BlockPublicSecurityGroupRules=false, or a permitted range other than port 22."
+    severity: critical
+  - id: "EMR.3"
+    title: "EMR security configurations encrypt at rest"
+    service: emr
+    status: covered
+    check_ids: [aws-emr-security-config-no-at-rest-encryption]
+    reason: "elasticmapreduce:ListSecurityConfigurations + DescribeSecurityConfiguration JSON EncryptionConfiguration.EnableAtRestEncryption (no EncryptionConfiguration block = not encrypted)."
+    severity: medium
+  - id: "EMR.4"
+    title: "EMR security configurations encrypt in transit"
+    service: emr
+    status: covered
+    check_ids: [aws-emr-security-config-no-in-transit-encryption]
+    reason: "elasticmapreduce:DescribeSecurityConfiguration JSON EncryptionConfiguration.EnableInTransitEncryption (no EncryptionConfiguration block = not encrypted)."
+    severity: medium
+  - id: "ES.1"
+    title: "Elasticsearch domains encrypted at rest"
+    service: es
+    status: covered
+    check_ids: [aws-opensearch-not-encrypted-at-rest]
+    reason: "es:DescribeDomains EncryptionAtRestOptions.Enabled false. The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: medium
+  - id: "ES.2"
+    title: "Elasticsearch domains not publicly accessible"
+    service: es
+    status: covered
+    check_ids: [aws-opensearch-domain-public]
+    reason: "Fires on every domain without VPCOptions (a public endpoint), as the in-VPC-only rule does. Graded Critical when the access policy grants es:ESHttp* to everyone (Principal \"*\", or an Allow with NotPrincipal) under no condition that restricts the caller and fine-grained access control does not authenticate callers; Medium otherwise. The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: critical
+  - id: "ES.3"
+    title: "Elasticsearch node-to-node encryption enabled"
+    service: es
+    status: covered
+    check_ids: [aws-opensearch-no-node-to-node-encryption]
+    reason: "NodeToNodeEncryptionOptions.Enabled false (versions without node-to-node support report false and fail, as in Security Hub). The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: medium
+  - id: "ES.4"
+    title: "Elasticsearch error logs go to CloudWatch"
+    service: es
+    status: covered
+    check_ids: [aws-opensearch-error-logs-disabled]
+    reason: "LogPublishingOptions has no enabled ES_APPLICATION_LOGS entry with a CloudWatch log group. The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: medium
+  - id: "ES.5"
+    title: "Elasticsearch audit logging enabled"
+    service: es
+    status: covered
+    check_ids: [aws-opensearch-audit-logs-disabled, aws-opensearch-no-fine-grained-access-control]
+    reason: "No enabled AUDIT_LOGS entry. Audit logs require fine-grained access control, so a domain without it is reported once, by the FGAC check, which is why both ids are listed. The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: medium
+  - id: "ES.6"
+    title: "Elasticsearch domains have three or more data nodes"
+    service: es
+    status: covered
+    check_ids: [aws-opensearch-too-few-data-nodes]
+    reason: "ClusterConfig.InstanceCount < 3 or ZoneAwarenessEnabled false. The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: medium
+  - id: "ES.7"
+    title: "Elasticsearch has three dedicated master nodes"
+    service: es
+    status: covered
+    check_ids: [aws-opensearch-too-few-dedicated-masters]
+    reason: "DedicatedMasterEnabled false, or DedicatedMasterCount < 3. Graded on every domain (Security Hub's OpenSearch counterpart is Opensearch.11). The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: medium
+  - id: "ES.8"
+    title: "Elasticsearch enforces the latest TLS policy"
+    service: es
+    status: covered
+    check_ids: [aws-opensearch-weak-tls-policy]
+    reason: "EnforceHTTPS false, or TLSSecurityPolicy other than Policy-Min-TLS-1-2-PFS-2023-10. Deliberate deviation: Policy-Min-TLS-1-2-RFC9151-FIPS-2024-08, which is stricter, also passes. The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: medium
+  - id: "EventBridge.3"
+    title: "Custom event buses have a resource policy"
+    service: eventbridge
+    status: covered
+    check_ids: [aws-eventbridge-bus-no-policy]
+    reason: "events:ListEventBuses + DescribeEventBus `Policy` empty on a custom bus (partner buses and the default bus are not custom). Info severity: no policy is the AWS default for a new bus."
+    severity: low
+  - id: "FSx.1"
+    title: "FSx OpenZFS copies tags to backups and volumes"
+    service: fsx
+    status: covered
+    check_ids: [aws-fsx-openzfs-no-copy-tags]
+    reason: "OpenZFSConfiguration.CopyTagsToBackups or CopyTagsToVolumes false (an omitted flag is the API default, false)."
+    severity: low
+  - id: "FSx.2"
+    title: "FSx Lustre copies tags to backups"
+    service: fsx
+    status: covered
+    check_ids: [aws-fsx-lustre-no-copy-tags]
+    reason: "LustreConfiguration.CopyTagsToBackups false on PERSISTENT_1/PERSISTENT_2 file systems. SCRATCH deployments are not graded: they cannot be backed up, so the setting has no effect there."
+    severity: low
+  - id: "FSx.3"
+    title: "FSx OpenZFS deployed Multi-AZ"
+    service: fsx
+    status: covered
+    check_ids: [aws-fsx-openzfs-single-az]
+    reason: "OpenZFS DeploymentType other than MULTI_AZ_1."
+    severity: medium
+  - id: "FSx.4"
+    title: "FSx NetApp ONTAP deployed Multi-AZ"
+    service: fsx
+    status: covered
+    check_ids: [aws-fsx-ontap-single-az]
+    reason: "ONTAP DeploymentType other than MULTI_AZ_1 / MULTI_AZ_2 (the control's default deploymentTypes)."
+    severity: medium
+  - id: "FSx.5"
+    title: "FSx Windows File Server deployed Multi-AZ"
+    service: fsx
+    status: covered
+    check_ids: [aws-fsx-windows-single-az]
+    reason: "Windows File Server DeploymentType other than MULTI_AZ_1."
+    severity: medium
+  - id: "Glue.3"
+    title: "Glue ML transforms encrypted at rest"
+    service: glue
+    status: covered
+    check_ids: [aws-glue-ml-transform-not-encrypted]
+    reason: "glue:GetMLTransforms TransformEncryption.MlUserDataEncryption mode DISABLED, or no encryption block. glue:GetMLTransforms is outside SecurityAudit/ViewOnlyAccess and is granted by the read-only role's supplemental statement. Until it has succeeded once for a connector (proven capability glue_get_ml_transforms) a denial skips the transforms quietly; after that a denial fails the listing and flags the sweep partial."
+    severity: medium
+  - id: "Glue.4"
+    title: "Glue Spark jobs run supported Glue versions"
+    service: glue
+    status: covered
+    check_ids: [aws-glue-job-unsupported-version]
+    reason: "glue:GetJobs: a Spark job (glueetl batch or gluestreaming) whose GlueVersion is below the control's fixed minimum 3.0, or unset (Glue's 0.9 default), which the control also fails."
+    severity: medium
+  - id: "GuardDuty.1"
+    title: "GuardDuty enabled in every region"
+    service: guardduty
+    status: covered
+    check_ids: [aws-guardduty-disabled]
+    reason: "guardduty:ListDetectors + GetDetector per region on aws_region_settings: no detector, or a suspended one."
+    severity: high
+  - id: "GuardDuty.5"
+    title: "GuardDuty EKS audit log monitoring enabled"
+    service: guardduty
+    status: covered
+    check_ids: [aws-guardduty-eks-audit-logs-off, aws-guardduty-disabled]
+    reason: "GetDetector feature EKS_AUDIT_LOGS. Recorded only for an enabled detector, so a disabled GuardDuty is the one aws-guardduty-disabled finding; a feature not offered in the region stays unknown."
+    severity: high
+  - id: "GuardDuty.6"
+    title: "GuardDuty Lambda protection enabled"
+    service: guardduty
+    status: covered
+    check_ids: [aws-guardduty-lambda-protection-off, aws-guardduty-disabled]
+    reason: "GetDetector feature LAMBDA_NETWORK_LOGS (enabled detectors only, as GuardDuty.5)."
+    severity: high
+  - id: "GuardDuty.7"
+    title: "GuardDuty EKS runtime monitoring enabled"
+    service: guardduty
+    status: covered
+    check_ids: [aws-guardduty-eks-runtime-off, aws-guardduty-runtime-monitoring-off, aws-guardduty-disabled]
+    reason: "RUNTIME_MONITORING (or the older EKS_RUNTIME_MONITORING) enabled with EKS_ADDON_MANAGEMENT automated agent management. With Runtime Monitoring off the one aws-guardduty-runtime-monitoring-off finding stands for it."
+    severity: high
+  - id: "GuardDuty.8"
+    title: "GuardDuty EC2 malware protection enabled"
+    service: guardduty
+    status: covered
+    check_ids: [aws-guardduty-malware-protection-off, aws-guardduty-disabled]
+    reason: "GetDetector feature EBS_MALWARE_PROTECTION (enabled detectors only)."
+    severity: high
+  - id: "GuardDuty.9"
+    title: "GuardDuty RDS protection enabled"
+    service: guardduty
+    status: covered
+    check_ids: [aws-guardduty-rds-protection-off, aws-guardduty-disabled]
+    reason: "GetDetector feature RDS_LOGIN_EVENTS (enabled detectors only; unknown where the region does not offer it)."
+    severity: high
+  - id: "GuardDuty.10"
+    title: "GuardDuty S3 protection enabled"
+    service: guardduty
+    status: covered
+    check_ids: [aws-guardduty-s3-protection-off, aws-guardduty-disabled]
+    reason: "GetDetector feature S3_DATA_EVENTS (enabled detectors only)."
+    severity: high
+  - id: "GuardDuty.11"
+    title: "GuardDuty runtime monitoring enabled"
+    service: guardduty
+    status: covered
+    check_ids: [aws-guardduty-runtime-monitoring-off, aws-guardduty-disabled]
+    reason: "GetDetector feature RUNTIME_MONITORING (enabled detectors only)."
+    severity: high
+  - id: "GuardDuty.12"
+    title: "GuardDuty ECS runtime monitoring enabled"
+    service: guardduty
+    status: covered
+    check_ids: [aws-guardduty-ecs-runtime-off, aws-guardduty-runtime-monitoring-off, aws-guardduty-disabled]
+    reason: "RUNTIME_MONITORING with ECS_FARGATE_AGENT_MANAGEMENT; recorded only while Runtime Monitoring is on."
+    severity: medium
+  - id: "GuardDuty.13"
+    title: "GuardDuty EC2 runtime monitoring enabled"
+    service: guardduty
+    status: covered
+    check_ids: [aws-guardduty-ec2-runtime-off, aws-guardduty-runtime-monitoring-off, aws-guardduty-disabled]
+    reason: "RUNTIME_MONITORING with EC2_AGENT_MANAGEMENT; recorded only while Runtime Monitoring is on."
+    severity: medium
+  - id: "IAM.1"
+    title: "No IAM policies granting full admin"
+    service: iam
+    status: covered
+    check_ids: [aws-iam-policy-full-admin]
+    reason: "Every customer-managed policy whose default version allows Action * on Resource * (iam:GetAccountAuthorizationDetails, LocalManagedPolicy), attached or not; an unattached one is Low, and one used only as a permissions boundary is excluded (the control's excludePermissionBoundaryPolicy default)."
+    severity: high
+  - id: "IAM.2"
+    title: "IAM users have no directly attached policies"
+    service: iam
+    status: covered
+    check_ids: [aws-iam-user-direct-policy]
+    reason: "`policies` on iam_user holds only the user's own attached managed and inline policies (group policies are not folded in)."
+    severity: low
+  - id: "IAM.3"
+    title: "Access keys rotated within 90 days"
+    service: iam
+    status: covered
+    check_ids: [aws-iam-access-key-old, aws-iam-admin-user-dormant]
+    reason: "`access_key_age_days` is the oldest active key; a dormant admin user is reported by aws-iam-admin-user-dormant instead."
+    severity: medium
+  - id: "IAM.4"
+    title: "Root user has no access key"
+    service: iam
+    status: covered
+    check_ids: [aws-iam-root-active-key]
+    severity: critical
+  - id: "IAM.5"
+    title: "Console users have MFA enabled"
+    service: iam
+    status: covered
+    check_ids: [aws-iam-user-no-mfa]
+    severity: medium
+  - id: "IAM.6"
+    title: "Root user uses hardware MFA"
+    service: iam
+    status: covered
+    check_ids: [aws-iam-root-no-mfa, aws-iam-root-virtual-mfa]
+    reason: "No root MFA, or a virtual MFA device assigned to root (iam:ListVirtualMFADevices)."
+    severity: critical
+  - id: "IAM.7"
+    title: "Strong IAM password policy configured"
+    service: iam
+    status: covered
+    check_ids: [aws-iam-weak-password-policy]
+    reason: "Fires on no policy, length < 14 (stricter than the FSBP default 8, per CIS), reuse prevention < 24, or any of the four character classes not required."
+    severity: medium
+  - id: "IAM.8"
+    title: "Unused IAM credentials removed"
+    service: iam
+    status: covered
+    check_ids: [aws-iam-user-unused-access-key, aws-iam-user-stale-console, aws-iam-admin-user-dormant]
+    reason: "Keys idle 90+ days (or never used and 90+ days old) and console passwords unused 90+ days, FSBP default maxCredentialUsageAge=90."
+    severity: medium
+  - id: "IAM.21"
+    title: "Customer policies avoid service-wide wildcard actions"
+    service: iam
+    status: covered
+    check_ids: [aws-iam-policy-service-wildcard]
+    reason: "Every customer-managed policy (attached or not, boundary-only excluded) whose default version allows a service:* action; a full-admin policy is reported by aws-iam-policy-full-admin instead."
+    severity: low
+  - id: "Inspector.1"
+    title: "Inspector EC2 scanning enabled"
+    service: inspector
+    status: covered
+    check_ids: [aws-inspector-ec2-scan-off, aws-inspector-disabled]
+    reason: "inspector2:BatchGetAccountStatus per region: EC2 scanning DISABLED/DISABLING/SUSPENDED/SUSPENDING. With Inspector off in the region the one aws-inspector-disabled finding stands for every scan type."
+    severity: high
+  - id: "Inspector.2"
+    title: "Inspector ECR scanning enabled"
+    service: inspector
+    status: covered
+    check_ids: [aws-inspector-ecr-scan-off, aws-inspector-disabled]
+    reason: "As Inspector.1 for ECR scanning."
+    severity: high
+  - id: "Inspector.3"
+    title: "Inspector Lambda code scanning enabled"
+    service: inspector
+    status: covered
+    check_ids: [aws-inspector-lambda-code-scan-off, aws-inspector-lambda-scan-off, aws-inspector-disabled]
+    reason: "Lambda code scanning; recorded only while Lambda standard scanning is on (code scanning runs on top of it), otherwise aws-inspector-lambda-scan-off stands for it."
+    severity: high
+  - id: "Inspector.4"
+    title: "Inspector Lambda standard scanning enabled"
+    service: inspector
+    status: covered
+    check_ids: [aws-inspector-lambda-scan-off, aws-inspector-disabled]
+    reason: "As Inspector.1 for Lambda standard scanning."
+    severity: high
+  - id: "Kinesis.1"
+    title: "Kinesis streams encrypted at rest"
+    service: kinesis
+    status: covered
+    check_ids: [aws-kinesis-stream-not-encrypted]
+    reason: "kinesis:ListStreams + DescribeStreamSummary EncryptionType: fires on NONE."
+    severity: medium
+  - id: "Kinesis.3"
+    title: "Kinesis streams retain data long enough"
+    service: kinesis
+    status: covered
+    check_ids: [aws-kinesis-stream-short-retention]
+    reason: "DescribeStreamSummary RetentionPeriodHours below the control's 168-hour default."
+    severity: medium
+  - id: "KMS.1"
+    title: "Customer policies do not allow decrypt on all keys"
+    service: iam
+    status: covered
+    check_ids: [aws-iam-policy-kms-decrypt-all]
+    reason: "Every customer-managed policy (attached or not, boundary-only excluded) allowing kms:Decrypt/ReEncryptFrom (or a wildcard covering them) on Resource \"*\"; unattached ones are Low. A full-admin policy steps aside."
+    severity: medium
+  - id: "KMS.2"
+    title: "Inline policies do not allow decrypt on all keys"
+    service: iam
+    status: covered
+    check_ids: [aws-iam-user-inline-kms-decrypt-all, aws-iam-role-inline-kms-decrypt-all, aws-iam-group-inline-kms-decrypt-all]
+    reason: "Inline policies of users, roles and groups allowing kms:Decrypt/ReEncryptFrom on Resource \"*\". Admin principals step aside for their admin finding."
+    severity: medium
+  - id: "KMS.3"
+    title: "KMS keys not scheduled for deletion"
+    service: kms
+    status: covered
+    check_ids: [aws-kms-key-pending-deletion]
+    reason: "`key_state` from kms:DescribeKey (PendingDeletion / PendingReplicaDeletion)."
+    severity: critical
+  - id: "KMS.5"
+    title: "KMS key policies not public"
+    service: kms
+    status: covered
+    check_ids: [aws-kms-key-policy-public]
+    reason: "Public = everyone (Principal \"*\", or an Allow with NotPrincipal) granted kms:Decrypt with no condition that restricts the caller."
+    severity: critical
+  - id: "Lambda.1"
+    title: "Lambda resource policies prohibit public access"
+    service: lambda
+    status: covered
+    check_ids: [aws-lambda-public-access]
+    severity: critical
+  - id: "Lambda.2"
+    title: "Lambda functions use supported runtimes"
+    service: lambda
+    status: covered
+    check_ids: [aws-lambda-deprecated-runtime]
+    reason: "Dated runtime table from the AWS Lambda runtimes page (internal/checks/aws_lifecycle.go), evaluated against today; container-image functions report no runtime and are ungraded."
+    severity: medium
+  - id: "Lambda.5"
+    title: "VPC Lambda functions span multiple AZs"
+    service: lambda
+    status: covered
+    check_ids: [aws-lambda-single-az]
+    reason: "Zone count joined from the sweep's subnet assets; unknown (ungraded) when any of the function's subnets was not collected."
+    severity: medium
+  - id: "Macie.1"
+    title: "Macie enabled"
+    service: macie
+    status: covered
+    check_ids: [aws-macie-disabled]
+    reason: "macie2:GetMacieSession per region: PAUSED, or Macie's own \"Macie is not enabled\" AccessDenied answer (any other AccessDenied is a missing permission and stays unknown)."
+    severity: medium
+  - id: "Macie.2"
+    title: "Macie automated sensitive data discovery on"
+    service: macie
+    status: covered
+    check_ids: [aws-macie-automated-discovery-off, aws-macie-disabled]
+    reason: "macie2:GetAutomatedDiscoveryConfiguration for an enabled session; a disabled Macie is the aws-macie-disabled finding."
+    severity: high
+  - id: "MQ.2"
+    title: "ActiveMQ brokers stream audit logs"
+    service: mq
+    status: covered
+    check_ids: [aws-mq-audit-logs-disabled]
+    reason: "mq:ListBrokers + DescribeBroker `Logs.Audit` on ActiveMQ brokers (RabbitMQ has no audit log and is not graded); omitted Logs is the documented false default."
+    severity: medium
+  - id: "MSK.1"
+    title: "MSK encrypts traffic between brokers"
+    service: msk
+    status: covered
+    check_ids: [aws-msk-in-cluster-plaintext]
+    reason: "kafka:ListClustersV2 provisioned EncryptionInTransit.InCluster = false (omitted = the API default, true). Serverless clusters always use TLS and are not graded."
+    severity: medium
+  - id: "MSK.3"
+    title: "MSK Connect connectors encrypt in transit"
+    service: msk
+    status: covered
+    check_ids: [aws-msk-connector-plaintext]
+    reason: "kafkaconnect:ListConnectors KafkaClusterEncryptionInTransit.EncryptionType = PLAINTEXT."
+    severity: medium
+  - id: "MSK.4"
+    title: "MSK public access disabled"
+    service: msk
+    status: covered
+    check_ids: [aws-msk-public-access]
+    reason: "kafka:ListClustersV2 BrokerNodeGroupInfo.ConnectivityInfo.PublicAccess.Type other than DISABLED. Medium when client authentication is required (AWS requires it for public access); Critical if unauthenticated access is also on."
+    severity: critical
+  - id: "MSK.5"
+    title: "MSK Connect connectors have logging"
+    service: msk
+    status: covered
+    check_ids: [aws-msk-connector-no-logging]
+    reason: "kafkaconnect:ListConnectors LogDelivery.WorkerLogDelivery: none of CloudWatch Logs, S3 or Firehose enabled (no LogDelivery block = none)."
+    severity: medium
+  - id: "MSK.6"
+    title: "MSK disallows unauthenticated access"
+    service: msk
+    status: covered
+    check_ids: [aws-msk-unauthenticated-access]
+    reason: "kafka:ListClustersV2 ClientAuthentication.Unauthenticated.Enabled, or no client authentication configured at all. Serverless clusters always use IAM and are not graded."
+    severity: medium
+  - id: "Neptune.1"
+    title: "Neptune clusters encrypted at rest"
+    service: neptune
+    status: covered
+    check_ids: [aws-neptune-cluster-not-encrypted]
+    reason: "rds:DescribeDBClusters (engine neptune) StorageEncrypted, on neptune_cluster."
+    severity: medium
+  - id: "Neptune.2"
+    title: "Neptune publishes audit logs"
+    service: neptune
+    status: covered
+    check_ids: [aws-neptune-cluster-no-audit-log-export]
+    reason: "EnabledCloudwatchLogsExports lacks audit."
+    severity: medium
+  - id: "Neptune.3"
+    title: "Neptune cluster snapshots not public"
+    service: neptune
+    status: covered
+    check_ids: [aws-rds-snapshot-public]
+    reason: "rds:DescribeDBClusterSnapshots (manual, no engine filter) returns Neptune cluster snapshots as rds_snapshot assets, and the check reads their restore attribute regardless of engine. Automated snapshots cannot be shared, so manual ones are the whole control."
+    severity: critical
+  - id: "Neptune.4"
+    title: "Neptune clusters have deletion protection"
+    service: neptune
+    status: covered
+    check_ids: [aws-neptune-cluster-no-deletion-protection]
+    reason: "DeletionProtection false."
+    severity: low
+  - id: "Neptune.5"
+    title: "Neptune automated backups enabled"
+    service: neptune
+    status: covered
+    check_ids: [aws-neptune-cluster-short-backup-retention]
+    reason: "BackupRetentionPeriod < 7 (the default parameter)."
+    severity: medium
+  - id: "Neptune.6"
+    title: "Neptune cluster snapshots encrypted at rest"
+    service: neptune
+    status: partial
+    check_ids: [aws-rds-snapshot-unencrypted, aws-neptune-cluster-not-encrypted]
+    reason: "Manual cluster snapshots are graded directly; an automated snapshot always has its cluster's encryption, so the cluster check reports it once. Not covered: automated backups retained after their cluster was deleted (rds:DescribeDBClusterAutomatedBackups is not collected)."
+    severity: medium
+  - id: "Neptune.7"
+    title: "Neptune uses IAM database authentication"
+    service: neptune
+    status: covered
+    check_ids: [aws-neptune-cluster-no-iam-auth]
+    reason: "IAMDatabaseAuthenticationEnabled false."
+    severity: medium
+  - id: "Neptune.8"
+    title: "Neptune copies tags to snapshots"
+    service: neptune
+    status: covered
+    check_ids: [aws-neptune-cluster-no-copy-tags-to-snapshot]
+    reason: "CopyTagsToSnapshot false."
+    severity: low
+  - id: "NetworkFirewall.2"
+    title: "Network Firewall logging enabled"
+    service: networkfirewall
+    status: covered
+    check_ids: [aws-network-firewall-logging-off]
+    reason: "network-firewall:DescribeLoggingConfiguration per firewall (networkfirewall.go) stamps logging_flow / logging_alert / logging_tls; fires when all three were read and none is delivered anywhere. A failed read leaves the keys absent."
+    severity: medium
+  - id: "NetworkFirewall.3"
+    title: "Firewall policy has a rule group"
+    service: networkfirewall
+    status: covered
+    check_ids: [aws-network-firewall-policy-no-rule-groups]
+    reason: "network-firewall:DescribeFirewallPolicy: no stateful and no stateless rule group reference. Medium."
+    severity: medium
+  - id: "NetworkFirewall.4"
+    title: "Stateless default action drops full packets"
+    service: networkfirewall
+    status: covered
+    check_ids: [aws-network-firewall-policy-stateless-default-pass]
+    reason: "DescribeFirewallPolicy StatelessDefaultActions contains aws:pass (custom actions alongside are ignored). Medium."
+    severity: medium
+  - id: "NetworkFirewall.5"
+    title: "Stateless default action drops fragments"
+    service: networkfirewall
+    status: covered
+    check_ids: [aws-network-firewall-policy-fragment-default-pass]
+    reason: "DescribeFirewallPolicy StatelessFragmentDefaultActions contains aws:pass. Low."
+    severity: medium
+  - id: "NetworkFirewall.6"
+    title: "Stateless rule groups are not empty"
+    service: networkfirewall
+    status: covered
+    check_ids: [aws-network-firewall-rule-group-empty]
+    reason: "ListRuleGroups(Type=STATELESS, account scope) + DescribeRuleGroup: zero StatelessRules. Low."
+    severity: medium
+  - id: "NetworkFirewall.9"
+    title: "Network Firewall deletion protection on"
+    service: networkfirewall
+    status: covered
+    check_ids: [aws-network-firewall-no-deletion-protection]
+    reason: "DescribeFirewall DeleteProtection=false. Low (change-control hygiene)."
+    severity: medium
+  - id: "NetworkFirewall.10"
+    title: "Network Firewall subnet change protection on"
+    service: networkfirewall
+    status: covered
+    check_ids: [aws-network-firewall-no-subnet-change-protection]
+    reason: "DescribeFirewall SubnetChangeProtection=false. Low."
+    severity: medium
+  - id: "Opensearch.1"
+    title: "OpenSearch domains encrypted at rest"
+    service: opensearch
+    status: covered
+    check_ids: [aws-opensearch-not-encrypted-at-rest]
+    reason: "es:DescribeDomains EncryptionAtRestOptions.Enabled false. The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: medium
+  - id: "Opensearch.2"
+    title: "OpenSearch domains not publicly accessible"
+    service: opensearch
+    status: covered
+    check_ids: [aws-opensearch-domain-public]
+    reason: "Fires on every domain without VPCOptions (a public endpoint), as the in-VPC-only rule does. Graded Critical when the access policy grants es:ESHttp* to everyone (Principal \"*\", or an Allow with NotPrincipal) under no condition that restricts the caller and fine-grained access control does not authenticate callers; Medium otherwise. The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: critical
+  - id: "Opensearch.3"
+    title: "OpenSearch node-to-node encryption enabled"
+    service: opensearch
+    status: covered
+    check_ids: [aws-opensearch-no-node-to-node-encryption]
+    reason: "NodeToNodeEncryptionOptions.Enabled false. The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: medium
+  - id: "Opensearch.4"
+    title: "OpenSearch error logs go to CloudWatch"
+    service: opensearch
+    status: covered
+    check_ids: [aws-opensearch-error-logs-disabled]
+    reason: "LogPublishingOptions has no enabled ES_APPLICATION_LOGS entry with a CloudWatch log group. The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: medium
+  - id: "Opensearch.5"
+    title: "OpenSearch audit logging enabled"
+    service: opensearch
+    status: covered
+    check_ids: [aws-opensearch-audit-logs-disabled, aws-opensearch-no-fine-grained-access-control]
+    reason: "No enabled AUDIT_LOGS entry. Audit logs require fine-grained access control, so a domain without it is reported once, by the FGAC check, which is why both ids are listed. The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: medium
+  - id: "Opensearch.6"
+    title: "OpenSearch domains have three or more data nodes"
+    service: opensearch
+    status: covered
+    check_ids: [aws-opensearch-too-few-data-nodes]
+    reason: "ClusterConfig.InstanceCount < 3 or ZoneAwarenessEnabled false. The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: medium
+  - id: "Opensearch.7"
+    title: "OpenSearch fine-grained access control enabled"
+    service: opensearch
+    status: covered
+    check_ids: [aws-opensearch-no-fine-grained-access-control]
+    reason: "AdvancedSecurityOptions.Enabled false or absent from the DescribeDomains response. The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: high
+  - id: "Opensearch.8"
+    title: "OpenSearch enforces the latest TLS policy"
+    service: opensearch
+    status: covered
+    check_ids: [aws-opensearch-weak-tls-policy]
+    reason: "EnforceHTTPS false, or TLSSecurityPolicy other than Policy-Min-TLS-1-2-PFS-2023-10. Deliberate deviation: Policy-Min-TLS-1-2-RFC9151-FIPS-2024-08, which is stricter, also passes. The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: medium
+  - id: "Opensearch.10"
+    title: "OpenSearch domains run the latest service software"
+    service: opensearch
+    status: covered
+    check_ids: [aws-opensearch-software-update-available]
+    reason: "ServiceSoftwareOptions.UpdateAvailable true; an omitted block is unknown. The opensearch API describes both engines, so one opensearch_domain asset and one check cover the ES.n and Opensearch.n rows for the same domain."
+    severity: medium
+  - id: "PCA.1"
+    title: "Private CA root authority disabled"
+    service: pca
+    status: covered
+    check_ids: [aws-pca-root-ca-active]
+    reason: "acm-pca:ListCertificateAuthorities: a ROOT CA with status ACTIVE (deleted CAs are not collected)."
+    severity: low
+  - id: "Route53.2"
+    title: "Route 53 public zones log DNS queries"
+    service: route53
+    status: covered
+    check_ids: [aws-route53-zone-query-logging-disabled]
+    reason: "route53:ListQueryLoggingConfigs (one account-wide listing) stamped on dns_zone as query_logging; public zones (private_zone=false) without a config fire. A failed listing leaves the key absent. Low."
+    severity: medium
+  - id: "RDS.1"
+    title: "RDS snapshots not public"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-snapshot-public]
+    reason: "Covers both DB and cluster snapshots."
+    severity: critical
+  - id: "RDS.2"
+    title: "RDS instances not publicly accessible"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-publicly-accessible, aws-rds-public-subnet-igw]
+    reason: "PubliclyAccessible=true is reported by aws-rds-publicly-accessible, or by aws-rds-public-subnet-igw when the instance is also in an IGW-routed subnet."
+    severity: critical
+  - id: "RDS.3"
+    title: "RDS instances encrypted at rest"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-not-encrypted, aws-rds-cluster-not-encrypted, aws-docdb-cluster-not-encrypted, aws-neptune-cluster-not-encrypted]
+    reason: "Standalone instances on the instance; Aurora, Multi-AZ DB cluster, DocumentDB and Neptune members take StorageEncrypted from their cluster and are reported once, on the cluster."
+    severity: medium
+  - id: "RDS.4"
+    title: "RDS snapshots encrypted at rest"
+    service: rds
+    status: partial
+    check_ids: [aws-rds-snapshot-unencrypted, aws-rds-not-encrypted, aws-rds-cluster-not-encrypted, aws-docdb-cluster-not-encrypted, aws-neptune-cluster-not-encrypted]
+    reason: "Manual DB and cluster snapshots are graded directly. An automated snapshot always has its source's encryption, so an unencrypted one exists only for an unencrypted instance or cluster, which its source check reports (one finding per root cause). Not covered: automated backups retained after their source was deleted (rds:DescribeDBInstanceAutomatedBackups / DescribeDBClusterAutomatedBackups are not collected)."
+    severity: medium
+  - id: "RDS.5"
+    title: "RDS instances deployed Multi-AZ"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-no-multi-az]
+    reason: "Aurora and other cluster members (DBClusterIdentifier set) are excluded, as FSBP does."
+    severity: medium
+  - id: "RDS.6"
+    title: "RDS enhanced monitoring configured"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-no-enhanced-monitoring]
+    severity: low
+  - id: "RDS.7"
+    title: "RDS clusters have deletion protection"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-cluster-no-deletion-protection, aws-docdb-cluster-no-deletion-protection, aws-neptune-cluster-no-deletion-protection]
+    reason: "rds:DescribeDBClusters DeletionProtection, on rds_cluster (and the DocumentDB / Neptune clusters FSBP also evaluates)."
+    severity: medium
+  - id: "RDS.8"
+    title: "RDS instances have deletion protection"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-no-deletion-protection]
+    reason: "Cluster members are excluded; their protection is a cluster setting (RDS.7)."
+    severity: low
+  - id: "RDS.9"
+    title: "RDS instances publish logs to CloudWatch"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-no-log-exports]
+    reason: "Per-engine required log types (PostgreSQL: postgresql and upgrade); Aurora and other cluster members are skipped (exports are a cluster setting)."
+    severity: medium
+  - id: "RDS.10"
+    title: "RDS instances use IAM authentication"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-no-iam-auth, aws-rds-cluster-no-iam-auth]
+    reason: "MySQL, MariaDB and PostgreSQL instances on the instance; Aurora members inherit IAM auth from their cluster and are reported once there (RDS.12). Aurora Serverless v1, which does not support it, is not graded."
+    severity: medium
+  - id: "RDS.11"
+    title: "RDS automatic backups enabled with retention"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-no-backup]
+    reason: "Retention 0 is High, 1-6 days Low; read replicas and cluster members are skipped."
+    severity: medium
+  - id: "RDS.12"
+    title: "RDS clusters use IAM authentication"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-cluster-no-iam-auth]
+    reason: "IAMDatabaseAuthenticationEnabled on Aurora and Multi-AZ DB clusters (aurora, aurora-mysql, aurora-postgresql, mysql, postgres); Aurora Serverless v1 does not support it. Neptune clusters are Neptune.7."
+    severity: medium
+  - id: "RDS.13"
+    title: "RDS auto minor version upgrade enabled"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-auto-minor-upgrade-disabled]
+    severity: high
+  - id: "RDS.14"
+    title: "Aurora clusters have backtracking enabled"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-cluster-no-backtracking]
+    reason: "Aurora MySQL BacktrackWindow 0 (the API omits an unconfigured window); Serverless v1 and global database members, which cannot backtrack, are not graded. The optional BacktrackWindowInHours parameter is not applied (no default)."
+    severity: medium
+  - id: "RDS.15"
+    title: "RDS clusters span multiple AZs"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-cluster-single-az]
+    reason: "DBCluster.MultiAZ (instances in more than one AZ), not AvailabilityZones (Aurora storage always spans three)."
+    severity: medium
+  - id: "RDS.16"
+    title: "Aurora clusters copy tags to snapshots"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-cluster-no-copy-tags-to-snapshot]
+    reason: "CopyTagsToSnapshot on Aurora clusters."
+    severity: low
+  - id: "RDS.17"
+    title: "RDS instances copy tags to snapshots"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-no-copy-tags-to-snapshot, aws-rds-cluster-no-copy-tags-to-snapshot]
+    reason: "Standalone instances on the instance; a cluster member's snapshots are cluster snapshots, so its setting is the cluster's and is reported there (RDS.16/47/48)."
+    severity: low
+  - id: "RDS.19"
+    title: "Event subscriptions cover critical cluster events"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-cluster-events-not-subscribed]
+    reason: "rds:DescribeEventSubscriptions, one aws_rds_settings asset per region: an enabled subscription for source type db-cluster (or every source type), every source, delivering maintenance and failure (or every category). Passes with no subscriptions at all, as FSBP does; graph also stays silent in a region with no clusters."
+    severity: low
+  - id: "RDS.20"
+    title: "Event subscriptions cover critical instance events"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-instance-events-not-subscribed]
+    reason: "As RDS.19 for db-instance: maintenance, configuration change, failure; silent in a region with no instances."
+    severity: low
+  - id: "RDS.21"
+    title: "Event subscription for parameter group events"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-parameter-group-events-not-subscribed]
+    reason: "As RDS.19 for db-parameter-group: configuration change; silent in a region with no instances or clusters."
+    severity: low
+  - id: "RDS.22"
+    title: "Event subscription for security group events"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-security-group-events-not-subscribed]
+    reason: "As RDS.19 for db-security-group: configuration change, failure; silent in a region with no instances or clusters."
+    severity: low
+  - id: "RDS.23"
+    title: "RDS instances avoid default engine port"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-engine-default-port, aws-rds-publicly-accessible]
+    reason: "Private non-cluster instances on the engine default port fire aws-rds-engine-default-port; a publicly accessible one is graded Medium by aws-rds-publicly-accessible instead. Cluster members are excluded, as FSBP does."
+    severity: low
+  - id: "RDS.24"
+    title: "RDS clusters use custom admin username"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-cluster-default-master-username]
+    reason: "MasterUsername admin, postgres, root or sa on rds_cluster; DocumentDB and Neptune clusters are their own types and not graded, as FSBP excludes them."
+    severity: medium
+  - id: "RDS.25"
+    title: "RDS instances use custom admin username"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-default-master-username]
+    reason: "admin, postgres, root or sa; cluster members skipped (RDS.24)."
+    severity: medium
+  - id: "RDS.27"
+    title: "RDS clusters encrypted at rest"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-cluster-not-encrypted]
+    reason: "StorageEncrypted on rds_cluster."
+    severity: medium
+  - id: "RDS.34"
+    title: "Aurora MySQL clusters export audit logs"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-aurora-mysql-no-audit-log-export, aws-rds-aurora-mysql-audit-logging-disabled]
+    reason: "EnabledCloudwatchLogsExports lacks audit on an Aurora MySQL cluster (Serverless v1 excluded). A cluster with Advanced Auditing off entirely is reported once, by aws-rds-aurora-mysql-audit-logging-disabled, whose evidence carries audit_log_exported."
+    severity: medium
+  - id: "RDS.35"
+    title: "RDS clusters auto minor version upgrade"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-cluster-auto-minor-upgrade-disabled]
+    reason: "DBCluster.AutoMinorVersionUpgrade; a cluster whose response omits it is unknown, not failing."
+    severity: medium
+  - id: "RDS.36"
+    title: "RDS PostgreSQL exports logs to CloudWatch"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-no-log-exports]
+    reason: "Requires both postgresql and upgrade exports."
+    severity: medium
+  - id: "RDS.37"
+    title: "Aurora PostgreSQL clusters export logs"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-aurora-postgresql-no-log-export]
+    reason: "EnabledCloudwatchLogsExports lacks postgresql on an Aurora PostgreSQL cluster."
+    severity: medium
+  - id: "RDS.38"
+    title: "RDS for PostgreSQL instances encrypted in transit"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-postgres-tls-not-enforced]
+    reason: "rds:DescribeDBParameters on the instance's DB parameter group: rds.force_ssl = 0 fails; instances in a DB cluster are not graded (as the control). An unset value is left unknown, because the default is 1 from PostgreSQL 15 and 0 before it."
+    severity: medium
+  - id: "RDS.39"
+    title: "RDS for MySQL instances encrypted in transit"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-mysql-tls-not-enforced]
+    reason: "rds:DescribeDBParameters on the instance's DB parameter group: require_secure_transport 0/OFF fails; instances in a DB cluster are not graded (as the control). An unset value is left unknown, because the default differs across MySQL major versions."
+    severity: medium
+  - id: "RDS.40"
+    title: "RDS SQL Server exports logs to CloudWatch"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-no-log-exports]
+    severity: medium
+  - id: "RDS.41"
+    title: "RDS SQL Server enforces TLS in transit"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-sqlserver-tls-not-enforced]
+    reason: "rds:DescribeDBParameters on the instance's parameter group: rds.force_ssl not 1 (unset = the engine default 0). An unread group is unknown."
+    severity: medium
+  - id: "RDS.42"
+    title: "RDS MariaDB exports logs to CloudWatch"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-no-log-exports]
+    severity: medium
+  - id: "RDS.43"
+    title: "RDS proxies require TLS"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-proxy-tls-not-required]
+    reason: "rds:DescribeDBProxies RequireTLS false, on rds_proxy."
+    severity: medium
+  - id: "RDS.44"
+    title: "RDS MariaDB enforces TLS in transit"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-mariadb-tls-not-enforced]
+    reason: "require_secure_transport not ON/1 (unset = OFF) or the group not in sync (ParameterApplyStatus). Groups without the parameter (MariaDB < 10.5) are not graded, as FSBP excludes them."
+    severity: medium
+  - id: "RDS.45"
+    title: "Aurora MySQL clusters enable audit logging"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-aurora-mysql-audit-logging-disabled]
+    reason: "rds:DescribeDBClusterParameters: server_audit_logging not 1, server_audit_events empty (unset = 0 / empty), or a member's DBClusterParameterGroupStatus not in-sync."
+    severity: medium
+  - id: "RDS.46"
+    title: "RDS instances not in IGW-routed public subnets"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-public-subnet-igw]
+    reason: "`in_public_subnet` is derived from route tables (0.0.0.0/0 to an igw-)."
+    severity: high
+  - id: "RDS.47"
+    title: "RDS PostgreSQL clusters copy tags to snapshots"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-cluster-no-copy-tags-to-snapshot]
+    reason: "CopyTagsToSnapshot on RDS for PostgreSQL Multi-AZ DB clusters (rds_cluster, engine postgres)."
+    severity: low
+  - id: "RDS.48"
+    title: "RDS MySQL clusters copy tags to snapshots"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-cluster-no-copy-tags-to-snapshot]
+    reason: "CopyTagsToSnapshot on RDS for MySQL Multi-AZ DB clusters (rds_cluster, engine mysql)."
+    severity: low
+  - id: "RDS.50"
+    title: "RDS clusters keep sufficient backup retention"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-cluster-short-backup-retention, aws-docdb-cluster-short-backup-retention, aws-neptune-cluster-short-backup-retention]
+    reason: "BackupRetentionPeriod < 7 (the default parameter) on every cluster type FSBP evaluates."
+    severity: medium
+  - id: "RDS.51"
+    title: "Aurora MySQL global clusters on supported version"
+    service: rds
+    status: covered
+    check_ids: [aws-rds-global-cluster-unsupported-version]
+    reason: "rds:DescribeGlobalClusters, emitted by the writer's region: Aurora MySQL engine version below 8.0.mysql_aurora.3.08.0 and not a 3.04.0-3.04.3 LTS release (the control's fixed parameters)."
+    severity: high
+  - id: "Redshift.1"
+    title: "Redshift clusters prohibit public access"
+    service: redshift
+    status: covered
+    check_ids: [aws-redshift-publicly-accessible, aws-redshift-port-world-open]
+    reason: "redshift:DescribeClusters PubliclyAccessible. A public cluster whose security group also admits 0.0.0.0/0 or ::/0 on its port is reported once, by aws-redshift-port-world-open at High; otherwise aws-redshift-publicly-accessible fires (Low, Medium on the default port). Together they fire on every PubliclyAccessible cluster."
+    severity: critical
+  - id: "Redshift.2"
+    title: "Redshift connections encrypted in transit"
+    service: redshift
+    status: covered
+    check_ids: [aws-redshift-no-tls]
+    reason: "require_ssl from redshift:DescribeClusterParameters on the cluster's parameter group (read once per group, every page; default groups report their engine default explicitly). Fires on false; an unread group is unknown."
+    severity: medium
+  - id: "Redshift.3"
+    title: "Redshift automatic snapshots enabled"
+    service: redshift
+    status: covered
+    check_ids: [aws-redshift-snapshot-retention-short]
+    reason: "DescribeClusters AutomatedSnapshotRetentionPeriod below the control's default MinRetentionPeriod of 7 days (0 = automated snapshots off)."
+    severity: medium
+  - id: "Redshift.4"
+    title: "Redshift audit logging enabled"
+    service: redshift
+    status: covered
+    check_ids: [aws-redshift-audit-logging-disabled]
+    reason: "redshift:DescribeLoggingStatus LoggingEnabled per cluster (S3 or CloudWatch destination)."
+    severity: medium
+  - id: "Redshift.6"
+    title: "Redshift auto major-version upgrades on"
+    service: redshift
+    status: covered
+    check_ids: [aws-redshift-version-upgrade-disabled]
+    reason: "DescribeClusters AllowVersionUpgrade false."
+    severity: medium
+  - id: "Redshift.7"
+    title: "Redshift uses enhanced VPC routing"
+    service: redshift
+    status: covered
+    check_ids: [aws-redshift-no-enhanced-vpc-routing]
+    reason: "DescribeClusters EnhancedVpcRouting false."
+    severity: medium
+  - id: "Redshift.8"
+    title: "Redshift avoids the default admin username"
+    service: redshift
+    status: covered
+    check_ids: [aws-redshift-default-admin-username]
+    reason: "DescribeClusters MasterUsername awsuser (case-insensitive)."
+    severity: medium
+  - id: "Redshift.10"
+    title: "Redshift clusters encrypted at rest"
+    service: redshift
+    status: covered
+    check_ids: [aws-redshift-not-encrypted]
+    reason: "DescribeClusters Encrypted false. The control's optional key-ARN parameter has no default and is not applied."
+    severity: medium
+  - id: "Redshift.15"
+    title: "Redshift port ingress only from restricted origins"
+    service: redshift
+    status: covered
+    check_ids: [aws-redshift-port-world-open]
+    reason: "Cross-asset join: the cluster's VpcSecurityGroups against the security groups collected in the same sweep; fires when any admits 0.0.0.0/0 or ::/0 (tcp covering the Endpoint port, or all protocols). Unknown when the port or any attached group was not collected. High on a publicly accessible cluster, Low on a private one."
+    severity: high
+  - id: "Redshift.18"
+    title: "Redshift Multi-AZ enabled"
+    service: redshift
+    status: covered
+    check_ids: [aws-redshift-no-multi-az]
+    reason: "DescribeClusters MultiAZ Disabled."
+    severity: medium
+  - id: "RedshiftServerless.1"
+    title: "Redshift Serverless uses enhanced VPC routing"
+    service: redshiftserverless
+    status: covered
+    check_ids: [aws-redshift-serverless-no-enhanced-vpc-routing]
+    reason: "redshift-serverless:ListWorkgroups enhancedVpcRouting false."
+    severity: high
+  - id: "RedshiftServerless.2"
+    title: "Redshift Serverless requires SSL"
+    service: redshiftserverless
+    status: covered
+    check_ids: [aws-redshift-serverless-no-tls]
+    reason: "ListWorkgroups configParameters require_ssl false (the control fails only an explicit false)."
+    severity: medium
+  - id: "RedshiftServerless.3"
+    title: "Redshift Serverless prohibits public access"
+    service: redshiftserverless
+    status: covered
+    check_ids: [aws-redshift-serverless-publicly-accessible]
+    reason: "ListWorkgroups publiclyAccessible true; possible tier (Low, Medium on the default port)."
+    severity: high
+  - id: "RedshiftServerless.5"
+    title: "Redshift Serverless avoids default admin username"
+    service: redshiftserverless
+    status: covered
+    check_ids: [aws-redshift-serverless-default-admin-username]
+    reason: "redshift-serverless:GetNamespace adminUsername admin, read for each workgroup's namespace (ListNamespaces is outside the managed read-only policies). A namespace no workgroup uses is not reached; with no workgroup it accepts no connections, so its admin name is not reachable either."
+    severity: medium
+  - id: "RedshiftServerless.6"
+    title: "Redshift Serverless exports logs to CloudWatch"
+    service: redshiftserverless
+    status: covered
+    check_ids: [aws-redshift-serverless-no-log-exports]
+    reason: "GetNamespace logExports must include both connectionlog and userlog, read for each workgroup's namespace (ListNamespaces is outside the managed read-only policies). A namespace no workgroup uses is not reached: with no workgroup it serves no connections or queries to log."
+    severity: medium
+  - id: "S3.1"
+    title: "Account-level S3 Block Public Access enabled"
+    service: s3
+    status: covered
+    check_ids: [aws-s3-account-bpa-disabled]
+    reason: "The account-level s3control:GetPublicAccessBlock read, stored on aws_account_settings; all four flags required."
+    severity: medium
+  - id: "S3.2"
+    title: "S3 buckets block public read access"
+    service: s3
+    status: covered
+    check_ids: [aws-s3-public-read]
+    reason: "Public READ split from write: AWS's GetBucketPolicyStatus says the policy is public and an Allow to everyone (Principal \"*\", or NotPrincipal) grants s3:GetObject/GetObjectVersion/ListBucket/ListBucketVersions (not taken back by an unconditional Deny that reaches everyone) — unconditioned, or conditioned only on keys AWS does not treat as restricting (a statement scoped by aws:SourceVpc/SourceVpce/SourceIp/PrincipalOrgID/SourceAccount and the like is not public) — unless RestrictPublicBuckets; or the ACL grants READ/FULL_CONTROL to AllUsers/AuthenticatedUsers, unless IgnorePublicAcls (bucket and account blocks combined). When the public part of a policy grants no nameable data action the split is unknown and aws-s3-public-bucket reports the bucket. Absent unless the policy, its status and the ACL were all read."
+    severity: critical
+  - id: "S3.3"
+    title: "S3 buckets block public write access"
+    service: s3
+    status: covered
+    check_ids: [aws-s3-public-write]
+    reason: "Same inputs as S3.2, write grants: s3:PutObject/DeleteObject/DeleteObjectVersion/PutObjectAcl/PutObjectVersionAcl/PutBucketPolicy/DeleteBucketPolicy/PutBucketAcl/DeleteBucket to everyone (Principal \"*\", or an Allow with NotPrincipal), or WRITE/WRITE_ACP/FULL_CONTROL in the ACL."
+    severity: critical
+  - id: "S3.5"
+    title: "S3 bucket policies require TLS"
+    service: s3
+    status: covered
+    check_ids: [aws-s3-no-tls-enforcement]
+    reason: "s3:GetBucketPolicy: a Deny for Principal \"*\" on s3:* (or *) over the bucket and its objects, conditioned only on Bool/BoolIfExists aws:SecureTransport=false; no policy (NoSuchBucketPolicy) fires."
+    severity: medium
+  - id: "S3.6"
+    title: "S3 bucket policies restrict other accounts"
+    service: s3
+    status: covered
+    check_ids: [aws-s3-policy-cross-account-write]
+    reason: "Allow of s3:DeleteBucketPolicy/PutBucketAcl/PutBucketPolicy/PutEncryptionConfiguration/PutObjectAcl to another account ID, or to everyone (Principal \"*\", or an Allow with NotPrincipal) without a condition that restricts the caller."
+    severity: high
+  - id: "S3.8"
+    title: "S3 buckets have Block Public Access"
+    service: s3
+    status: covered
+    check_ids: [aws-s3-public-bucket, aws-s3-public-read, aws-s3-public-write, aws-s3-bucket-bpa-incomplete]
+    reason: "The bucket's OWN four flags: when the effective block (bucket + account) is incomplete aws-s3-public-bucket fires (or the public read/write check it steps aside for — both imply an incomplete block); when the account block covers the bucket but its own flags are incomplete, aws-s3-bucket-bpa-incomplete fires (Low: not exposed today)."
+    severity: high
+  - id: "S3.9"
+    title: "S3 server access logging enabled"
+    service: s3
+    status: covered
+    check_ids: [aws-s3-access-logging-disabled]
+    severity: medium
+  - id: "S3.12"
+    title: "S3 buckets do not use ACLs for access"
+    service: s3
+    status: covered
+    check_ids: [aws-s3-acls-in-use]
+    reason: "s3:GetBucketOwnershipControls + GetBucketAcl: Object Ownership is not BucketOwnerEnforced (no ownership controls = the legacy ACLs-enabled default) and the ACL grants access to anyone other than the bucket owner. A bucket whose ACL only holds the owner's own grant is not using ACLs for user access. Public ACL grants are reported by aws-s3-public-read/-write instead."
+    severity: medium
+  - id: "S3.13"
+    title: "S3 buckets have lifecycle configuration"
+    service: s3
+    status: covered
+    check_ids: [aws-s3-no-lifecycle]
+    reason: "s3:GetBucketLifecycleConfiguration: no enabled lifecycle rule (NoSuchLifecycleConfiguration = none)."
+    severity: low
+  - id: "S3.19"
+    title: "S3 access points block public access"
+    service: s3
+    status: covered
+    check_ids: [aws-s3-access-point-bpa-incomplete]
+    reason: "s3control:ListAccessPoints per region + GetAccessPoint: not all four of the access point's Block Public Access flags on. Graded Medium when GetAccessPointPolicyStatus says its policy is public, Low otherwise."
+    severity: critical
+  - id: "S3.24"
+    title: "Multi-Region access points block public access"
+    service: s3
+    status: covered
+    check_ids: [aws-s3-mrap-bpa-incomplete]
+    reason: "s3control:ListMultiRegionAccessPoints (served from us-west-2, commercial partition only): not all four PublicAccessBlock flags on."
+    severity: high
+  - id: "S3.25"
+    title: "S3 directory buckets have lifecycle configuration"
+    service: s3
+    status: covered
+    check_ids: [aws-s3-directory-bucket-no-lifecycle]
+    reason: "s3:ListDirectoryBuckets per region + GetBucketLifecycleConfiguration: no enabled lifecycle rule. The lifecycle read needs s3express:GetLifecycleConfiguration, outside SecurityAudit/ViewOnlyAccess and granted by the read-only role's supplemental statement; without it the key is absent and the check stays silent."
+    severity: low
+  - id: "SageMaker.1"
+    title: "SageMaker notebooks lack direct internet access"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-notebook-direct-internet-access, aws-sagemaker-notebook-not-in-custom-vpc]
+    reason: "DescribeNotebookInstance DirectInternetAccess=Enabled. A notebook in a VPC subnet is reported by aws-sagemaker-notebook-direct-internet-access; one with no SubnetId (always direct internet) by aws-sagemaker-notebook-not-in-custom-vpc, so the shared root cause is one finding."
+    severity: high
+  - id: "SageMaker.2"
+    title: "SageMaker notebooks run in a custom VPC"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-notebook-not-in-custom-vpc]
+    reason: "DescribeNotebookInstance with no SubnetId (SageMaker service network, Medium), or a SubnetId whose VPC is the default VPC (Low; joined from the same sweep's subnet and vpc assets, unknown when either is not inventoried)."
+    severity: high
+  - id: "SageMaker.3"
+    title: "SageMaker notebooks deny root access"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-notebook-root-access]
+    reason: "DescribeNotebookInstance RootAccess=Enabled. Graded Low: it is the SageMaker default and a notebook user already acts with the instance's IAM role, so root on the instance is hardening, not escalation."
+    severity: high
+  - id: "SageMaker.4"
+    title: "SageMaker endpoint variants start with two+ instances"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-endpoint-single-instance]
+    reason: "DescribeEndpointConfig: an instance-based production variant (no ServerlessConfig, InitialInstanceCount set) with InitialInstanceCount 1. Info: availability only."
+    severity: medium
+  - id: "SageMaker.5"
+    title: "SageMaker models enable network isolation"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-model-no-network-isolation]
+    reason: "DescribeModel EnableNetworkIsolation=false."
+    severity: medium
+  - id: "SageMaker.8"
+    title: "SageMaker notebooks run supported platforms"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-notebook-unsupported-platform]
+    reason: "DescribeNotebookInstance PlatformIdentifier other than notebook-al2023-v1 (the control's fixed supportedPlatformIdentifierVersions)."
+    severity: medium
+  - id: "SageMaker.9"
+    title: "Data quality jobs encrypt inter-container traffic"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-monitoring-job-no-inter-container-encryption]
+    reason: "DescribeDataQualityJobDefinition NetworkConfig.EnableInterContainerTrafficEncryption false or unset (the API default)."
+    severity: medium
+  - id: "SageMaker.10"
+    title: "Explainability jobs encrypt inter-container traffic"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-monitoring-job-no-inter-container-encryption]
+    reason: "DescribeModelExplainabilityJobDefinition NetworkConfig.EnableInterContainerTrafficEncryption false or unset."
+    severity: medium
+  - id: "SageMaker.11"
+    title: "Data quality jobs enable network isolation"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-monitoring-job-no-network-isolation]
+    reason: "DescribeDataQualityJobDefinition NetworkConfig.EnableNetworkIsolation false or unset (the API default)."
+    severity: medium
+  - id: "SageMaker.12"
+    title: "Model bias jobs enable network isolation"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-monitoring-job-no-network-isolation]
+    reason: "DescribeModelBiasJobDefinition NetworkConfig.EnableNetworkIsolation false or unset."
+    severity: medium
+  - id: "SageMaker.13"
+    title: "Model quality jobs encrypt inter-container traffic"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-monitoring-job-no-inter-container-encryption]
+    reason: "DescribeModelQualityJobDefinition NetworkConfig.EnableInterContainerTrafficEncryption false or unset."
+    severity: medium
+  - id: "SageMaker.14"
+    title: "Monitoring schedules enable network isolation"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-monitoring-schedule-no-network-isolation, aws-sagemaker-monitoring-job-no-network-isolation]
+    reason: "DescribeMonitoringSchedule: an inline MonitoringJobDefinition with NetworkConfig.EnableNetworkIsolation false or unset. A schedule that names a separate job definition is graded on that definition (aws-sagemaker-monitoring-job-no-network-isolation, all four job types), one finding per root cause."
+    severity: medium
+  - id: "SageMaker.15"
+    title: "Model bias jobs encrypt inter-container traffic"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-monitoring-job-no-inter-container-encryption]
+    reason: "DescribeModelBiasJobDefinition EnableInterContainerTrafficEncryption false or unset on a definition with JobResources.ClusterConfig.InstanceCount >= 2, as the control specifies."
+    severity: medium
+  - id: "SageMaker.16"
+    title: "SageMaker models pull primary images via VPC"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-model-primary-image-not-vpc-registry]
+    reason: "DescribeModel PrimaryContainer (or a single Containers entry) with no ImageConfig or RepositoryAccessMode Platform. Info: Platform is the default pull path."
+    severity: medium
+  - id: "SageMaker.17"
+    title: "Feature group offline stores use KMS"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-feature-group-offline-store-no-kms]
+    reason: "DescribeFeatureGroup: an OfflineStoreConfig whose S3StorageConfig sets no KmsKeyId. Groups without an offline store are not graded."
+    severity: medium
+  - id: "SageMaker.19"
+    title: "Inference pipeline containers pull via VPC"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-model-pipeline-image-not-vpc-registry]
+    reason: "DescribeModel with two or more Containers: any container with no ImageConfig or RepositoryAccessMode Platform (named in the finding). Info."
+    severity: medium
+  - id: "SageMaker.20"
+    title: "Model explainability jobs enable network isolation"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-monitoring-job-no-network-isolation]
+    reason: "DescribeModelExplainabilityJobDefinition NetworkConfig.EnableNetworkIsolation false or unset (the check covers all four Model Monitor job types)."
+    severity: high
+  - id: "SageMaker.21"
+    title: "SageMaker notebooks use a customer managed KMS key"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-notebook-no-customer-managed-key]
+    reason: "DescribeNotebookInstance KmsKeyId empty: the storage volume uses the AWS managed key. A failed describe leaves kms_key_id absent."
+    severity: medium
+  - id: "SageMaker.22"
+    title: "Monitoring schedules encrypt inter-container traffic"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-monitoring-schedule-no-inter-container-encryption, aws-sagemaker-monitoring-job-no-inter-container-encryption]
+    reason: "DescribeMonitoringSchedule: an inline MonitoringJobDefinition with NetworkConfig.EnableInterContainerTrafficEncryption false or unset. A schedule that names a separate job definition is graded on that definition (aws-sagemaker-monitoring-job-no-inter-container-encryption), one finding per root cause."
+    severity: medium
+  - id: "SageMaker.23"
+    title: "Inference experiments encrypt instance storage with a customer managed key"
+    service: sagemaker
+    status: missing
+    reason: "Inference experiments are not collected: needs sagemaker:ListInferenceExperiments + DescribeInferenceExperiment (KmsKey)."
+    severity: medium
+  - id: "SageMaker.24"
+    title: "Inference experiments encrypt captured data with a customer managed key"
+    service: sagemaker
+    status: missing
+    reason: "Inference experiments are not collected: needs sagemaker:ListInferenceExperiments + DescribeInferenceExperiment (DataStorageConfig.KmsKey)."
+    severity: medium
+  - id: "SageMaker.25"
+    title: "Model quality jobs enable network isolation"
+    service: sagemaker
+    status: covered
+    check_ids: [aws-sagemaker-monitoring-job-no-network-isolation]
+    reason: "DescribeModelQualityJobDefinition NetworkConfig.EnableNetworkIsolation false or unset (the check covers all four Model Monitor job types)."
+    severity: high
+  - id: "SecretsManager.1"
+    title: "Secrets have automatic rotation enabled"
+    service: secretsmanager
+    status: covered
+    check_ids: [aws-secretsmanager-no-rotation]
+    severity: medium
+  - id: "SecretsManager.2"
+    title: "Rotating secrets rotate successfully"
+    service: secretsmanager
+    status: covered
+    check_ids: [aws-secretsmanager-rotation-overdue]
+    reason: "Rotation enabled and the scheduled rotation did not happen: ListSecrets NextRotationDate more than a day in the past (any schedule, cron included), or last rotation (or creation) older than the AutomaticallyAfterDays / rate(N days) interval plus a day."
+    severity: medium
+  - id: "SecretsManager.3"
+    title: "Unused secrets removed"
+    service: secretsmanager
+    status: covered
+    check_ids: [aws-secretsmanager-unused]
+    reason: "LastAccessedDate from ListSecrets; never accessed counts once the secret is 90+ days old."
+    severity: medium
+  - id: "SecretsManager.4"
+    title: "Secrets rotated within allowed days"
+    service: secretsmanager
+    status: covered
+    check_ids: [aws-secretsmanager-no-rotation, aws-secretsmanager-not-rotated-90d, aws-secretsmanager-rotation-overdue]
+    reason: "Rotation off is aws-secretsmanager-no-rotation; rotating but 90+ days since the last rotation is not-rotated-90d, or rotation-overdue when it missed a shorter schedule."
+    severity: medium
+  - id: "ServiceCatalog.1"
+    title: "Service Catalog portfolios shared only within org"
+    service: servicecatalog
+    status: covered
+    check_ids: [aws-servicecatalog-portfolio-account-share]
+    reason: "servicecatalog:ListPortfolios + ListPortfolioAccess (no OrganizationParentId), which returns exactly the ACCOUNT-type shares the control fails; organization/OU shares are not in it. Graded whether or not the Organizations integration is enabled (its status, servicecatalog:GetAWSOrganizationsAccessStatus, is readable only from the management account and is not granted by SecurityAudit/ViewOnlyAccess)."
+    severity: medium
+  - id: "SES.3"
+    title: "SES configuration sets require TLS"
+    service: ses
+    status: covered
+    check_ids: [aws-ses-tls-not-required]
+    reason: "sesv2:ListConfigurationSets + GetConfigurationSet `DeliveryOptions.TlsPolicy` OPTIONAL (omitted delivery options is the documented OPTIONAL default)."
+    severity: medium
+  - id: "SNS.4"
+    title: "SNS topic policies not public"
+    service: sns
+    status: covered
+    check_ids: [aws-sns-topic-policy-public]
+    severity: critical
+  - id: "SQS.1"
+    title: "SQS queues encrypted at rest"
+    service: sqs
+    status: covered
+    check_ids: [aws-sqs-not-encrypted]
+    reason: "sqs:GetQueueAttributes KmsMasterKeyId / SqsManagedSseEnabled (read on the same call as the queue policy): fires when neither SSE-KMS nor SSE-SQS is on. A response carrying neither attribute leaves the queue unknown."
+    severity: medium
+  - id: "SQS.3"
+    title: "SQS queue policies not public"
+    service: sqs
+    status: covered
+    check_ids: [aws-sqs-queue-policy-public]
+    severity: critical
+  - id: "SSM.1"
+    title: "EC2 instances managed by Systems Manager"
+    service: ssm
+    status: covered
+    check_ids: [aws-ec2-not-ssm-managed]
+    reason: "Running instances stamped ssm_managed=false, written only when the managed-node listing succeeded; access-denied/unavailable SSM reads leave the key absent and stay silent."
+    severity: medium
+  - id: "SSM.2"
+    title: "SSM patch compliance is COMPLIANT"
+    service: ssm
+    status: covered
+    check_ids: [aws-ec2-ssm-patch-noncompliant]
+    reason: "ssm:ListResourceComplianceSummaries (ComplianceType=Patch, ManagedInstance) per region, stamped on ec2_instance as ssm_patch_compliance; NON_COMPLIANT fires. An instance with no Patch record is ungraded (the control evaluates Patch Manager-covered instances only); a failed or over-cap listing stamps nothing. Medium: missing patches' CVEs are already vulnerability findings."
+    severity: high
+  - id: "SSM.3"
+    title: "SSM association compliance is COMPLIANT"
+    service: ssm
+    status: covered
+    check_ids: [aws-ec2-ssm-association-noncompliant]
+    reason: "ListResourceComplianceSummaries (ComplianceType=Association) on ec2_instance as ssm_association_compliance; NON_COMPLIANT fires, no record is ungraded. Low."
+    severity: low
+  - id: "SSM.4"
+    title: "SSM documents not publicly shared"
+    service: ssm
+    status: covered
+    check_ids: [aws-ssm-document-public]
+    reason: "ssm:ListDocuments (Owner=Self) + DescribeDocumentPermission (Share, every page) on ssm_document; AccountIds containing all fires. High (exposure). A denied permission read leaves the key absent."
+    severity: critical
+  - id: "SSM.6"
+    title: "SSM Automation logs to CloudWatch"
+    service: ssm
+    status: covered
+    check_ids: [aws-ssm-automation-logging-disabled]
+    reason: "ssm:GetServiceSetting /ssm/automation/customer-script-log-destination on aws_region_settings; any value other than CloudWatch fires (empty = logs nowhere). ServiceSettingNotFound is unknown. Low."
+    severity: medium
+  - id: "SSM.7"
+    title: "SSM document public sharing blocked"
+    service: ssm
+    status: covered
+    check_ids: [aws-ssm-document-public-sharing-not-blocked]
+    reason: "ssm:GetServiceSetting /ssm/documents/console/public-sharing-permission on aws_region_settings; Enable fires. Low: the guardrail; an actually public document is aws-ssm-document-public."
+    severity: critical
+  - id: "StepFunctions.1"
+    title: "Step Functions state machines log executions"
+    service: stepfunctions
+    status: covered
+    check_ids: [aws-stepfunctions-logging-disabled]
+    reason: "states:ListStateMachines + DescribeStateMachine `loggingConfiguration.level` OFF (an absent configuration is AWS's OFF default). The control's logLevel parameter has no default, so any level other than OFF passes."
+    severity: medium
+  - id: "Transfer.2"
+    title: "Transfer Family servers avoid plain FTP"
+    service: transfer
+    status: covered
+    check_ids: [aws-transfer-server-ftp-enabled]
+    reason: "transfer:ListServers + DescribeServer: fires when `Protocols` contains FTP (`ftp_enabled`); a server whose describe failed is unknown."
+    severity: medium
+  - id: "Transfer.3"
+    title: "Transfer Family connectors have logging"
+    service: transfer
+    status: covered
+    check_ids: [aws-transfer-connector-no-logging]
+    reason: "transfer:ListConnectors + DescribeConnector: fires when the connector has no `LoggingRole` (CloudWatch logging needs one)."
+    severity: medium
+  - id: "WAF.1"
+    title: "WAF Classic global web ACL logging on"
+    service: waf
+    status: covered
+    check_ids: [aws-waf-classic-logging-disabled]
+    reason: "Global WAF Classic web ACLs (waf:ListWebACLs) without a logging configuration in waf:ListLoggingConfigurations (matched by ResourceArn). An unreadable logging listing leaves logging_enabled absent."
+    severity: medium
+  - id: "WAF.2"
+    title: "WAF Classic regional rules have conditions"
+    service: waf
+    status: covered
+    check_ids: [aws-waf-classic-rule-no-conditions]
+    reason: "Regional WAF Classic rules (waf-regional:ListRules) whose waf-regional:GetRule Predicates list is empty. GetRule is not in SecurityAudit/ViewOnlyAccess and is granted by the read-only role's supplemental statement."
+    severity: medium
+  - id: "WAF.3"
+    title: "WAF Classic regional rule groups have rules"
+    service: waf
+    status: covered
+    check_ids: [aws-waf-classic-rule-group-empty]
+    reason: "Regional WAF Classic rule groups with no activated rules (waf-regional:ListActivatedRulesInRuleGroup, all pages)."
+    severity: medium
+  - id: "WAF.4"
+    title: "WAF Classic regional web ACLs have rules"
+    service: waf
+    status: covered
+    check_ids: [aws-waf-web-acl-empty]
+    reason: "Regional WAF Classic web ACLs whose waf-regional:GetWebACL Rules list is empty (one check for WAF.4/.8/.10)."
+    severity: medium
+  - id: "WAF.6"
+    title: "WAF Classic global rules have conditions"
+    service: waf
+    status: covered
+    check_ids: [aws-waf-classic-rule-no-conditions]
+    reason: "Global WAF Classic rules whose waf:GetRule Predicates list is empty (GetRule via the supplemental statement)."
+    severity: medium
+  - id: "WAF.7"
+    title: "WAF Classic global rule groups have rules"
+    service: waf
+    status: covered
+    check_ids: [aws-waf-classic-rule-group-empty]
+    reason: "Global WAF Classic rule groups with no activated rules (waf:ListActivatedRulesInRuleGroup)."
+    severity: medium
+  - id: "WAF.8"
+    title: "WAF Classic global web ACLs have rules"
+    service: waf
+    status: covered
+    check_ids: [aws-waf-web-acl-empty]
+    reason: "Global WAF Classic web ACLs whose waf:GetWebACL Rules list is empty."
+    severity: medium
+  - id: "WAF.10"
+    title: "WAF web ACLs have a rule or group"
+    service: waf
+    status: covered
+    check_ids: [aws-waf-web-acl-empty]
+    reason: "WAF v2 web ACLs (REGIONAL in every region, CLOUDFRONT once in us-east-1) with no rules and no Firewall Manager pre/post-process rule groups (wafv2:GetWebACL)."
+    severity: medium
+  - id: "WAF.12"
+    title: "WAF rules publish CloudWatch metrics"
+    service: waf
+    status: covered
+    check_ids: [aws-wafv2-web-acl-rule-metrics-disabled, aws-wafv2-rule-group-rule-metrics-disabled]
+    reason: "Rules in v2 web ACLs (incl. Firewall Manager rule groups) and v2 rule groups whose VisibilityConfig.CloudWatchMetricsEnabled is false or missing; one finding per ACL/rule group naming the rules. Rule groups need wafv2:GetRuleGroup (supplemental statement). Info."
+    severity: medium
+  - id: "WorkSpaces.1"
+    title: "WorkSpaces user volumes encrypted"
+    service: workspaces
+    status: covered
+    check_ids: [aws-workspaces-user-volume-unencrypted]
+    reason: "workspaces:DescribeWorkspaces `UserVolumeEncryptionEnabled` on each workspaces_workspace (terminating/terminated WorkSpaces skipped). The API omits a false flag, so an omitted flag on a listed WorkSpace is recorded as unencrypted; a failed listing emits no WorkSpace."
+    severity: medium
+  - id: "WorkSpaces.2"
+    title: "WorkSpaces root volumes encrypted"
+    service: workspaces
+    status: covered
+    check_ids: [aws-workspaces-root-volume-unencrypted]
+    reason: "workspaces:DescribeWorkspaces `RootVolumeEncryptionEnabled` on each workspaces_workspace. The API omits a false flag, so an omitted flag on a listed WorkSpace is recorded as unencrypted; a failed listing emits no WorkSpace."
+    severity: medium

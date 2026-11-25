@@ -1,0 +1,80 @@
+name: Benchmark watch (weekly)
+
+# Re-reads the public control lists the CSPM matrices are pinned to (Prowler,
+# kube-bench, AWS Security Hub, Azure Policy) and the framework-mapping
+# sources, and opens or updates one issue when anything drifted: a newer
+# benchmark version, control IDs added or removed upstream, new FSBP controls,
+# or a stale framework mapping (ADR 092). It never edits the repository; the
+# fix is `go run ./cmd/benchmark-watch -frameworks -update` plus matrix rows,
+# in a normal pull request.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: benchmark-watch
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.26.11"
+          cache: true
+
+      # Exit 3 is drift; any other non-zero status is the tool failing (an
+      # upstream unreachable or changed shape) and fails the job instead.
+      - name: Check matrices against upstream
+        id: watch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          go run ./cmd/benchmark-watch -frameworks -fail-on-drift -securityhub-api=false > report.txt
+          code=$?
+          set -e
+          cat report.txt
+          if [ "$code" -eq 3 ]; then
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+          elif [ "$code" -ne 0 ]; then
+            exit "$code"
+          fi
+
+      - name: Open or update the drift issue
+        if: steps.watch.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Benchmark drift: matrices differ from their upstream lists"
+          {
+            echo "benchmark-watch found drift ($RUN_URL)."
+            echo
+            echo "Fix: \`go run ./cmd/benchmark-watch -frameworks -update\`, then add, drop or acknowledge matrix rows (ADR 092)."
+            echo
+            echo '```'
+            # Upstream titles are third-party text: a backtick run in one
+            # would close the fence and let the rest render as markdown.
+            tr '`' "'" < report.txt
+            echo '```'
+          } > body.md
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --repo "$GITHUB_REPOSITORY" --body-file body.md
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file body.md
+          fi

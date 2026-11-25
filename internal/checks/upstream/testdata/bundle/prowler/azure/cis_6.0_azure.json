@@ -1,0 +1,19 @@
+{
+ "Framework": "CIS",
+ "Name": "CIS 6.0",
+ "Version": "6.0",
+ "Provider": "Azure",
+ "Description": "fixture",
+ "Requirements": [
+  {
+   "Id": "2.1",
+   "Description": "",
+   "Attributes": [
+    {
+     "Section": "s"
+    }
+   ],
+   "Checks": []
+  }
+ ]
+}

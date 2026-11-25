@@ -1,0 +1,914 @@
+benchmark: cis-kubernetes
+name: CIS Kubernetes Benchmark
+version: "2.0.1"
+family: cis
+providers: [kubernetes]
+source: https://www.cisecurity.org/benchmark/kubernetes
+controls:
+  - id: "1.1.1"
+    title: "API server manifest file mode 600 or tighter"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-apiserver-manifest-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "1.1.2"
+    title: "API server manifest owned by root"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-apiserver-manifest-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "1.1.3"
+    title: "Controller manager manifest mode 600 or tighter"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-controller-manager-manifest-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "1.1.4"
+    title: "Controller manager manifest owned by root"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-controller-manager-manifest-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "1.1.5"
+    title: "Scheduler manifest mode 600 or tighter"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-scheduler-manifest-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "1.1.6"
+    title: "Scheduler manifest owned by root"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-scheduler-manifest-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "1.1.7"
+    title: "etcd manifest mode 600 or tighter"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-etcd-manifest-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "1.1.8"
+    title: "etcd manifest owned by root"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-etcd-manifest-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "1.1.9"
+    title: "CNI config files mode 600 or tighter"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-cni-config-files]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "1.1.10"
+    title: "CNI config files owned by root"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-cni-config-files]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "1.1.11"
+    title: "etcd data directory mode 700 or tighter"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-etcd-data-dir]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "1.1.12"
+    title: "etcd data directory owned by etcd user"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-etcd-data-dir]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node. The owner must resolve to the etcd user and group through the node's /etc/passwd and /etc/group; an id that does not resolve is unknown. kubeadm runs etcd as root, so a kubeadm data directory fails, as in kube-bench."
+    severity: medium
+  - id: "1.1.13"
+    title: "Admin kubeconfig file mode 600"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-admin-kubeconfig-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node. Covers admin.conf and, from v1.29, super-admin.conf."
+    severity: medium
+  - id: "1.1.14"
+    title: "Admin kubeconfig file owned by root"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-admin-kubeconfig-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node. Covers admin.conf and, from v1.29, super-admin.conf."
+    severity: medium
+  - id: "1.1.15"
+    title: "scheduler.conf mode 600 or tighter"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-scheduler-kubeconfig-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "1.1.16"
+    title: "scheduler.conf owned by root"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-scheduler-kubeconfig-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "1.1.17"
+    title: "controller-manager.conf mode 600 or tighter"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-controller-manager-kubeconfig-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "1.1.18"
+    title: "controller-manager.conf owned by root"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-controller-manager-kubeconfig-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "1.1.19"
+    title: "PKI directory and files owned by root"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-pki-ownership]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node. The directory and every file beneath it."
+    severity: medium
+  - id: "1.1.20"
+    title: "PKI certificate files mode 644 or tighter"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-pki-cert-mode]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node. Every *.crt beneath /etc/kubernetes/pki."
+    severity: medium
+  - id: "1.1.21"
+    title: "PKI private key files mode 600"
+    service: control-plane-files
+    status: covered
+    check_ids: [k8s-cp-pki-key-mode]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.controlPlane): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node. Every *.key beneath /etc/kubernetes/pki; the reader runs as a non-root user, so it can stat a key but not read it."
+    severity: medium
+  - id: "1.2.1"
+    title: "API server rejects anonymous requests"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-anonymous-auth]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. A --authentication-config file without the flag is unknown."
+    severity: high
+  - id: "1.2.2"
+    title: "API server has no static token file"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-token-auth-file]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: high
+  - id: "1.2.3"
+    title: "DenyServiceExternalIPs admission plugin enabled"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-no-deny-external-ips]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. Admission plugins are the effective set: defaults plus --enable-admission-plugins minus --disable-admission-plugins."
+    severity: medium
+  - id: "1.2.4"
+    title: "API server authenticates to kubelets with client certs"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-no-kubelet-client-cert]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: high
+  - id: "1.2.5"
+    title: "API server verifies kubelet serving certificates"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-no-kubelet-ca]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: high
+  - id: "1.2.6"
+    title: "API server authorization mode is not AlwaysAllow"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-authz-always-allow]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. --authorization-config (structured authorization) makes the mode unknown."
+    severity: critical
+  - id: "1.2.7"
+    title: "API server authorization includes Node mode"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-authz-no-node]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. Steps aside when the mode includes AlwaysAllow (1.2.6 reports it)."
+    severity: medium
+  - id: "1.2.8"
+    title: "API server authorization includes RBAC mode"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-authz-no-rbac]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. Steps aside when the mode includes AlwaysAllow (1.2.6 reports it)."
+    severity: high
+  - id: "1.2.9"
+    title: "EventRateLimit admission plugin enabled"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-no-event-rate-limit]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: low
+  - id: "1.2.10"
+    title: "AlwaysAdmit admission plugin disabled"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-always-admit]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: high
+  - id: "1.2.11"
+    title: "AlwaysPullImages admission plugin enabled"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-no-always-pull-images]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: medium
+  - id: "1.2.12"
+    title: "ServiceAccount admission plugin enabled"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-serviceaccount-admission-off]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. ServiceAccount is default-on, so only --disable-admission-plugins turns it off."
+    severity: medium
+  - id: "1.2.13"
+    title: "NamespaceLifecycle admission plugin enabled"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-namespace-lifecycle-off]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. NamespaceLifecycle is default-on, so only --disable-admission-plugins turns it off."
+    severity: medium
+  - id: "1.2.14"
+    title: "NodeRestriction admission plugin enabled"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-no-node-restriction]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: high
+  - id: "1.2.15"
+    title: "API server profiling disabled"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-profiling-enabled]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: low
+  - id: "1.2.16"
+    title: "API server audit log path configured"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-no-audit-log]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: high
+  - id: "1.2.17"
+    title: "Audit log retention days set adequately"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-audit-log-maxage-low]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. Steps aside when no audit log is written (1.2.16)."
+    severity: low
+  - id: "1.2.18"
+    title: "Audit log backup count set adequately"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-audit-log-maxbackup-low]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. Steps aside when no audit log is written (1.2.16)."
+    severity: low
+  - id: "1.2.19"
+    title: "Audit log rotation size set adequately"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-audit-log-maxsize-low]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. Steps aside when no audit log is written (1.2.16)."
+    severity: low
+  - id: "1.2.20"
+    title: "API server request timeout set appropriately"
+    service: api-server
+    status: manual
+    reason: "\"As appropriate\" has no threshold: the 60s default is acceptable and the benchmark audit only asks a reviewer to judge any override. The flag is readable from the mirror pod, but no value is a violation by itself."
+    severity: low
+  - id: "1.2.21"
+    title: "API server validates service account tokens exist"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-sa-lookup-off]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: medium
+  - id: "1.2.22"
+    title: "API server service account key file set"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-no-sa-key-file]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: medium
+  - id: "1.2.23"
+    title: "API server uses client certs for etcd"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-no-etcd-client-cert]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: high
+  - id: "1.2.24"
+    title: "API server serves TLS with configured cert"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-no-tls-cert]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: high
+  - id: "1.2.25"
+    title: "API server client CA file configured"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-no-client-ca]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: high
+  - id: "1.2.26"
+    title: "API server verifies etcd with CA file"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-no-etcd-ca]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: high
+  - id: "1.2.27"
+    title: "API server encryption provider config set"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-no-encryption-config]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: high
+  - id: "1.2.28"
+    title: "Encryption-at-rest providers configured properly"
+    service: api-server
+    status: manual
+    reason: "Whether the providers in the EncryptionConfiguration are strong needs the file, which holds the encryption keys themselves; graph's node posture reader deliberately never reads it, and only its path is visible as a flag (1.2.27). Review it on a control-plane host."
+    severity: high
+  - id: "1.2.29"
+    title: "API server restricted to strong TLS ciphers"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-weak-tls-ciphers]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. Unset fails (Go's default list); a set list must name only the CIS strong suites."
+    severity: medium
+  - id: "1.2.30"
+    title: "Service account token expiry extension disabled"
+    service: api-server
+    status: covered
+    check_ids: [k8s-apiserver-sa-token-expiry-extended]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: medium
+  - id: "1.3.1"
+    title: "Terminated pod GC threshold set appropriately"
+    service: controller-manager
+    status: covered
+    check_ids: [k8s-controller-manager-gc-threshold-unset]
+    reason: "Self-managed clusters: read from the kube-controller-manager mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: low
+  - id: "1.3.2"
+    title: "Controller manager profiling disabled"
+    service: controller-manager
+    status: covered
+    check_ids: [k8s-controller-manager-profiling-enabled]
+    reason: "Self-managed clusters: read from the kube-controller-manager mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: low
+  - id: "1.3.3"
+    title: "Controllers use individual service account credentials"
+    service: controller-manager
+    status: covered
+    check_ids: [k8s-controller-manager-shared-credentials]
+    reason: "Self-managed clusters: read from the kube-controller-manager mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: medium
+  - id: "1.3.4"
+    title: "Controller manager SA signing key configured"
+    service: controller-manager
+    status: covered
+    check_ids: [k8s-controller-manager-no-sa-signing-key]
+    reason: "Self-managed clusters: read from the kube-controller-manager mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: medium
+  - id: "1.3.5"
+    title: "Controller manager root CA file configured"
+    service: controller-manager
+    status: covered
+    check_ids: [k8s-controller-manager-no-root-ca]
+    reason: "Self-managed clusters: read from the kube-controller-manager mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters."
+    severity: medium
+  - id: "1.3.6"
+    title: "Kubelet serving certificate rotation enabled"
+    service: controller-manager
+    status: covered
+    check_ids: [k8s-controller-manager-server-cert-rotation-off]
+    reason: "Self-managed clusters: read from the kube-controller-manager mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. Fails only when --feature-gates sets RotateKubeletServerCertificate=false (the gate defaults on)."
+    severity: medium
+  - id: "1.3.7"
+    title: "Controller manager binds to localhost only"
+    service: controller-manager
+    status: covered
+    check_ids: [k8s-controller-manager-not-localhost]
+    reason: "Self-managed clusters: read from the kube-controller-manager mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. Unset fails: the default bind address is 0.0.0.0 (kube-bench passes unset; the benchmark text requires 127.0.0.1)."
+    severity: medium
+  - id: "1.4.1"
+    title: "Scheduler profiling disabled"
+    service: scheduler
+    status: covered
+    check_ids: [k8s-scheduler-profiling-enabled]
+    reason: "Self-managed clusters: read from the kube-scheduler mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. A --config file without --profiling is unknown (KubeSchedulerConfiguration.enableProfiling)."
+    severity: low
+  - id: "1.4.2"
+    title: "Scheduler binds to localhost only"
+    service: scheduler
+    status: covered
+    check_ids: [k8s-scheduler-not-localhost]
+    reason: "Self-managed clusters: read from the kube-scheduler mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. Unset fails: the default bind address is 0.0.0.0."
+    severity: medium
+  - id: "2.1"
+    title: "etcd serves client traffic over TLS"
+    service: etcd
+    status: covered
+    check_ids: [k8s-etcd-client-no-tls]
+    reason: "Self-managed clusters: read from the etcd mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. ETCD_* environment variables count; a --config-file makes every etcd setting unknown."
+    severity: high
+  - id: "2.2"
+    title: "etcd requires client certificate auth"
+    service: etcd
+    status: covered
+    check_ids: [k8s-etcd-no-client-cert-auth]
+    reason: "Self-managed clusters: read from the etcd mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. ETCD_* environment variables count; a --config-file makes every etcd setting unknown. Steps aside when the client listener has no certificate (2.1)."
+    severity: high
+  - id: "2.3"
+    title: "etcd does not use self-signed auto TLS"
+    service: etcd
+    status: covered
+    check_ids: [k8s-etcd-auto-tls]
+    reason: "Self-managed clusters: read from the etcd mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. ETCD_* environment variables count; a --config-file makes every etcd setting unknown."
+    severity: medium
+  - id: "2.4"
+    title: "etcd peer traffic uses TLS certs"
+    service: etcd
+    status: covered
+    check_ids: [k8s-etcd-peer-no-tls]
+    reason: "Self-managed clusters: read from the etcd mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. ETCD_* environment variables count; a --config-file makes every etcd setting unknown."
+    severity: high
+  - id: "2.5"
+    title: "etcd requires peer client certificate auth"
+    service: etcd
+    status: covered
+    check_ids: [k8s-etcd-no-peer-cert-auth]
+    reason: "Self-managed clusters: read from the etcd mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. ETCD_* environment variables count; a --config-file makes every etcd setting unknown. Steps aside when the peer listener has no certificate (2.4)."
+    severity: high
+  - id: "2.6"
+    title: "etcd peers do not use auto TLS"
+    service: etcd
+    status: covered
+    check_ids: [k8s-etcd-peer-auto-tls]
+    reason: "Self-managed clusters: read from the etcd mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. ETCD_* environment variables count; a --config-file makes every etcd setting unknown."
+    severity: medium
+  - id: "2.7"
+    title: "etcd uses its own dedicated CA"
+    service: etcd
+    status: manual
+    reason: "Requires comparing CA certificate contents on control-plane hosts; flag paths alone cannot prove the CAs differ."
+    severity: medium
+  - id: "3.1.1"
+    title: "Users do not authenticate with client certificates"
+    service: authn
+    status: manual
+    reason: "Client-certificate users are minted from the cluster CA out of band and are invisible to the API; needs an access review."
+    severity: medium
+  - id: "3.1.2"
+    title: "Users do not authenticate with service account tokens"
+    service: authn
+    status: manual
+    reason: "Whether a human uses a ServiceAccount token is not observable from object state; needs an access review (audit logs)."
+    severity: medium
+  - id: "3.1.3"
+    title: "Users do not authenticate with bootstrap tokens"
+    service: authn
+    status: manual
+    reason: "Bootstrap token Secrets (type bootstrap.kubernetes.io/token in kube-system) are listable, but whether a human uses one needs an access review."
+    severity: medium
+  - id: "3.2.1"
+    title: "Minimal audit policy is defined"
+    service: audit-logging
+    status: covered
+    check_ids: [k8s-apiserver-no-audit-policy]
+    reason: "Self-managed clusters: --audit-policy-file read from the kube-apiserver mirror pod, as in the benchmark audit; steps aside when no audit log is written (1.2.16). Managed control planes publish no mirror pod (unknown)."
+    severity: high
+  - id: "3.2.2"
+    title: "Audit policy covers key security events"
+    service: audit-logging
+    status: manual
+    reason: "Whether the audit policy covers the events that matter is a review of the policy's content; CIS marks it Manual."
+    severity: medium
+  - id: "4.1.1"
+    title: "Kubelet service file mode 600 or tighter"
+    service: worker-node-files
+    status: covered
+    check_ids: [k8s-node-kubelet-service-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "4.1.2"
+    title: "Kubelet service file owned by root"
+    service: worker-node-files
+    status: covered
+    check_ids: [k8s-node-kubelet-service-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "4.1.3"
+    title: "kube-proxy kubeconfig mode 600 or tighter"
+    service: worker-node-files
+    status: covered
+    check_ids: [k8s-node-kube-proxy-kubeconfig]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node. Without the reader it is still decided from the API when every kube-proxy pod reads its kubeconfig from a ConfigMap, Secret or projected volume (kubeadm, EKS) or uses in-cluster credentials: there is no node file, which the control passes."
+    severity: medium
+  - id: "4.1.4"
+    title: "kube-proxy kubeconfig owned by root"
+    service: worker-node-files
+    status: covered
+    check_ids: [k8s-node-kube-proxy-kubeconfig]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node. Without the reader it is still decided from the API when every kube-proxy pod reads its kubeconfig from a ConfigMap, Secret or projected volume (kubeadm, EKS) or uses in-cluster credentials: there is no node file, which the control passes."
+    severity: medium
+  - id: "4.1.5"
+    title: "Kubelet kubeconfig mode 600 or tighter"
+    service: worker-node-files
+    status: covered
+    check_ids: [k8s-node-kubelet-kubeconfig]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node. The limit is 600 here; on EKS and GKE clusters (cloud_provider) the same check applies their benchmarks' 644."
+    severity: medium
+  - id: "4.1.6"
+    title: "Kubelet kubeconfig owned by root"
+    service: worker-node-files
+    status: covered
+    check_ids: [k8s-node-kubelet-kubeconfig]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "4.1.7"
+    title: "Kubelet client CA file mode 644 or tighter"
+    service: worker-node-files
+    status: covered
+    check_ids: [k8s-node-client-ca-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "4.1.8"
+    title: "Kubelet client CA file owned by root"
+    service: worker-node-files
+    status: covered
+    check_ids: [k8s-node-client-ca-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "4.1.9"
+    title: "Kubelet config.yaml mode 600 or tighter"
+    service: worker-node-files
+    status: covered
+    check_ids: [k8s-node-kubelet-config-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node. The limit is 600 here; on EKS and GKE clusters (cloud_provider) the same check applies their benchmarks' 644."
+    severity: medium
+  - id: "4.1.10"
+    title: "Kubelet config.yaml owned by root"
+    service: worker-node-files
+    status: covered
+    check_ids: [k8s-node-kubelet-config-file]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): a DaemonSet that stats the file with read-only hostPath mounts and no credentials, read back through pods/log. One finding per cluster, firing when any node fails; mode and ownership of the file are one check. Unknown, never passing, without the reader or when it does not cover every node."
+    severity: medium
+  - id: "4.2.1"
+    title: "Kubelet rejects anonymous requests"
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-anonymous-auth]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): effective value of the kubelet config file with the flags from the kubelet's environment and unit files layered on top (KubeletConfiguration v1beta1 defaults). One finding per cluster, firing when any node fails; unknown without the reader or with partial node coverage."
+    severity: high
+  - id: "4.2.2"
+    title: "Kubelet authorization is not AlwaysAllow"
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-authz-always-allow]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): effective value of the kubelet config file with the flags from the kubelet's environment and unit files layered on top (KubeletConfiguration v1beta1 defaults). One finding per cluster, firing when any node fails; unknown without the reader or with partial node coverage."
+    severity: critical
+  - id: "4.2.3"
+    title: "Kubelet verifies clients against a CA"
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-no-client-ca]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): effective value of the kubelet config file with the flags from the kubelet's environment and unit files layered on top (KubeletConfiguration v1beta1 defaults). One finding per cluster, firing when any node fails; unknown without the reader or with partial node coverage."
+    severity: high
+  - id: "4.2.4"
+    title: "Kubelet read-only port disabled"
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-read-only-port]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): effective value of the kubelet config file with the flags from the kubelet's environment and unit files layered on top (KubeletConfiguration v1beta1 defaults). One finding per cluster, firing when any node fails; unknown without the reader or with partial node coverage."
+    severity: medium
+  - id: "4.2.5"
+    title: "Kubelet streaming idle timeout is non-zero"
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-streaming-timeout-disabled]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): effective value of the kubelet config file with the flags from the kubelet's environment and unit files layered on top (KubeletConfiguration v1beta1 defaults). One finding per cluster, firing when any node fails; unknown without the reader or with partial node coverage. A 0s in the config file is defaulted to 4h by the kubelet (kubeadm writes 0s there) and passes; a 0 flag sticks and fails."
+    severity: low
+  - id: "4.2.6"
+    title: "Kubelet manages iptables utility chains"
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-no-iptables-util-chains]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): effective value of the kubelet config file with the flags from the kubelet's environment and unit files layered on top (KubeletConfiguration v1beta1 defaults). One finding per cluster, firing when any node fails; unknown without the reader or with partial node coverage."
+    severity: low
+  - id: "4.2.7"
+    title: "Kubelet hostname override not set"
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-hostname-override]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): effective value of the kubelet config file with the flags from the kubelet's environment and unit files layered on top (KubeletConfiguration v1beta1 defaults). One finding per cluster, firing when any node fails; unknown without the reader or with partial node coverage. --hostname-override has no config field, so only the configured flag sources are read: a flag set elsewhere on the kubelet's command line is not seen (reading the live command line needs hostPID)."
+    severity: low
+  - id: "4.2.8"
+    title: "Kubelet event recording rate captures events"
+    service: kubelet
+    status: manual
+    reason: "\"A level which ensures appropriate event capture\" has no threshold; kube-bench's test (any value >= 0) passes every valid kubelet, so there is no automatable violation. eventRecordQPS is readable through the node posture reader."
+    severity: low
+  - id: "4.2.9"
+    title: "Kubelet serves TLS with configured cert"
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-no-tls-cert]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): effective value of the kubelet config file with the flags from the kubelet's environment and unit files layered on top (KubeletConfiguration v1beta1 defaults). One finding per cluster, firing when any node fails; unknown without the reader or with partial node coverage."
+    severity: medium
+  - id: "4.2.10"
+    title: "Kubelet client certificate rotation enabled"
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-cert-rotation-disabled]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): effective value of the kubelet config file with the flags from the kubelet's environment and unit files layered on top (KubeletConfiguration v1beta1 defaults). One finding per cluster, firing when any node fails; unknown without the reader or with partial node coverage. Fails only an explicit false, as the control is worded."
+    severity: medium
+  - id: "4.2.11"
+    title: "Kubelet serving certificate rotation enabled"
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-server-cert-rotation-disabled]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): effective value of the kubelet config file with the flags from the kubelet's environment and unit files layered on top (KubeletConfiguration v1beta1 defaults). One finding per cluster, firing when any node fails; unknown without the reader or with partial node coverage. Fails when the RotateKubeletServerCertificate gate is explicitly false and serverTLSBootstrap is not on."
+    severity: medium
+  - id: "4.2.12"
+    title: "Kubelet restricted to strong TLS ciphers"
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-weak-tls-ciphers]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): effective value of the kubelet config file with the flags from the kubelet's environment and unit files layered on top (KubeletConfiguration v1beta1 defaults). One finding per cluster, firing when any node fails; unknown without the reader or with partial node coverage."
+    severity: medium
+  - id: "4.2.13"
+    title: "Kubelet limits PIDs per pod"
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-no-pid-limit]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): effective value of the kubelet config file with the flags from the kubelet's environment and unit files layered on top (KubeletConfiguration v1beta1 defaults). One finding per cluster, firing when any node fails; unknown without the reader or with partial node coverage."
+    severity: low
+  - id: "4.2.14"
+    title: "Kubelet defaults containers to RuntimeDefault seccomp"
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-seccomp-default-off]
+    reason: "Needs the opt-in node posture reader (ADR 094; Helm nodePosture.node): effective value of the kubelet config file with the flags from the kubelet's environment and unit files layered on top (KubeletConfiguration v1beta1 defaults). One finding per cluster, firing when any node fails; unknown without the reader or with partial node coverage."
+    severity: medium
+  - id: "4.3.1"
+    title: "kube-proxy metrics endpoint bound to localhost"
+    service: kube-proxy
+    status: covered
+    check_ids: [k8s-kube-proxy-metrics-exposed]
+    reason: "From API objects: each kube-proxy pod's --metrics-bind-address, else metricsBindAddress in the KubeProxyConfiguration its --config file is mounted from (kubeadm ConfigMap kube-proxy, EKS kube-proxy-config), else the 127.0.0.1:10249 default. Unknown when any pod's configuration cannot be resolved; clusters without kube-proxy have no key."
+    severity: medium
+  - id: "5.1.1"
+    title: "Use cluster-admin only where required"
+    service: rbac
+    status: covered
+    check_ids: [k8s-cluster-admin-binding, k8s-rolebinding-admin-binding]
+    reason: "The benchmark audit lists ClusterRoleBindings to cluster-admin; every non-platform one is reported (platform bindings are reverted if edited), and namespace-scoped RoleBindings to cluster-admin too (k8s-rolebinding-admin-binding, which also reports admin/edit). Whether a binding is required is the reviewer's call, as in the benchmark."
+    severity: high
+  - id: "5.1.2"
+    title: "Limit roles that can read Secrets"
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-secrets-access]
+    reason: "Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported (reconciliation never removes added rules)."
+    severity: high
+  - id: "5.1.3"
+    title: RBAC rules avoid wildcard resources and verbs
+    service: rbac
+    status: covered
+    check_ids: [k8s-cluster-role-wildcard-verbs, k8s-role-wildcard-verbs]
+    reason: "Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported (reconciliation never removes added rules)."
+    severity: medium
+  - id: "5.1.4"
+    title: "Limit roles that can create pods"
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-pod-create]
+    reason: "Also counts create/update/patch on workload controllers, which create pods on the holder's behalf. Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported."
+    severity: high
+  - id: "5.1.5"
+    title: "Workloads avoid the namespace default service account"
+    service: rbac
+    status: covered
+    check_ids: [k8s-default-sa-automount, k8s-default-service-account-bound, k8s-rolebinding-default-service-account-bound]
+    reason: "The benchmark audit is each namespace's default ServiceAccount setting automountServiceAccountToken: false (k8s-default-sa-automount; system namespaces' are platform-managed and exempt); privileged roles bound to a default ServiceAccount are reported as well."
+    severity: medium
+  - id: "5.1.6"
+    title: "Mount SA tokens only where needed"
+    service: rbac
+    status: covered
+    check_ids: [k8s-automount-sa-token, k8s-default-sa-automount]
+    reason: "Effective automount on running or pending pods (the pod field, else its ServiceAccount's); pods inheriting it from the default SA are reported once on that SA. Whether a workload needs API access is the reviewer's call, as in the benchmark audit."
+    severity: medium
+  - id: "5.1.7"
+    title: No subjects in the system:masters group
+    service: rbac
+    status: partial
+    check_ids: [k8s-binding-system-masters]
+    reason: "Flags RBAC bindings naming Group/system:masters (the bootstrap binding exempt). Membership itself is carried in client certificates: CSRs requesting O=system:masters need a certificates.k8s.io/v1 certificatesigningrequests list (not collected), and certificates minted offline from the CA stay invisible."
+    severity: high
+  - id: "5.1.8"
+    title: "Limit bind, impersonate and escalate permissions"
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-escalate]
+    reason: "Also counts write access to Roles/ClusterRoles/bindings, which escalates the same way. Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported."
+    severity: high
+  - id: "5.1.9"
+    title: "Limit roles that can create PersistentVolumes"
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-pv-create]
+    reason: "Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported (reconciliation never removes added rules)."
+    severity: medium
+  - id: "5.1.10"
+    title: "Limit access to the nodes/proxy subresource"
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-node-proxy]
+    reason: "Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported (reconciliation never removes added rules)."
+    severity: high
+  - id: "5.1.11"
+    title: "Limit approval of certificate signing requests"
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-csr-approve]
+    reason: "Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported (reconciliation never removes added rules)."
+    severity: high
+  - id: "5.1.12"
+    title: "Limit access to admission webhook configurations"
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-webhook-config]
+    reason: "Write verbs only; read access to webhook configurations is not flagged. Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported."
+    severity: high
+  - id: "5.1.13"
+    title: "Limit creation of service account tokens"
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-token-create]
+    reason: "Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported (reconciliation never removes added rules)."
+    severity: high
+  - id: "5.2.1"
+    title: "Cluster enforces at least one pod admission policy"
+    service: pod-security
+    status: covered
+    check_ids: [k8s-namespace-no-pod-security-enforcement]
+    reason: "Active non-system namespaces without a baseline/restricted pod-security.kubernetes.io/enforce label and without proven enforcement by an external policy system: a Kyverno podSecurity rule in Enforce, or a Gatekeeper pod-security-library constraint in deny, matching Pods there (read through the chart's list-only ClusterRole). An installed engine without that proof, or with unreadable policies, is reported at Info; an explicit privileged label always at Low. ValidatingAdmissionPolicies are not counted: CEL cannot be tied to pod security reliably."
+    severity: high
+  - id: "5.2.2"
+    title: "Admission policy blocks privileged containers"
+    service: pod-security
+    status: covered
+    check_ids: [k8s-privileged-container, k8s-namespace-no-pod-security-enforcement]
+    reason: "Evaluated as the benchmark audit does: every running or pending pod, outside system namespaces (platform workloads, not the user workloads the control scopes to), collapsed to its owning workload. A namespace explicitly labelled pod-security.kubernetes.io/enforce=privileged, where the pod checks stand down, is reported by k8s-namespace-no-pod-security-enforcement instead, so every user namespace is graded either pod by pod or on its admission policy."
+    severity: critical
+  - id: "5.2.3"
+    title: "Restrict pods sharing the host PID namespace"
+    service: pod-security
+    status: covered
+    check_ids: [k8s-host-pid-pod, k8s-namespace-no-pod-security-enforcement]
+    reason: "Evaluated as the benchmark audit does: every running or pending pod, outside system namespaces (platform workloads, not the user workloads the control scopes to), collapsed to its owning workload. A namespace explicitly labelled pod-security.kubernetes.io/enforce=privileged, where the pod checks stand down, is reported by k8s-namespace-no-pod-security-enforcement instead, so every user namespace is graded either pod by pod or on its admission policy."
+    severity: high
+  - id: "5.2.4"
+    title: "Restrict pods sharing the host IPC namespace"
+    service: pod-security
+    status: covered
+    check_ids: [k8s-host-ipc-pod, k8s-namespace-no-pod-security-enforcement]
+    reason: "Evaluated as the benchmark audit does: every running or pending pod, outside system namespaces (platform workloads, not the user workloads the control scopes to), collapsed to its owning workload. A namespace explicitly labelled pod-security.kubernetes.io/enforce=privileged, where the pod checks stand down, is reported by k8s-namespace-no-pod-security-enforcement instead, so every user namespace is graded either pod by pod or on its admission policy."
+    severity: high
+  - id: "5.2.5"
+    title: "Restrict pods sharing the host network"
+    service: pod-security
+    status: covered
+    check_ids: [k8s-host-network-pod, k8s-namespace-no-pod-security-enforcement]
+    reason: "Evaluated as the benchmark audit does: every running or pending pod, outside system namespaces (platform workloads, not the user workloads the control scopes to), collapsed to its owning workload. A namespace explicitly labelled pod-security.kubernetes.io/enforce=privileged, where the pod checks stand down, is reported by k8s-namespace-no-pod-security-enforcement instead, so every user namespace is graded either pod by pod or on its admission policy."
+    severity: high
+  - id: "5.2.6"
+    title: "Restrict containers allowing privilege escalation"
+    service: pod-security
+    status: covered
+    check_ids: [k8s-container-allow-privilege-escalation, k8s-namespace-no-pod-security-enforcement]
+    reason: "Evaluated as the benchmark audit does: every running or pending pod, outside system namespaces (platform workloads, not the user workloads the control scopes to), collapsed to its owning workload. A namespace explicitly labelled pod-security.kubernetes.io/enforce=privileged, where the pod checks stand down, is reported by k8s-namespace-no-pod-security-enforcement instead, so every user namespace is graded either pod by pod or on its admission policy."
+    severity: high
+  - id: "5.2.7"
+    title: "Restrict containers running as root"
+    service: pod-security
+    status: covered
+    check_ids: [k8s-container-runs-as-root, k8s-namespace-no-pod-security-enforcement]
+    reason: "Evaluated as the benchmark audit does: every running or pending pod, outside system namespaces (platform workloads, not the user workloads the control scopes to), collapsed to its owning workload. A namespace explicitly labelled pod-security.kubernetes.io/enforce=privileged, where the pod checks stand down, is reported by k8s-namespace-no-pod-security-enforcement instead, so every user namespace is graded either pod by pod or on its admission policy."
+    severity: medium
+  - id: "5.2.8"
+    title: "Restrict containers keeping the NET_RAW capability"
+    service: pod-security
+    status: covered
+    check_ids: [k8s-container-net-raw, k8s-namespace-no-pod-security-enforcement]
+    reason: "Evaluated as the benchmark audit does: every running or pending pod, outside system namespaces (platform workloads, not the user workloads the control scopes to), collapsed to its owning workload. A namespace explicitly labelled pod-security.kubernetes.io/enforce=privileged, where the pod checks stand down, is reported by k8s-namespace-no-pod-security-enforcement instead, so every user namespace is graded either pod by pod or on its admission policy."
+    severity: medium
+  - id: "5.2.9"
+    title: "Restrict containers adding extra capabilities"
+    service: pod-security
+    status: covered
+    check_ids: [k8s-container-added-capabilities, k8s-dangerous-capabilities, k8s-namespace-no-pod-security-enforcement]
+    reason: "Evaluated as the benchmark audit does: every running or pending pod, outside system namespaces (platform workloads, not the user workloads the control scopes to), collapsed to its owning workload. A namespace explicitly labelled pod-security.kubernetes.io/enforce=privileged, where the pod checks stand down, is reported by k8s-namespace-no-pod-security-enforcement instead, so every user namespace is graded either pod by pod or on its admission policy."
+    severity: medium
+  - id: "5.2.10"
+    title: "Restrict Windows HostProcess containers"
+    service: pod-security
+    status: covered
+    check_ids: [k8s-windows-host-process, k8s-namespace-no-pod-security-enforcement]
+    reason: "Evaluated as the benchmark audit does: every running or pending pod, outside system namespaces (platform workloads, not the user workloads the control scopes to), collapsed to its owning workload. A namespace explicitly labelled pod-security.kubernetes.io/enforce=privileged, where the pod checks stand down, is reported by k8s-namespace-no-pod-security-enforcement instead, so every user namespace is graded either pod by pod or on its admission policy."
+    severity: high
+  - id: "5.2.11"
+    title: "Restrict pods mounting hostPath volumes"
+    service: pod-security
+    status: covered
+    check_ids: [k8s-pod-host-path-volume, k8s-namespace-no-pod-security-enforcement]
+    reason: "Evaluated as the benchmark audit does: every running or pending pod, outside system namespaces (platform workloads, not the user workloads the control scopes to), collapsed to its owning workload. A namespace explicitly labelled pod-security.kubernetes.io/enforce=privileged, where the pod checks stand down, is reported by k8s-namespace-no-pod-security-enforcement instead, so every user namespace is graded either pod by pod or on its admission policy."
+    severity: high
+  - id: "5.2.12"
+    title: "Restrict containers using host ports"
+    service: pod-security
+    status: covered
+    check_ids: [k8s-container-host-port, k8s-namespace-no-pod-security-enforcement]
+    reason: "Evaluated as the benchmark audit does: every running or pending pod, outside system namespaces (platform workloads, not the user workloads the control scopes to), collapsed to its owning workload. A namespace explicitly labelled pod-security.kubernetes.io/enforce=privileged, where the pod checks stand down, is reported by k8s-namespace-no-pod-security-enforcement instead, so every user namespace is graded either pod by pod or on its admission policy."
+    severity: medium
+  - id: "5.3.1"
+    title: "CNI plugin supports NetworkPolicy"
+    service: network-policy
+    status: covered
+    check_ids: [k8s-no-network-policy-engine]
+    reason: "network_policy_engines from the Kubernetes API: the VPC CNI network policy controller flag or a Calico, Cilium, Antrea, kube-router, Weave, Azure NPM or GKE Dataplane V2 node agent. Medium on EKS; elsewhere Low, since an enforcer outside that closed list reads as none. GKE steps aside for its own addon checks. CIS marks this Manual: CNI capability is inferred from the running enforcer."
+    severity: medium
+  - id: "5.3.2"
+    title: "Every namespace has a NetworkPolicy"
+    service: network-policy
+    status: covered
+    check_ids: [k8s-namespace-no-network-policy]
+    reason: "The control asks that a NetworkPolicy be defined in every namespace; k8s-namespace-no-network-policy reports each Active namespace with none. System namespaces are platform-managed and exempt."
+    severity: medium
+  - id: "5.4.1"
+    title: "Mount secrets as files, not env vars"
+    service: secrets
+    status: covered
+    check_ids: [k8s-pod-secret-in-env]
+    reason: "Secret names (never values) from env[].valueFrom.secretKeyRef and envFrom[].secretRef; system namespaces are exempt."
+    severity: medium
+  - id: "5.4.2"
+    title: "Keep secrets in a dedicated secret manager"
+    service: secrets
+    status: manual
+    reason: "An architectural choice; external-secrets/CSI driver presence is a hint only and needs operator judgement."
+    severity: low
+  - id: "5.5.1"
+    title: "Enforce image provenance at admission"
+    service: admission-control
+    status: covered
+    check_ids: [k8s-apiserver-no-image-policy-webhook]
+    reason: "Self-managed clusters: read from the kube-apiserver mirror pod's command line in kube-system (kubeadm static pods), with the upstream v1.30 default when the flag is absent; one finding per cluster, firing if any replica fails. Managed control planes publish no mirror pod, so the check stays silent (unknown), and the EKS/GKE matrices own those clusters. The control names ImagePolicyWebhook; an image-verification policy engine (sigstore policy-controller, Kyverno verifyImages) meets the intent but not this control, and is named in the finding."
+    severity: medium
+  - id: "5.6.1"
+    title: "Use namespaces as administrative boundaries"
+    service: general
+    status: manual
+    reason: "Whether namespaces reflect administrative boundaries is an organisational judgement."
+    severity: low
+  - id: "5.6.2"
+    title: "Pods use the RuntimeDefault seccomp profile"
+    service: general
+    status: covered
+    check_ids: [k8s-pod-seccomp-unrestricted]
+    reason: "Running or Pending pods whose containers lack a RuntimeDefault/Localhost profile; system namespaces are exempt. A kubelet --seccomp-default node setting is not visible, as in the benchmark audit of the pod spec."
+    severity: medium
+  - id: "5.6.3"
+    title: Pods and containers set a securityContext
+    service: general
+    status: partial
+    check_ids: [k8s-container-runs-as-root, k8s-container-allow-privilege-escalation, k8s-privileged-container, k8s-dangerous-capabilities, k8s-container-added-capabilities, k8s-container-net-raw, k8s-pod-seccomp-unrestricted, k8s-pod-apparmor-unconfined, k8s-container-writable-root-fs]
+    reason: "Root, privilege escalation, privileged, capabilities (added, dangerous, NET_RAW), seccomp, explicit AppArmor Unconfined and readOnlyRootFilesystem are evaluated; runAsGroup and SELinux options are not."
+    severity: medium
+  - id: "5.6.4"
+    title: "Do not deploy workloads to the default namespace"
+    service: general
+    status: covered
+    check_ids: [k8s-workload-default-namespace]
+    reason: "Running or Pending pods in the default namespace, collapsed to their owning workload. Services there are not flagged: the built-in kubernetes Service lives in default by design."
+    severity: low

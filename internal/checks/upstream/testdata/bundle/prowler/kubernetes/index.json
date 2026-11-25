@@ -1,0 +1,12 @@
+[
+ {
+  "name": "cis_1.10_kubernetes.json",
+  "path": "prowler/compliance/kubernetes/cis_1.10_kubernetes.json",
+  "type": "file"
+ },
+ {
+  "name": "cis_2.0.1_kubernetes.json",
+  "path": "prowler/compliance/kubernetes/cis_2.0.1_kubernetes.json",
+  "type": "file"
+ }
+]

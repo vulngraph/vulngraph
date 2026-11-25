@@ -1,0 +1,16 @@
+---
+controls:
+version: "eks-1.8.0"
+id: 3
+text: "Worker Node Security Configuration"
+type: "node"
+groups:
+  - id: 3.1
+    text: "Worker Node Configuration Files"
+    checks:
+      - id: 3.1.1
+        text: "Ensure that the kubeconfig file permissions are set to 644 or more restrictive"
+        scored: false
+      - id: 3.1.10
+        text: "Ensure that the kubelet configuration file ownership is set to root:root"
+        scored: false

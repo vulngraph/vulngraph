@@ -1,0 +1,360 @@
+benchmark: cis-aks
+name: CIS Azure Kubernetes Service (AKS) Benchmark
+version: "1.8.0"
+family: cis
+providers: [azure, kubernetes]
+source: https://www.cisecurity.org/benchmark/kubernetes
+controls:
+  # ── 2 Control plane configuration ────────────────────────────────────────
+  - id: "2.1.1"
+    title: Turn on AKS control plane audit logs
+    service: aks-logging
+    status: missing
+    reason: Needs Microsoft.Insights/diagnosticSettings on each managed cluster (kube-audit / kube-audit-admin categories enabled). Clusters are collected (azure_aks_cluster); per-resource diagnostic settings belong to the Azure Monitor collector, which is not built yet.
+    severity: medium
+  # ── 3 Worker nodes ───────────────────────────────────────────────────────
+  - id: "3.1.1"
+    title: Node kubeconfig file mode restricted
+    service: worker-node
+    status: covered
+    check_ids: [k8s-node-kubelet-kubeconfig]
+    reason: "Needs the opt-in node posture reader (ADR 094) with the AKS node paths documented in values.yaml. One finding per cluster, firing when any node fails; unknown without the reader. 644 limit on AKS (cloud_provider azure, read from the cluster's OIDC issuer; a cluster without --enable-oidc-issuer is graded on CIS Kubernetes' 600)."
+    severity: medium
+  - id: "3.1.2"
+    title: Node kubelet kubeconfig owned by root
+    service: worker-node
+    status: covered
+    check_ids: [k8s-node-kubelet-kubeconfig]
+    reason: "Needs the opt-in node posture reader (ADR 094) with the AKS node paths documented in values.yaml. One finding per cluster, firing when any node fails; unknown without the reader."
+    severity: medium
+  - id: "3.1.3"
+    title: Node azure.json file mode restricted
+    service: worker-node
+    status: covered
+    check_ids: [k8s-node-azure-json-file]
+    reason: "Needs the opt-in node posture reader (ADR 094) with the AKS node paths documented in values.yaml. One finding per cluster, firing when any node fails; unknown without the reader. azure.json holds the service principal's secret, so the reader only stats it, as uid 65532; 644 limit."
+    severity: medium
+  - id: "3.1.4"
+    title: Node azure.json file owned by root
+    service: worker-node
+    status: covered
+    check_ids: [k8s-node-azure-json-file]
+    reason: "Needs the opt-in node posture reader (ADR 094) with the AKS node paths documented in values.yaml. One finding per cluster, firing when any node fails; unknown without the reader. azure.json is only stat'ed, never read."
+    severity: medium
+  - id: "3.2.1"
+    title: Kubelet rejects anonymous requests
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-anonymous-auth]
+    reason: "Needs the opt-in node posture reader (ADR 094) with the AKS node paths documented in values.yaml. One finding per cluster, firing when any node fails; unknown without the reader. Effective kubelet value: the config file with the flags from /etc/default/kubelet layered on top (v1beta1 defaults)."
+    severity: high
+  - id: "3.2.2"
+    title: Kubelet authorization mode not always-allow
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-authz-always-allow]
+    reason: "Needs the opt-in node posture reader (ADR 094) with the AKS node paths documented in values.yaml. One finding per cluster, firing when any node fails; unknown without the reader. Effective kubelet value: the config file with the flags from /etc/default/kubelet layered on top (v1beta1 defaults)."
+    severity: high
+  - id: "3.2.3"
+    title: Kubelet client CA configured
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-no-client-ca]
+    reason: "Needs the opt-in node posture reader (ADR 094) with the AKS node paths documented in values.yaml. One finding per cluster, firing when any node fails; unknown without the reader. Effective kubelet value: the config file with the flags from /etc/default/kubelet layered on top (v1beta1 defaults)."
+    severity: medium
+  - id: "3.2.4"
+    title: Kubelet read-only port turned off
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-read-only-port]
+    reason: "Needs the opt-in node posture reader (ADR 094) with the AKS node paths documented in values.yaml. One finding per cluster, firing when any node fails; unknown without the reader. Effective kubelet value: the config file with the flags from /etc/default/kubelet layered on top (v1beta1 defaults)."
+    severity: medium
+  - id: "3.2.5"
+    title: Kubelet streaming idle timeout non-zero
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-streaming-timeout-disabled]
+    reason: "Needs the opt-in node posture reader (ADR 094) with the AKS node paths documented in values.yaml. One finding per cluster, firing when any node fails; unknown without the reader. Effective kubelet value: the config file with the flags from /etc/default/kubelet layered on top (v1beta1 defaults). A 0s in the config file is defaulted to 4h by the kubelet."
+    severity: low
+  - id: "3.2.6"
+    title: Kubelet manages iptables chains
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-no-iptables-util-chains]
+    reason: "Needs the opt-in node posture reader (ADR 094) with the AKS node paths documented in values.yaml. One finding per cluster, firing when any node fails; unknown without the reader. Effective kubelet value: the config file with the flags from /etc/default/kubelet layered on top (v1beta1 defaults)."
+    severity: low
+  - id: "3.2.7"
+    title: Kubelet event rate keeps adequate capture
+    service: kubelet
+    status: missing
+    reason: "The only testable condition (kube-bench: eventRecordQPS >= 0) is what kubelet configuration validation already enforces, so a check could never fire; graph does not ship one. eventRecordQPS is readable through the node posture reader if a threshold is ever published."
+    severity: low
+  - id: "3.2.8"
+    title: Kubelet client certificate rotation on
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-cert-rotation-disabled]
+    reason: "Needs the opt-in node posture reader (ADR 094) with the AKS node paths documented in values.yaml. One finding per cluster, firing when any node fails; unknown without the reader. Effective kubelet value: the config file with the flags from /etc/default/kubelet layered on top (v1beta1 defaults). Fails only an explicit false."
+    severity: medium
+  - id: "3.2.9"
+    title: Kubelet serving certificate rotation on
+    service: kubelet
+    status: covered
+    check_ids: [k8s-kubelet-server-cert-rotation-disabled]
+    reason: "Needs the opt-in node posture reader (ADR 094) with the AKS node paths documented in values.yaml. One finding per cluster, firing when any node fails; unknown without the reader. Effective kubelet value: the config file with the flags from /etc/default/kubelet layered on top (v1beta1 defaults). Fails when the RotateKubeletServerCertificate gate is explicitly false without serverTLSBootstrap."
+    severity: medium
+  # ── 4 Policies ───────────────────────────────────────────────────────────
+  - id: "4.1.1"
+    title: Restrict cluster-admin role bindings to necessity
+    service: rbac
+    status: partial
+    check_ids: [k8s-cluster-admin-binding, k8s-rolebinding-admin-binding]
+    reason: Every binding to cluster-admin is surfaced (cluster- and namespace-scoped); whether it is "required" is the reviewer's call, as in the benchmark audit. The cluster-scoped check also flags the built-in admin ClusterRole.
+    severity: high
+  - id: "4.1.2"
+    title: Limit who can read Secrets
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-secrets-access]
+    reason: "Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported."
+    severity: high
+  - id: "4.1.3"
+    title: Avoid wildcards in Roles and ClusterRoles
+    service: rbac
+    status: partial
+    check_ids: [k8s-cluster-role-wildcard-verbs, k8s-role-wildcard-verbs]
+    reason: hasWildcard ignores resources ["*"] paired with read-only verbs (get/list/watch); platform-managed roles are excluded by design.
+    severity: medium
+  - id: "4.1.4"
+    title: Limit who can create pods
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-pod-create]
+    reason: "Also counts create/update/patch on workload controllers, which create pods on the holder's behalf. Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported."
+    severity: medium
+  - id: "4.1.5"
+    title: Keep default service accounts unused
+    service: rbac
+    status: covered
+    check_ids: [k8s-default-sa-automount, k8s-default-service-account-bound, k8s-rolebinding-default-service-account-bound]
+    reason: "The benchmark audit is each namespace's default ServiceAccount setting automountServiceAccountToken: false (k8s-default-sa-automount; system namespaces' are platform-managed and exempt); privileged roles bound to a default ServiceAccount are reported as well."
+    severity: medium
+  - id: "4.1.6"
+    title: Mount service account tokens only when needed
+    service: rbac
+    status: covered
+    check_ids: [k8s-automount-sa-token, k8s-default-sa-automount]
+    reason: "Effective automount on running or pending pods (the pod field, else its ServiceAccount's); pods inheriting it from the default ServiceAccount are reported once on that ServiceAccount. Whether a workload needs API access is the reviewer's call, as in the benchmark audit."
+    severity: low
+  - id: "4.1.7"
+    title: Limit bind, impersonate and escalate permissions
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-escalate]
+    reason: "Also counts write access to Roles/ClusterRoles/bindings, which escalates the same way. Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported."
+    severity: high
+  - id: "4.1.8"
+    title: Limit who can create PersistentVolumes
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-pv-create]
+    reason: "Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported."
+    severity: medium
+  - id: "4.1.9"
+    title: Limit access to node proxy subresource
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-node-proxy]
+    reason: "Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported."
+    severity: high
+  - id: "4.1.10"
+    title: Limit approval of certificate signing requests
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-csr-approve]
+    reason: "Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported."
+    severity: high
+  - id: "4.1.11"
+    title: Limit access to admission webhook configurations
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-webhook-config]
+    reason: "Write verbs only; read access to webhook configurations is not flagged. Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported."
+    severity: high
+  - id: "4.1.12"
+    title: Limit who can mint service account tokens
+    service: rbac
+    status: covered
+    check_ids: [k8s-rbac-token-create]
+    reason: "Stock platform roles are exempt only up to their stock grants; rules injected beyond that baseline are reported."
+    severity: high
+  - id: "4.2.1"
+    title: Admission policy blocks privileged containers
+    service: pod-security
+    status: covered
+    check_ids: [k8s-privileged-container, k8s-namespace-no-pod-security-enforcement, azure-aks-no-azure-policy-addon]
+    reason: "Graded as the benchmark audit does, pod by pod outside system namespaces (owning workload collapsed); a namespace explicitly labelled pod-security.kubernetes.io/enforce=privileged, where the pod checks stand down, is reported on its policy by k8s-namespace-no-pod-security-enforcement. azure-aks-no-azure-policy-addon reports a cluster with no managed admission controller."
+    severity: high
+  - id: "4.2.2"
+    title: Restrict pods sharing the host PID namespace
+    service: pod-security
+    status: covered
+    check_ids: [k8s-host-pid-pod, k8s-namespace-no-pod-security-enforcement, azure-aks-no-azure-policy-addon]
+    reason: "Graded as the benchmark audit does, pod by pod outside system namespaces (owning workload collapsed); a namespace explicitly labelled pod-security.kubernetes.io/enforce=privileged, where the pod checks stand down, is reported on its policy by k8s-namespace-no-pod-security-enforcement. azure-aks-no-azure-policy-addon reports a cluster with no managed admission controller."
+    severity: high
+  - id: "4.2.3"
+    title: Restrict pods sharing the host IPC namespace
+    service: pod-security
+    status: covered
+    check_ids: [k8s-host-ipc-pod, k8s-namespace-no-pod-security-enforcement, azure-aks-no-azure-policy-addon]
+    reason: "Graded as the benchmark audit does, pod by pod outside system namespaces (owning workload collapsed); a namespace explicitly labelled pod-security.kubernetes.io/enforce=privileged, where the pod checks stand down, is reported on its policy by k8s-namespace-no-pod-security-enforcement. azure-aks-no-azure-policy-addon reports a cluster with no managed admission controller."
+    severity: high
+  - id: "4.2.4"
+    title: Restrict pods using the host network
+    service: pod-security
+    status: covered
+    check_ids: [k8s-host-network-pod, k8s-namespace-no-pod-security-enforcement, azure-aks-no-azure-policy-addon]
+    reason: "Graded as the benchmark audit does, pod by pod outside system namespaces (owning workload collapsed); a namespace explicitly labelled pod-security.kubernetes.io/enforce=privileged, where the pod checks stand down, is reported on its policy by k8s-namespace-no-pod-security-enforcement. azure-aks-no-azure-policy-addon reports a cluster with no managed admission controller."
+    severity: high
+  - id: "4.2.5"
+    title: Restrict containers allowing privilege escalation
+    service: pod-security
+    status: covered
+    check_ids: [k8s-container-allow-privilege-escalation, k8s-namespace-no-pod-security-enforcement, azure-aks-no-azure-policy-addon]
+    reason: "Graded as the benchmark audit does, pod by pod outside system namespaces (owning workload collapsed); a namespace explicitly labelled pod-security.kubernetes.io/enforce=privileged, where the pod checks stand down, is reported on its policy by k8s-namespace-no-pod-security-enforcement. azure-aks-no-azure-policy-addon reports a cluster with no managed admission controller."
+    severity: medium
+  - id: "4.4.1"
+    title: Use the latest CNI version
+    service: cni
+    status: not_applicable
+    reason: AKS installs and upgrades the CNI plugin (Azure CNI, kubenet, Cilium) as part of the managed cluster version and node image; there is no customer-selected CNI version to evaluate. Staying current is the upgrade channel (azure-aks-no-auto-upgrade).
+    severity: low
+  - id: "4.4.2"
+    title: Every namespace has a NetworkPolicy
+    service: network-policy
+    status: partial
+    check_ids: [k8s-namespace-no-network-policy, azure-aks-no-network-policy]
+    reason: Checks that some NetworkPolicy exists in each namespace (not what it allows; system namespaces including monitoring and cert-manager are exempt) and that the cluster runs an engine that enforces them.
+    severity: medium
+  - id: "4.5.1"
+    title: Prefer secret volumes over environment variables
+    service: secrets
+    status: covered
+    check_ids: [k8s-pod-secret-in-env]
+    reason: "Secret names (never values) from env[].valueFrom.secretKeyRef and envFrom[].secretRef on running pods; system namespaces are exempt."
+    severity: low
+  - id: "4.5.2"
+    title: Keep secrets in a dedicated secret manager
+    service: secrets
+    status: manual
+    reason: Architectural choice (for AKS, the Key Vault Secrets Store CSI driver); no API state distinguishes a deliberate in-cluster Secrets design from a gap.
+    severity: low
+  - id: "4.6.1"
+    title: Use namespaces as administrative boundaries
+    service: general
+    status: manual
+    reason: Whether namespaces reflect administrative boundaries is an organisational judgement.
+    severity: low
+  - id: "4.6.2"
+    title: Apply security contexts to pods and containers
+    service: general
+    status: partial
+    check_ids: [k8s-container-runs-as-root, k8s-privileged-container, k8s-dangerous-capabilities]
+    reason: Running pods are evaluated for root/privilege escalation, privileged mode and three added capabilities; seccomp, AppArmor, read-only root filesystem and dropped capabilities are not recorded by the Kubernetes collector, and which context a workload needs is a judgement.
+    severity: medium
+  - id: "4.6.3"
+    title: Keep workloads out of default namespace
+    service: general
+    status: covered
+    check_ids: [k8s-workload-default-namespace]
+    reason: "Running or Pending pods in the default namespace, collapsed to their owning workload. Services there are not flagged: the built-in kubernetes Service lives in default by design."
+    severity: low
+  # ── 5 Managed services ───────────────────────────────────────────────────
+  - id: "5.1.1"
+    title: Scan container images for vulnerabilities
+    service: defender
+    status: partial
+    check_ids: [azure-aks-defender-disabled]
+    reason: Fires when the cluster's Defender security profile (securityProfile.defender.securityMonitoring) is off. The benchmark also accepts a third-party scanner, which nothing in ARM reports, so a cluster scanned by one still fires (Low, and the finding says so).
+    severity: medium
+  - id: "5.1.2"
+    title: Limit user access to Azure Container Registry
+    service: acr
+    status: manual
+    reason: Which users need push or pull rights on a registry is an organisational judgement; the role assignments can be listed but not graded without that intent.
+    severity: medium
+  - id: "5.1.3"
+    title: Cluster gets read-only registry access
+    service: acr
+    status: missing
+    reason: Needs the cluster's kubelet identity (identityProfile.kubeletidentity.objectId, in the managed-cluster response) joined to its role assignments on Microsoft.ContainerRegistry/registries scopes (AcrPull only, not AcrPush/Contributor/Owner); no registry collector exists and the identities collector does not resolve assignments per registry.
+    severity: medium
+  - id: "5.1.4"
+    title: Allow images only from approved registries
+    service: acr
+    status: manual
+    reason: Needs an organisation-defined registry allowlist; the image references (`images` on `k8s_pod`) are collected but there is no allowlist to compare with.
+    severity: medium
+  - id: "5.2.1"
+    title: Give workloads dedicated Azure identities
+    service: identity
+    status: partial
+    check_ids: [azure-aks-workload-identity-disabled]
+    reason: Fires when Microsoft Entra Workload ID is off on the cluster, so pods can only call Azure as the shared node identity or with a stored secret. With it on, whether each workload actually uses its own federated identity needs ServiceAccount annotations the Kubernetes collector does not record.
+    severity: medium
+  - id: "5.3.1"
+    title: Encrypt Kubernetes Secrets with Key Vault keys
+    service: aks
+    status: covered
+    check_ids: [azure-aks-secrets-no-kms]
+    reason: Reads securityProfile.azureKeyVaultKms.enabled (unset is off). Graded Info because etcd is encrypted at rest with platform keys regardless.
+    severity: medium
+  - id: "5.4.1"
+    title: Restrict access to the API server endpoint
+    service: aks-network
+    status: covered
+    check_ids: [azure-aks-api-unrestricted]
+    reason: Fires on a public API server (not a private cluster, public network access not Disabled) with no authorized IP ranges or a range of 0.0.0.0/0.
+    severity: high
+  - id: "5.4.2"
+    title: Private cluster with public access disabled
+    service: aks-network
+    status: covered
+    check_ids: [azure-aks-api-unrestricted, azure-aks-api-public]
+    reason: Every non-private cluster fires once — as azure-aks-api-unrestricted when nothing restricts the endpoint, otherwise as azure-aks-api-public.
+    severity: high
+  - id: "5.4.3"
+    title: Worker nodes have no public IPs
+    service: aks-network
+    status: covered
+    check_ids: [azure-aks-node-public-ip]
+    reason: Reads enableNodePublicIP on every agent pool profile (unset is off); one finding per cluster naming the pools.
+    severity: medium
+  - id: "5.4.4"
+    title: Network policy enforcement turned on
+    service: aks-network
+    status: covered
+    check_ids: [azure-aks-no-network-policy]
+    reason: Reads networkProfile.networkPolicy (azure, calico, cilium); the Cilium dataplane counts as enforcing whatever networkPolicy says.
+    severity: medium
+  - id: "5.4.5"
+    title: Load balancers terminate TLS with certificates
+    service: aks-network
+    status: partial
+    check_ids: [k8s-ingress-no-tls]
+    reason: Only Kubernetes Ingress TLS is checked. Azure Load Balancer is layer 4 and terminates no TLS; Application Gateway listeners in front of the cluster (AGIC) are collected as azure_app_gateway but their listener protocols are not.
+    severity: medium
+  - id: "5.5.1"
+    title: Manage cluster users through Entra ID
+    service: aks-access
+    status: covered
+    check_ids: [azure-aks-no-entra-integration, azure-aks-local-accounts-enabled]
+    reason: Fires when the cluster has no Entra integration (managed or legacy) — then local certificates are the only way in — and, on an Entra-integrated cluster, when local accounts are still enabled (disableLocalAccounts unset is false).
+    severity: medium
+  - id: "5.5.2"
+    title: Use Azure RBAC for Kubernetes authorization
+    service: aks-access
+    status: covered
+    check_ids: [azure-aks-no-azure-rbac]
+    reason: Reads aadProfile.enableAzureRBAC on Entra-integrated clusters; a cluster without Entra integration is azure-aks-no-entra-integration's finding.
+    severity: medium

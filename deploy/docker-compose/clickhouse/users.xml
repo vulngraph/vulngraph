@@ -1,0 +1,14 @@
+<!-- Default query profile, mirroring the Helm chart's users.xml. -->
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- A backstop, not the bound: every query carries its own Go
+                 context timeout, the longest 10 minutes (db.defaultSelectTimeout).
+                 Lower than that kills long bulk reads (asset sync load,
+                 correlate view load) mid-sweep. -->
+            <max_execution_time>600</max_execution_time>
+            <!-- processors_profile_log churn nothing here reads. -->
+            <log_processors_profiles>0</log_processors_profiles>
+        </default>
+    </profiles>
+</clickhouse>

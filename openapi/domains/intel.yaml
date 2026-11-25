@@ -1,0 +1,182 @@
+# Intel domain (internal/app/intel). Brand/phishing intelligence: monitored domains
+# and CT-log phishing candidates. Admin-only writes.
+components:
+  pathItems:
+    intelDomains:
+      get:
+        operationId: listMonitoredDomains
+        tags: [intel]
+        summary: List monitored domains
+        responses:
+          '200':
+            description: Monitored domains.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  required: [domains]
+                  properties:
+                    domains:
+                      type: array
+                      items: { $ref: '#/components/schemas/MonitoredDomain' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+      post:
+        operationId: addMonitoredDomain
+        tags: [intel]
+        summary: Add a domain to monitor (admin only)
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AddDomainRequest' }
+        responses:
+          '201':
+            description: Domain now monitored.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/MonitoredDomain' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '409': { $ref: '../openapi.yaml#/components/responses/Conflict' }
+
+    removeIntelDomain:
+      delete:
+        operationId: removeMonitoredDomain
+        tags: [intel]
+        summary: Stop monitoring a domain (admin only)
+        parameters:
+          - { name: domain, in: path, required: true, schema: { type: string } }
+        responses:
+          '204': { description: Domain removed. }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    phishingCandidates:
+      get:
+        operationId: listPhishingCandidates
+        tags: [intel]
+        summary: List phishing candidates
+        parameters:
+          - name: status
+            in: query
+            required: false
+            description: >-
+              Filter by lifecycle status; empty defaults to pending (the human
+              queue of genuinely-suspected candidates). Automatically cleared
+              candidates are under auto_dismissed and are never included in pending. An unknown
+              value is rejected rather than returning an empty list.
+            schema: { $ref: '#/components/schemas/CandidateStatus' }
+        responses:
+          '200':
+            description: Phishing candidates.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  required: [candidates, total]
+                  properties:
+                    candidates:
+                      type: array
+                      items: { $ref: '#/components/schemas/PhishingCandidate' }
+                    total: { type: integer, minimum: 0 }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    confirmPhishingCandidate:
+      post:
+        operationId: confirmPhishingCandidate
+        tags: [intel]
+        summary: Confirm a phishing candidate as real (admin only)
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '204': { description: Candidate confirmed. }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    dismissPhishingCandidate:
+      post:
+        operationId: dismissPhishingCandidate
+        tags: [intel]
+        summary: Dismiss a phishing candidate as benign (admin only)
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '204': { description: Candidate dismissed. }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+  schemas:
+    CandidateStatus:
+      type: string
+      # auto_dismissed is the cleared-without-a-person bucket (the candidate's
+      # cleared_by says how): kept out of the human queue but still readable and
+      # auditable, and deliberately distinct from the 'dismissed' an analyst
+      # produces.
+      enum: [pending, dismissed, confirmed, auto_dismissed]
+    MonitoredDomain:
+      type: object
+      required: [id, domain, created_at]
+      properties:
+        id: { type: string }
+        domain: { type: string }
+        created_at: { type: string, format: date-time }
+    AddDomainRequest:
+      type: object
+      required: [domain]
+      properties:
+        domain: { type: string, description: 'Registrable domain to monitor, e.g. example.com.' }
+    PhishingCandidate:
+      type: object
+      required: [id, domain, monitored_domain, source, similarity_score, issuer, not_before, not_after, status, ai_is_phishing, ai_confidence, ai_reasoning, triage_source, cleared_by, detected_at]
+      properties:
+        id: { type: string }
+        domain: { type: string, description: 'The suspicious lookalike domain.' }
+        monitored_domain: { type: string, description: 'The monitored domain it resembles.' }
+        source: { type: string, description: 'Where the candidate was detected (e.g. certificate transparency).' }
+        similarity_score:
+          type: number
+          format: float
+          description: >-
+            0-1 resemblance to the monitored REGISTRABLE domain (the public suffix
+            is part of the comparison: example.org is not example.com). Tiers: 1.00
+            same domain, 0.95 homoglyph, 0.90 same label under another TLD, 0.88
+            brand+phishing affix, 0.86 brand as a DNS label, 0.80 brand as a
+            hyphen token, below that a Damerau-Levenshtein similarity. Anything
+            under 0.65 is not stored.
+        issuer: { type: string, description: 'Certificate issuer.' }
+        not_before: { type: string, format: date, description: 'Certificate validity start.' }
+        not_after: { type: string, format: date, description: 'Certificate validity end.' }
+        status: { $ref: '#/components/schemas/CandidateStatus' }
+        ai_is_phishing:
+          type: boolean
+          description: 'The triage verdict itself. False plus a low ai_confidence is what produces status=auto_dismissed.'
+        ai_confidence:
+          type: number
+          format: float
+          description: 'P(phishing) per triage: 0 = certainly benign, 1 = certainly a squat. NOT confidence-in-the-verdict.'
+        ai_reasoning: { type: string }
+        triage_source:
+          type: string
+          enum: [llm, heuristic, '']
+          description: >-
+            What produced the ai_* verdict, despite the field names: `llm` is the
+            configured LLM; `heuristic` is the similarity/issuer fallback used when
+            no LLM is configured or the call fails (never an AI verdict, and never
+            enough on its own to auto-dismiss a hit at scan time; a later re-score
+            can still clear it, see cleared_by); empty means no verdict came back.
+        cleared_by:
+          type: string
+          enum: [triage, rescore, '']
+          description: >-
+            Why the candidate is auto_dismissed, empty for any other status.
+            `triage`: the scan-time verdict cleared it (a benign LLM verdict at low
+            P(phishing) on a plain hostname). `rescore`: a re-score under the
+            current similarity metric fell below the detection threshold, whatever
+            triage_source says; ai_reasoning ends with the re-score note.
+        detected_at: { type: string, format: date-time }
+        confirmed_by: { type: string, description: 'Set once confirmed; omitted otherwise.' }
+        confirmed_at: { type: string, format: date-time, description: 'Set once confirmed; omitted otherwise.' }

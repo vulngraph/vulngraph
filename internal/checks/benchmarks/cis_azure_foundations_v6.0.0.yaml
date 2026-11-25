@@ -1,0 +1,884 @@
+benchmark: cis-azure-foundations
+name: CIS Microsoft Azure Foundations Benchmark
+version: "6.0.0"
+family: cis
+providers: [azure]
+source: https://www.cisecurity.org/benchmark/azure
+controls:
+  # ── 2 Analytics: Azure Databricks ────────────────────────────────────────
+  - id: "2.1.1"
+    title: Databricks workspace uses a customer-managed VNet
+    service: databricks
+    status: covered
+    check_ids: [azure-databricks-no-vnet-injection]
+    reason: "Reads parameters.customVirtualNetworkId from the Databricks workspace list; fires when the parameters block is returned without one."
+    severity: medium
+  - id: "2.1.2"
+    title: Databricks subnets have network security groups
+    service: databricks
+    status: covered
+    check_ids: [azure-databricks-subnet-no-nsg]
+    reason: "Joins a VNet-injected workspace's customPublicSubnetName/customPrivateSubnetName to this sweep's subnet assets (nsg_id from the VNet list); fires naming the subnets with no NSG. Unknown when either subnet is not in the sweep. Workspaces in a Databricks-managed VNet are out of scope (Databricks owns those NSGs)."
+    severity: medium
+  - id: "2.1.3"
+    title: Databricks inter-worker traffic is encrypted
+    service: databricks
+    status: manual
+    reason: Configured through cluster init scripts / cluster policies inside the workspace; needs Databricks data-plane REST access and human review of scripts.
+    severity: low
+  - id: "2.1.4"
+    title: Databricks identities sync from Entra ID
+    service: databricks
+    status: manual
+    reason: SCIM provisioning lives in the Databricks account console and Entra enterprise apps; no ARM API reports it.
+    severity: low
+  - id: "2.1.5"
+    title: Databricks uses Unity Catalog
+    service: databricks
+    status: manual
+    reason: Metastore assignment is only visible through the Databricks account REST API, not ARM; governance fit needs review.
+    severity: low
+  - id: "2.1.6"
+    title: Databricks personal access tokens are restricted and expire
+    service: databricks
+    status: missing
+    reason: "Needs the Databricks workspace REST API (workspace-conf maxTokenLifetimeDays, token permissions), which takes a workspace-admin Databricks token: Azure Reader on the workspace resource does not grant it, and the ARM resource does not expose these settings."
+    severity: medium
+  - id: "2.1.7"
+    title: Databricks diagnostic log delivery configured
+    service: databricks
+    status: missing
+    reason: "Needs Microsoft.Insights/diagnosticSettings on each Databricks workspace resource. Workspaces are now collected (azure_databricks_workspace); per-resource diagnostic settings belong to the Azure Monitor collector (6.1.4), which is not built yet."
+    severity: medium
+  - id: "2.1.8"
+    title: Databricks critical data encrypted with customer keys
+    service: databricks
+    status: covered
+    check_ids: [azure-databricks-no-cmk]
+    reason: "Fires when none of managed services, managed disks (properties.encryption.entities keySource Microsoft.Keyvault) or the DBFS root (parameters.encryption) uses a customer-managed key. Graded Info: Microsoft-managed keys already encrypt the data."
+    severity: low
+  - id: "2.1.9"
+    title: Databricks clusters have no public IPs
+    service: databricks
+    status: covered
+    check_ids: [azure-databricks-public-ip]
+    reason: "Reads parameters.enableNoPublicIp. Its default changed by API version, so an unset value stays unknown."
+    severity: medium
+  - id: "2.1.10"
+    title: Databricks public network access disabled
+    service: databricks
+    status: covered
+    check_ids: [azure-databricks-public-network-access]
+    reason: "Reads properties.publicNetworkAccess (unset is Enabled)."
+    severity: high
+  - id: "2.1.11"
+    title: Databricks reached through private endpoints
+    service: databricks
+    status: covered
+    check_ids: [azure-databricks-no-private-endpoint]
+    reason: "Counts approved privateEndpointConnections on the workspace; fires on zero."
+    severity: medium
+  - id: "2.1.12"
+    title: Review Databricks groups periodically
+    service: databricks
+    status: manual
+    reason: A periodic membership review process; no API can attest that a review happened.
+    severity: low
+  # ── 3 Compute ────────────────────────────────────────────────────────────
+  - id: "3.1.1"
+    title: Only MFA identities reach privileged VMs
+    service: compute
+    status: covered
+    check_ids: [azure-vm-admin-without-mfa]
+    reason: "Users (principalType User) holding Owner, Contributor, Virtual Machine Contributor or Virtual Machine Administrator Login at a scope that reaches a collected VM (subscription or above, its resource group, or the VM) whose Graph authentication-methods registration row says isMfaCapable false; one finding on the subscription. Disabled users and users missing from the report are not counted. Group assignments are not expanded (membership needs GroupMember.Read.All), so a user reaching a VM role only through a group is not reported."
+    severity: high
+  # ── 5 Identity ───────────────────────────────────────────────────────────
+  - id: "5.1.1"
+    title: Entra security defaults enabled
+    service: entra-id
+    status: covered
+    check_ids: [azure-entra-no-mfa-baseline]
+    reason: "Fires on the tenant settings asset when Graph identitySecurityDefaultsEnforcementPolicy.isEnabled is false AND the enabled Conditional Access policies lack either MFA for all users on all apps or a legacy-authentication block (CIS defers to Conditional Access when it is used). A policy counts only if it is enabled (not report-only), covers all apps, requires MFA outright (the mfa control or an authentication strength, alone or with operator AND; MFA OR a compliant device does not count), is not narrowed to a platform, location, client app, device filter or risk level, and excludes nothing but at most two individual users (Microsoft's break-glass pattern; excluded groups, roles, guests or apps disqualify it). High when any role in Microsoft's admin-MFA template (Global Administrator, Privileged Role Administrator, Security Administrator and 12 more) is left uncovered, Medium otherwise."
+    severity: high
+  - id: "5.1.2"
+    title: MFA required to join or register devices
+    service: entra-id
+    status: covered
+    check_ids: [azure-entra-device-join-no-mfa]
+    reason: "Graph policies/deviceRegistrationPolicy multiFactorAuthConfiguration notRequired AND no enabled Conditional Access policy requiring MFA on the urn:user:registerdevice user action (Microsoft's recommended replacement)."
+    severity: medium
+  - id: "5.1.3"
+    title: MFA enabled for every user
+    service: entra-id
+    status: covered
+    check_ids: [azure-entra-users-without-mfa]
+    reason: "Graph reports/authenticationMethods/userRegistrationDetails: enabled (users accountEnabled eq false excluded) member users with isMfaCapable false; one tenant finding with the count and a sample, High when an admin is among them. Guests are excluded: they authenticate in their home tenant."
+    severity: critical
+  - id: "5.1.4"
+    title: Trusted-device MFA remembering disabled
+    service: entra-id
+    status: manual
+    reason: Set in the legacy per-user MFA service settings portal, which has no supported Graph or ARM read API.
+    severity: low
+  - id: "5.3.1"
+    title: Admin accounts not used day to day
+    service: entra-id
+    status: manual
+    reason: Whether an admin account is used for daily work is an organisational practice; sign-in logs can hint but cannot attest it.
+    severity: medium
+  - id: "5.3.2"
+    title: Review guest users regularly
+    service: entra-id
+    status: manual
+    reason: A periodic review process; Graph users?$filter=userType eq 'Guest' can list guests but not prove a review.
+    severity: medium
+  - id: "5.3.3"
+    title: Restrict User Access Administrator assignments
+    service: rbac
+    status: covered
+    check_ids: [azure-root-user-access-admin]
+    reason: "Fires on the subscription when User Access Administrator is assigned at the root scope \"/\" (standing elevated access). Read from the unfiltered ListForSubscription role-assignment listing, which returns assignments at, above and below the subscription."
+    severity: high
+  - id: "5.3.4"
+    title: Review privileged role assignments periodically
+    service: rbac
+    status: manual
+    reason: A periodic review process; role assignments can be listed but a review cannot be attested by API.
+    severity: medium
+  - id: "5.3.5"
+    title: Disabled users hold no resource permissions
+    service: rbac
+    status: covered
+    check_ids: [azure-disabled-user-has-role]
+    reason: "Graph users with accountEnabled false joined to the unfiltered subscription role-assignment listing (assignments at, above and below the subscription, principalType User); one finding on the subscription listing user and role. Group membership is not expanded."
+    severity: medium
+  - id: "5.3.6"
+    title: Review Tenant Creator role assignments
+    service: entra-id
+    status: manual
+    reason: A periodic review process over an Entra directory role; not attestable by API.
+    severity: low
+  - id: "5.3.7"
+    title: Review non-privileged role assignments periodically
+    service: rbac
+    status: manual
+    reason: A periodic review process; not attestable by API.
+    severity: low
+  - id: "5.4"
+    title: No custom subscription-owner roles exist
+    service: rbac
+    status: covered
+    check_ids: [azure-custom-owner-role]
+    reason: "Fires on the subscription when a CustomRole definition has Actions \"*\" and an assignable scope of \"/\", a management group, or the subscription itself. Role Definitions - List at the subscription scope returns every definition \"applicable at scope and above\", so custom roles defined at an ancestor management group are included."
+    severity: high
+  - id: "5.5"
+    title: Custom role exists for administering resource locks
+    service: rbac
+    status: manual
+    reason: Whether lock administration is delegated through a dedicated role is an organisational design choice.
+    severity: low
+  - id: "5.6"
+    title: Block subscriptions moving between Entra tenants
+    service: subscription
+    status: covered
+    check_ids: [azure-subscription-tenant-transfer-allowed]
+    reason: "Microsoft.Subscription/policies/default (GetPolicyForTenant): blockSubscriptionsLeavingTenant or blockSubscriptionsIntoTenant not true (unset is the documented default, not blocked); one finding on the tenant settings asset."
+    severity: medium
+  - id: "5.7"
+    title: Subscription has two or three owners
+    service: rbac
+    status: covered
+    check_ids: [azure-subscription-owner-count]
+    reason: "Counts distinct principals (users, groups, service principals) with an active Owner assignment at the subscription or an ancestor scope; fires outside 2..3. A group counts as one principal (membership needs Microsoft Graph); orphaned assignments to deleted principals are counted (ARM cannot tell them apart without Graph); PIM-eligible (not yet activated) owners are not listed by roleAssignments and are not counted."
+    severity: medium
+  # ── 6 Management and Governance ──────────────────────────────────────────
+  - id: "6.1.1.1"
+    title: Subscription activity log has a diagnostic setting
+    service: monitor
+    status: covered
+    check_ids: [azure-activity-log-not-exported]
+    reason: "Microsoft.Insights/diagnosticSettings at the subscription scope: no setting with a destination and at least one enabled log category."
+    severity: high
+  - id: "6.1.1.2"
+    title: Activity log diagnostic setting captures needed categories
+    service: monitor
+    status: covered
+    check_ids: [azure-activity-log-categories-missing]
+    reason: "Union of enabled categories across exporting subscription diagnostic settings lacks Administrative, Alert, Policy or Security (the allLogs category group satisfies all). Asked only when a setting exists."
+    severity: medium
+  - id: "6.1.1.3"
+    title: Activity log storage account uses customer keys
+    service: monitor
+    status: covered
+    check_ids: [azure-activity-log-storage-no-cmk]
+    reason: "Each storage account receiving the activity log (diagnostic setting storageAccountId) read with Storage GetProperties; fires when encryption.keySource is not Microsoft.Keyvault."
+    severity: low
+  - id: "6.1.1.4"
+    title: Key Vault diagnostic logging enabled
+    service: monitor
+    status: covered
+    check_ids: [azure-keyvault-audit-logging-off]
+    reason: "Per-vault Microsoft.Insights/diagnosticSettings: no exporting setting enables the AuditEvent category or the audit/allLogs category group."
+    severity: medium
+  - id: "6.1.1.5"
+    title: NSG flow logs sent to Log Analytics
+    service: monitor
+    status: covered
+    check_ids: [azure-nsg-flow-logs-not-analysed, azure-vnet-flow-logs-not-analysed]
+    reason: "Reads every Network Watcher's flow logs (networkWatchers/flowLogs list) onto their target NSG: fires on an enabled NSG flow log without traffic analytics into a Log Analytics workspace. Azure stopped accepting new NSG flow logs on 30 June 2025, so an NSG without one is not asked to create it; its traffic is covered by the VNet flow log check (6.1.1.6). Unknown when any watcher's flow-log listing fails."
+    severity: low
+  - id: "6.1.1.6"
+    title: VNet flow logs sent to Log Analytics
+    service: monitor
+    status: covered
+    check_ids: [azure-vnet-flow-logs-not-analysed]
+    reason: "Fires on a VNet with no enabled VNet-scoped flow log, or one without traffic analytics into a Log Analytics workspace (one finding, title says which). A VNet counts as logged only through a flow log targeting the VNet itself, the unit the benchmark audits; subnet- or NIC-scoped logs do not satisfy it. Unknown when any watcher's flow-log listing fails."
+    severity: medium
+  - id: "6.1.1.7"
+    title: Microsoft Graph activity logs exported
+    service: monitor
+    status: covered
+    check_ids: [azure-entra-logs-not-exported]
+    reason: "ARM microsoft.aadiam/diagnosticSettings (tenant scope): MicrosoftGraphActivityLogs not exported, asked when the tenant holds Entra ID P1/P2 (Graph subscribedSkus), which the category requires. Same finding as 6.1.1.8."
+    severity: low
+  - id: "6.1.1.8"
+    title: Entra activity logs exported
+    service: monitor
+    status: covered
+    check_ids: [azure-entra-logs-not-exported]
+    reason: "ARM microsoft.aadiam/diagnosticSettings (tenant scope): AuditLogs not exported to any destination, or SignInLogs not exported on a P1/P2 tenant (free tenants cannot export sign-in logs). One finding lists the missing categories."
+    severity: medium
+  - id: "6.1.1.9"
+    title: Intune logs exported to Log Analytics
+    service: monitor
+    status: covered
+    check_ids: [azure-intune-logs-not-exported]
+    reason: "ARM Microsoft.Intune/diagnosticSettings (tenant scope): AuditLogs, OperationalLogs, DeviceComplianceOrg and Devices not all sent to a Log Analytics workspace. Asked only when the tenant holds an Intune licence (Graph subscribedSkus service plan INTUNE_A, INTUNE_A_VL, INTUNE_A_GOV, INTUNE_EDU or INTUNE_SMBIZ)."
+    severity: low
+  - id: "6.1.2.1"
+    title: Alert on policy assignment creation
+    service: monitor
+    status: covered
+    check_ids: [azure-activity-log-alerts-missing]
+    reason: "Microsoft.Insights/activityLogAlerts: no enabled alert scoped to the subscription matching this control's operationName (equals, containsAny or anyOf) with a category that carries the event or no category filter: Administrative for every operation, and Security too for the security-solution operations (the category CIS's remediation uses); an alert on a whole accepted category also counts, or for 6.1.2.11 the ServiceHealth category. Alerts narrowed by resourceGroup, resourceId or caller do not count. One finding lists every missing alert."
+    severity: low
+  - id: "6.1.2.2"
+    title: Alert on policy assignment deletion
+    service: monitor
+    status: covered
+    check_ids: [azure-activity-log-alerts-missing]
+    reason: "Microsoft.Insights/activityLogAlerts: no enabled alert scoped to the subscription matching this control's operationName (equals, containsAny or anyOf) with a category that carries the event or no category filter: Administrative for every operation, and Security too for the security-solution operations (the category CIS's remediation uses); an alert on a whole accepted category also counts, or for 6.1.2.11 the ServiceHealth category. Alerts narrowed by resourceGroup, resourceId or caller do not count. One finding lists every missing alert."
+    severity: low
+  - id: "6.1.2.3"
+    title: Alert on NSG create or update
+    service: monitor
+    status: covered
+    check_ids: [azure-activity-log-alerts-missing]
+    reason: "Microsoft.Insights/activityLogAlerts: no enabled alert scoped to the subscription matching this control's operationName (equals, containsAny or anyOf) with a category that carries the event or no category filter: Administrative for every operation, and Security too for the security-solution operations (the category CIS's remediation uses); an alert on a whole accepted category also counts, or for 6.1.2.11 the ServiceHealth category. Alerts narrowed by resourceGroup, resourceId or caller do not count. One finding lists every missing alert."
+    severity: low
+  - id: "6.1.2.4"
+    title: Alert on NSG deletion
+    service: monitor
+    status: covered
+    check_ids: [azure-activity-log-alerts-missing]
+    reason: "Microsoft.Insights/activityLogAlerts: no enabled alert scoped to the subscription matching this control's operationName (equals, containsAny or anyOf) with a category that carries the event or no category filter: Administrative for every operation, and Security too for the security-solution operations (the category CIS's remediation uses); an alert on a whole accepted category also counts, or for 6.1.2.11 the ServiceHealth category. Alerts narrowed by resourceGroup, resourceId or caller do not count. One finding lists every missing alert."
+    severity: low
+  - id: "6.1.2.5"
+    title: Alert on security solution create or update
+    service: monitor
+    status: covered
+    check_ids: [azure-activity-log-alerts-missing]
+    reason: "Microsoft.Insights/activityLogAlerts: no enabled alert scoped to the subscription matching this control's operationName (equals, containsAny or anyOf) with a category that carries the event or no category filter: Administrative for every operation, and Security too for the security-solution operations (the category CIS's remediation uses); an alert on a whole accepted category also counts, or for 6.1.2.11 the ServiceHealth category. Alerts narrowed by resourceGroup, resourceId or caller do not count. One finding lists every missing alert."
+    severity: low
+  - id: "6.1.2.6"
+    title: Alert on security solution deletion
+    service: monitor
+    status: covered
+    check_ids: [azure-activity-log-alerts-missing]
+    reason: "Microsoft.Insights/activityLogAlerts: no enabled alert scoped to the subscription matching this control's operationName (equals, containsAny or anyOf) with a category that carries the event or no category filter: Administrative for every operation, and Security too for the security-solution operations (the category CIS's remediation uses); an alert on a whole accepted category also counts, or for 6.1.2.11 the ServiceHealth category. Alerts narrowed by resourceGroup, resourceId or caller do not count. One finding lists every missing alert."
+    severity: low
+  - id: "6.1.2.7"
+    title: Alert on SQL firewall rule create or update
+    service: monitor
+    status: covered
+    check_ids: [azure-activity-log-alerts-missing]
+    reason: "Microsoft.Insights/activityLogAlerts: no enabled alert scoped to the subscription matching this control's operationName (equals, containsAny or anyOf) with a category that carries the event or no category filter: Administrative for every operation, and Security too for the security-solution operations (the category CIS's remediation uses); an alert on a whole accepted category also counts, or for 6.1.2.11 the ServiceHealth category. Alerts narrowed by resourceGroup, resourceId or caller do not count. One finding lists every missing alert."
+    severity: low
+  - id: "6.1.2.8"
+    title: Alert on SQL firewall rule deletion
+    service: monitor
+    status: covered
+    check_ids: [azure-activity-log-alerts-missing]
+    reason: "Microsoft.Insights/activityLogAlerts: no enabled alert scoped to the subscription matching this control's operationName (equals, containsAny or anyOf) with a category that carries the event or no category filter: Administrative for every operation, and Security too for the security-solution operations (the category CIS's remediation uses); an alert on a whole accepted category also counts, or for 6.1.2.11 the ServiceHealth category. Alerts narrowed by resourceGroup, resourceId or caller do not count. One finding lists every missing alert."
+    severity: low
+  - id: "6.1.2.9"
+    title: Alert on public IP create or update
+    service: monitor
+    status: covered
+    check_ids: [azure-activity-log-alerts-missing]
+    reason: "Microsoft.Insights/activityLogAlerts: no enabled alert scoped to the subscription matching this control's operationName (equals, containsAny or anyOf) with a category that carries the event or no category filter: Administrative for every operation, and Security too for the security-solution operations (the category CIS's remediation uses); an alert on a whole accepted category also counts, or for 6.1.2.11 the ServiceHealth category. Alerts narrowed by resourceGroup, resourceId or caller do not count. One finding lists every missing alert."
+    severity: low
+  - id: "6.1.2.10"
+    title: Alert on public IP deletion
+    service: monitor
+    status: covered
+    check_ids: [azure-activity-log-alerts-missing]
+    reason: "Microsoft.Insights/activityLogAlerts: no enabled alert scoped to the subscription matching this control's operationName (equals, containsAny or anyOf) with a category that carries the event or no category filter: Administrative for every operation, and Security too for the security-solution operations (the category CIS's remediation uses); an alert on a whole accepted category also counts, or for 6.1.2.11 the ServiceHealth category. Alerts narrowed by resourceGroup, resourceId or caller do not count. One finding lists every missing alert."
+    severity: low
+  - id: "6.1.2.11"
+    title: Alert on Service Health events
+    service: monitor
+    status: covered
+    check_ids: [azure-activity-log-alerts-missing]
+    reason: "Microsoft.Insights/activityLogAlerts: no enabled alert scoped to the subscription matching this control's operationName (equals, containsAny or anyOf) with a category that carries the event or no category filter: Administrative for every operation, and Security too for the security-solution operations (the category CIS's remediation uses); an alert on a whole accepted category also counts, or for 6.1.2.11 the ServiceHealth category. Alerts narrowed by resourceGroup, resourceId or caller do not count. One finding lists every missing alert."
+    severity: low
+  - id: "6.1.3.1"
+    title: Application telemetry collected with App Insights
+    service: monitor
+    status: covered
+    check_ids: [azure-no-application-insights]
+    reason: "Microsoft.Insights/components list is empty while the subscription hosts App Service apps (complete web-app listing). Not applicable where the subscription runs no App Service apps."
+    severity: low
+  - id: "6.1.4"
+    title: Resource logging enabled wherever supported
+    service: monitor
+    status: covered
+    check_ids: [azure-resource-logging-disabled, azure-keyvault-audit-logging-off]
+    reason: "One subscription finding listing the network security groups, application gateways, App Service apps and public IP addresses with no exporting diagnostic setting (one Microsoft.Insights/diagnosticSettings list per resource, bounded fan-out; any failed read or incomplete listing leaves it unknown). Key vaults are covered per vault by azure-keyvault-audit-logging-off. VMs, disks and VNets have no resource-log categories of their own; resource types graph does not inventory (e.g. Databricks, Cosmos DB) cannot be evaluated."
+    severity: medium
+  - id: "6.1.5"
+    title: No basic or free SKUs on production
+    service: monitor
+    status: manual
+    reason: SKUs are readable (sku is collected on storage, LBs, SQL) but which resources are production with SLA needs is an owner judgement.
+    severity: low
+  - id: "6.2"
+    title: Lock mission-critical resources
+    service: governance
+    status: manual
+    reason: Microsoft.Authorization/locks is listable, but which resources are mission-critical is an owner judgement.
+    severity: low
+  # ── 7 Networking ─────────────────────────────────────────────────────────
+  - id: "7.1"
+    title: RDP not open from the internet
+    service: networking
+    status: covered
+    check_ids: [azure-nsg-rdp-not-open-internet, azure-nsg-all-ports-open-internet]
+    reason: Evaluates NSG custom inbound rules in priority order for TCP/any 3389 from */Internet/Any/0.0.0.0/0; default rules are not collected (the default DenyAllInbound cannot open RDP). A port admitted by an all-ports rule is reported once by azure-nsg-all-ports-open-internet instead of by every per-port check.
+    severity: high
+  - id: "7.2"
+    title: SSH not open from the internet
+    service: networking
+    status: covered
+    check_ids: [azure-nsg-ssh-not-open-internet, azure-nsg-all-ports-open-internet]
+    reason: Same NSG evaluation as 7.1 for port 22.
+    severity: high
+  - id: "7.3"
+    title: UDP not open from the internet
+    service: networking
+    status: covered
+    check_ids: [azure-nsg-udp-open-internet, azure-nsg-all-ports-open-internet]
+    reason: "Evaluates NSG custom inbound rules in priority order for udp/*/any from */Internet/Any/0.0.0.0/0 on any port (exact at every rule boundary); default rules are not collected (DenyAllInbound cannot open UDP). All-ports rules are reported by azure-nsg-all-ports-open-internet."
+    severity: high
+  - id: "7.4"
+    title: HTTP and HTTPS not open from the internet
+    service: networking
+    status: covered
+    check_ids: [azure-nsg-http-open-internet, azure-nsg-all-ports-open-internet]
+    reason: "Same NSG evaluation as 7.1 for TCP 80 and 443."
+    severity: medium
+  - id: "7.5"
+    title: NSG flow log retention at least 90 days
+    service: networking
+    status: covered
+    check_ids: [azure-nsg-flow-log-retention-short]
+    reason: "Fires on an enabled NSG flow log whose retention policy is enabled with 1-89 days; a disabled policy or 0 days keeps records indefinitely and passes."
+    severity: low
+  - id: "7.6"
+    title: Network Watcher enabled in used regions
+    service: networking
+    status: covered
+    check_ids: [azure-network-watcher-missing-region]
+    reason: "Compares the Network Watcher list's locations with the regions holding a VNet (every VM, NIC, gateway and private endpoint lives in one); one finding on the subscription naming the uncovered regions. Display-form and short-form region names are folded together."
+    severity: low
+  - id: "7.7"
+    title: Review public IP addresses periodically
+    service: networking
+    status: manual
+    reason: A periodic review process. Public IPs are already inventoried (`azure_public_ip` assets) and azure-vm-direct-public-ip flags VM-attached ones, but neither attests a review.
+    severity: medium
+  - id: "7.8"
+    title: VNet flow log retention at least 90 days
+    service: networking
+    status: covered
+    check_ids: [azure-vnet-flow-log-retention-short]
+    reason: "Fires on an enabled VNet flow log whose retention policy is enabled with 1-89 days; a disabled policy or 0 days keeps records indefinitely and passes."
+    severity: low
+  - id: "7.9"
+    title: VPN point-to-site uses Entra authentication only
+    service: networking
+    status: covered
+    check_ids: [azure-vpn-p2s-non-entra-auth]
+    reason: "Reads each VPN-type virtual network gateway (generic resource listing, then a GET per gateway): fires when point-to-site is configured and its authentication types are anything but exactly AAD. Older gateways that leave vpnAuthenticationTypes empty have the type implied from the configured Entra tenant, root certificates or RADIUS server; when nothing implies one the gateway stays unknown."
+    severity: medium
+  - id: "7.10"
+    title: Application Gateway has WAF enabled
+    service: application-gateway
+    status: covered
+    check_ids: [azure-appgw-no-waf]
+    reason: "Fires when a gateway has neither an enabled inline WAF configuration nor an attached WAF policy whose policySettings.state is Enabled (read from the WAF policy list). When the policy listing fails, or the attached policy is not in it, the gateway's WAF state is unknown rather than assumed on."
+    severity: high
+  - id: "7.11"
+    title: Every subnet has a network security group
+    service: networking
+    status: covered
+    check_ids: [azure-subnet-no-nsg]
+    reason: "Reads subnet.properties.networkSecurityGroup from the VNet list; exempts the reserved platform subnets Azure forbids or manages NSGs on (GatewaySubnet, AzureFirewallSubnet, AzureFirewallManagementSubnet, RouteServerSubnet)."
+    severity: medium
+  - id: "7.12"
+    title: Application Gateway requires TLS 1.2 or newer
+    service: application-gateway
+    status: covered
+    check_ids: [azure-appgw-min-tls-below-12]
+    reason: "Resolves the lowest TLS version across the gateway SSL policy and every SSL profile (listener-specific) policy, from minProtocolVersion, the predefined policyName or the legacy disabledSslProtocols list. A gateway with no SSL policy runs its SKU's default: AppGwSslPolicy20220101 (TLS 1.2) on v2 and Basic since the August 2025 TLS 1.0/1.1 retirement, AppGwSslPolicy20150501 (TLS 1.0) on v1, whose default Microsoft left unchanged. A custom policy naming only cipher suites, or a default with no SKU tier reported, stays unknown."
+    severity: high
+  - id: "7.13"
+    title: Application Gateway HTTP/2 enabled
+    service: application-gateway
+    status: covered
+    check_ids: [azure-appgw-http2-disabled]
+    reason: "Reads properties.enableHttp2 from the Application Gateway list (unset is disabled)."
+    severity: low
+  - id: "7.14"
+    title: WAF policy inspects request bodies
+    service: application-gateway
+    status: covered
+    check_ids: [azure-waf-no-request-body-inspection]
+    reason: "Reads the Application Gateway WAF policy list: fires on a policy attached to a gateway, listener or path rule whose policySettings.requestBodyCheck is false. Unattached policies protect nothing and are skipped; an unset value has no documented default and stays unknown."
+    severity: medium
+  - id: "7.15"
+    title: WAF policy has bot protection
+    service: application-gateway
+    status: covered
+    check_ids: [azure-waf-no-bot-protection]
+    reason: "Fires on an attached WAF policy whose managed rule sets do not include Microsoft_BotManagerRuleSet."
+    severity: medium
+  - id: "7.16"
+    title: Network Security Perimeter protects PaaS resources
+    service: networking
+    status: manual
+    reason: Which PaaS resources belong inside a perimeter is a design decision; Microsoft.Network/networkSecurityPerimeters is listable but cannot judge intent.
+    severity: low
+  # ── 8 Security: Defender for Cloud ───────────────────────────────────────
+  - id: "8.1.1.1"
+    title: Defender CSPM plan on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-cspm-off]
+    reason: "Microsoft.Security/pricings: CloudPosture pricingTier not Standard. A plan the response omits, or marks deprecated, is unknown."
+    severity: medium
+  - id: "8.1.2.1"
+    title: Defender for APIs on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-apis-off]
+    reason: "Microsoft.Security/pricings: Api pricingTier not Standard. A plan the response omits, or marks deprecated, is unknown."
+    severity: low
+  - id: "8.1.3.1"
+    title: Defender for Servers on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-servers-off]
+    reason: "Microsoft.Security/pricings: VirtualMachines pricingTier not Standard. A plan the response omits, or marks deprecated, is unknown."
+    severity: high
+  - id: "8.1.3.2"
+    title: Server vulnerability assessment component on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-servers-components-off]
+    reason: "Microsoft.Security/serverVulnerabilityAssessmentsSettings: no AzureServersSetting selecting a provider while Defender for Servers is on (with Servers off, azure-defender-plans-off is the finding)."
+    severity: medium
+  - id: "8.1.3.3"
+    title: Endpoint protection integration on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-servers-components-off]
+    reason: "Microsoft.Security/settings/WDATP enabled false while Defender for Servers is on."
+    severity: medium
+  - id: "8.1.3.4"
+    title: Agentless machine scanning on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-servers-components-off]
+    reason: "Pricings VirtualMachines extension AgentlessVmScanning not enabled (or absent on Plan 1) while Defender for Servers is on."
+    severity: medium
+  - id: "8.1.3.5"
+    title: File integrity monitoring on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-servers-components-off]
+    reason: "Pricings VirtualMachines extension FileIntegrityMonitoring not enabled (or absent on Plan 1) while Defender for Servers is on."
+    severity: low
+  - id: "8.1.4.1"
+    title: Defender for Containers on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-containers-off]
+    reason: "Microsoft.Security/pricings: Containers pricingTier not Standard. A plan the response omits, or marks deprecated, is unknown."
+    severity: medium
+  - id: "8.1.5.1"
+    title: Defender for Storage on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-storage-off]
+    reason: "Microsoft.Security/pricings: StorageAccounts pricingTier not Standard. A plan the response omits, or marks deprecated, is unknown."
+    severity: medium
+  - id: "8.1.5.2"
+    title: Monitor storage threat-protection alerts
+    service: defender
+    status: manual
+    reason: Whether alerts are actually triaged is an operational practice, not a setting.
+    severity: low
+  - id: "8.1.6.1"
+    title: Defender for App Service on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-appservice-off]
+    reason: "Microsoft.Security/pricings: AppServices pricingTier not Standard. A plan the response omits, or marks deprecated, is unknown."
+    severity: medium
+  - id: "8.1.7.1"
+    title: Defender for Cosmos DB on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-cosmosdb-off]
+    reason: "Microsoft.Security/pricings: CosmosDbs pricingTier not Standard. A plan the response omits, or marks deprecated, is unknown."
+    severity: low
+  - id: "8.1.7.2"
+    title: Defender for open-source relational databases on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-oss-db-off]
+    reason: "Microsoft.Security/pricings: OpenSourceRelationalDatabases pricingTier not Standard. A plan the response omits, or marks deprecated, is unknown."
+    severity: low
+  - id: "8.1.7.3"
+    title: Defender for Azure SQL databases on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-sql-off]
+    reason: "Microsoft.Security/pricings: SqlServers pricingTier not Standard. A plan the response omits, or marks deprecated, is unknown."
+    severity: medium
+  - id: "8.1.7.4"
+    title: Defender for SQL on machines on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-sql-vm-off]
+    reason: "Microsoft.Security/pricings: SqlServerVirtualMachines pricingTier not Standard. A plan the response omits, or marks deprecated, is unknown."
+    severity: low
+  - id: "8.1.8.1"
+    title: Defender for Key Vault on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-keyvault-off]
+    reason: "Microsoft.Security/pricings: KeyVaults pricingTier not Standard. A plan the response omits, or marks deprecated, is unknown."
+    severity: medium
+  - id: "8.1.9.1"
+    title: Defender for Resource Manager on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-arm-off]
+    reason: "Microsoft.Security/pricings: Arm pricingTier not Standard. A plan the response omits, or marks deprecated, is unknown."
+    severity: medium
+  - id: "8.1.10"
+    title: Defender checks VM OS updates
+    service: defender
+    status: covered
+    check_ids: [azure-mcsb-policy-disabled]
+    reason: "The SecurityCenterBuiltIn policy assignment disables (effect parameter or policyEffect override set to Disabled) the non-deprecated system-updates policy of the Microsoft cloud security benchmark initiative; reported by the same finding as 8.1.11, which lists every disabled policy by display name."
+    severity: medium
+  - id: "8.1.11"
+    title: Cloud security benchmark policies not disabled
+    service: defender
+    status: covered
+    check_ids: [azure-mcsb-policy-disabled]
+    reason: "Microsoft.Authorization/policyAssignments/SecurityCenterBuiltIn parameters and policyEffect overrides set to Disabled, resolved through the initiative's definition references to built-in policy definitions; deprecated definitions (metadata.deprecated or a [Deprecated] name) are skipped. Effects left at the initiative default are Microsoft's choice and are not read. An assignment made only at a management group is not read (unknown)."
+    severity: medium
+  - id: "8.1.12"
+    title: Security alerts notify subscription owners
+    service: defender
+    status: covered
+    check_ids: [azure-defender-notifications-incomplete]
+    reason: "Microsoft.Security/securityContacts: no enabled contact with notificationsByRole state On and roles including Owner."
+    severity: low
+  - id: "8.1.13"
+    title: Security contact email configured
+    service: defender
+    status: covered
+    check_ids: [azure-defender-notifications-incomplete]
+    reason: "Microsoft.Security/securityContacts: no email address on an enabled contact."
+    severity: low
+  - id: "8.1.14"
+    title: Alert-severity notifications enabled
+    service: defender
+    status: covered
+    check_ids: [azure-defender-notifications-incomplete]
+    reason: "Microsoft.Security/securityContacts: no Alert notifications source with a minimalSeverity."
+    severity: low
+  - id: "8.1.15"
+    title: Attack-path notifications enabled
+    service: defender
+    status: covered
+    check_ids: [azure-defender-notifications-incomplete]
+    reason: "Microsoft.Security/securityContacts: no AttackPath notifications source with a minimalRiskLevel."
+    severity: low
+  - id: "8.1.16"
+    title: Defender external attack surface monitoring enabled
+    service: defender
+    status: covered
+    check_ids: [azure-defender-easm-off]
+    reason: "Microsoft.Easm/workspaces list for the subscription is empty (an unregistered Microsoft.Easm provider is an observed zero). Info: a tenant normally hosts one workspace in one subscription."
+    severity: low
+  - id: "8.2.1"
+    title: Defender for IoT Hub on
+    service: defender
+    status: covered
+    check_ids: [azure-defender-iot-hub-unprotected]
+    reason: "Microsoft.Devices/IotHubs not listed in any enabled Microsoft.Security/iotSecuritySolutions iotHubs. Not applicable (silent) where no IoT hub exists."
+    severity: low
+  # ── 8.3 Key Vault ────────────────────────────────────────────────────────
+  - id: "8.3.1"
+    title: RBAC vault keys have expiry dates
+    service: key-vault
+    status: covered
+    check_ids: [azure-keyvault-rbac-key-no-expiry]
+    reason: "ARM vaults/keys list: enabled keys without attributes.exp, on vaults whose enableRbacAuthorization is true."
+    severity: medium
+  - id: "8.3.2"
+    title: Access-policy vault keys have expiry dates
+    service: key-vault
+    status: covered
+    check_ids: [azure-keyvault-policy-key-no-expiry]
+    reason: "ARM vaults/keys list: enabled keys without attributes.exp, on access-policy vaults."
+    severity: medium
+  - id: "8.3.3"
+    title: RBAC vault secrets have expiry dates
+    service: key-vault
+    status: covered
+    check_ids: [azure-keyvault-rbac-secret-no-expiry]
+    reason: "ARM vaults/secrets list (metadata only, never values): enabled secrets without attributes.exp, RBAC vaults."
+    severity: medium
+  - id: "8.3.4"
+    title: Access-policy vault secrets have expiry dates
+    service: key-vault
+    status: covered
+    check_ids: [azure-keyvault-policy-secret-no-expiry]
+    reason: "ARM vaults/secrets list: enabled secrets without attributes.exp, access-policy vaults."
+    severity: medium
+  - id: "8.3.5"
+    title: Key Vault purge protection enabled
+    service: key-vault
+    status: covered
+    check_ids: [azure-keyvault-no-purge-protection]
+    reason: "Vault properties.enablePurgeProtection not true (omitted means never enabled) or enableSoftDelete false."
+    severity: high
+  - id: "8.3.6"
+    title: Key Vault uses RBAC authorization
+    service: key-vault
+    status: covered
+    check_ids: [azure-keyvault-access-policy-model]
+    reason: "Vault properties.enableRbacAuthorization not true (documented default false)."
+    severity: medium
+  - id: "8.3.7"
+    title: Vaults reachable only from private networks
+    service: key-vault
+    status: covered
+    check_ids: [azure-keyvault-public-network-access]
+    reason: "Vault properties.publicNetworkAccess not Disabled (documented default enabled); Medium when networkAcls.defaultAction is Allow or unset, Low when the vault firewall denies by default."
+    severity: high
+  - id: "8.3.8"
+    title: Key Vault reached through private endpoints
+    service: key-vault
+    status: covered
+    check_ids: [azure-keyvault-no-private-endpoint]
+    reason: "Vault properties.privateEndpointConnections has no Approved connection (omitted means none)."
+    severity: medium
+  - id: "8.3.9"
+    title: Key Vault keys rotate automatically
+    service: key-vault
+    status: covered
+    check_ids: [azure-keyvault-key-no-rotation]
+    reason: "Enabled keys with no Rotate lifetime action: read from the ARM key's rotationPolicy when present, else the data-plane GET /keys/{name}/rotationpolicy (needs a data-plane read role and network reach; when that read fails the vault's rotation is unknown, never compliant)."
+    severity: medium
+  - id: "8.3.10"
+    title: Use Managed HSM where required
+    service: key-vault
+    status: manual
+    reason: Whether a workload requires FIPS 140 Level 3 HSM is a compliance judgement.
+    severity: low
+  - id: "8.3.11"
+    title: Certificate validity at most 12 months
+    service: key-vault
+    status: covered
+    check_ids: [azure-keyvault-cert-validity-long]
+    reason: "Current, enabled certificates whose issued validity (not-before to expiry, plus a day of slack) exceeds 12 months, read from the Key Vault data-plane certificate list (GET /certificates, api 7.4): the outcome of the issuance policy's validity_months. The data-plane read needs Key Vault Reader (RBAC vaults) or a List certificates access policy, plus network reach; when it fails the vault's certificate keys stay absent (unknown), never zero."
+    severity: low
+  - id: "8.4.1"
+    title: Bastion deployed for VM remote access
+    service: bastion
+    status: covered
+    check_ids: [azure-no-bastion-host]
+    reason: "Counts the subscription's Bastion hosts (bastionHosts list); fires once on the subscription when there are none and the subscription runs at least one VM (a subscription with no VMs has nothing to reach)."
+    severity: low
+  - id: "8.5"
+    title: DDoS network protection on virtual networks
+    service: networking
+    status: covered
+    check_ids: [azure-vnet-no-ddos-protection]
+    reason: "Reads properties.enableDdosProtection from the VNet list (unset is disabled)."
+    severity: low
+  # ── 9 Storage ────────────────────────────────────────────────────────────
+  - id: "9.1.1"
+    title: File share soft delete enabled
+    service: storage
+    status: covered
+    check_ids: [azure-storage-file-soft-delete-off]
+    reason: "Reads FileServices GetServiceProperties (shareDeleteRetentionPolicy.enabled; absent from a read response is off) on accounts whose kind has a file service and that hold at least one share (share listing, read until an SMB share is seen). Unknown when either read fails."
+    severity: medium
+  - id: "9.1.2"
+    title: SMB file shares require SMB 3.1.1 or newer
+    service: storage
+    status: covered
+    check_ids: [azure-storage-smb-legacy-version]
+    reason: "Reads protocolSettings.smb.versions from the file service properties; fires unless the list is exactly SMB3.1.1 (unset accepts every version). Only accounts holding an SMB share are evaluated; NFS shares ignore SMB settings."
+    severity: medium
+  - id: "9.1.3"
+    title: SMB channel encryption AES-256-GCM or stronger
+    service: storage
+    status: covered
+    check_ids: [azure-storage-smb-weak-channel-encryption]
+    reason: "Reads protocolSettings.smb.channelEncryption; fires unless the list is exactly AES-256-GCM (unset accepts all three ciphers). Only accounts holding an SMB share are evaluated; NFS shares ignore SMB settings."
+    severity: medium
+  - id: "9.2.1"
+    title: Blob soft delete enabled
+    service: storage
+    status: covered
+    check_ids: [azure-storage-blob-soft-delete-off]
+    reason: "Reads BlobServices GetServiceProperties (deleteRetentionPolicy.enabled; absent from a read response is off) on every account kind with a blob service. Unknown when the read fails."
+    severity: medium
+  - id: "9.2.2"
+    title: Container soft delete enabled
+    service: storage
+    status: covered
+    check_ids: [azure-storage-container-soft-delete-off]
+    reason: "Reads containerDeleteRetentionPolicy.enabled from the blob service properties. Legacy GPv1 accounts are exempt: Azure does not offer container soft delete on them, so the remedy is the GPv2 upgrade."
+    severity: medium
+  - id: "9.2.3"
+    title: Blob versioning enabled
+    service: storage
+    status: covered
+    check_ids: [azure-storage-blob-versioning-off]
+    reason: "Reads isVersioningEnabled from the blob service properties. Hierarchical-namespace (Data Lake Gen2) and legacy GPv1 accounts are exempt: Azure does not support versioning on them, so they cannot comply."
+    severity: medium
+  - id: "9.3.1.1"
+    title: Storage key rotation reminders enabled
+    service: storage
+    status: covered
+    check_ids: [azure-storage-no-key-expiry-policy]
+    reason: "Fires when properties.keyPolicy.keyExpirationPeriodInDays is unset. Accounts with Shared Key authorization disabled (9.3.1.3 compliant) do not fire: their keys cannot authenticate, so a rotation reminder governs no credential."
+    severity: low
+  - id: "9.3.1.2"
+    title: Storage access keys regenerated periodically
+    service: storage
+    status: covered
+    check_ids: [azure-storage-key-not-rotated]
+    reason: "Compares properties.keyCreationTime.key1/key2 to 90 days. Within a returned keyCreationTime object, Azure documents a null key time as \"not yet set\" on older accounts and says rotating the key sets it, so a null key has not been rotated since key-creation tracking began and is graded stale. A missing keyCreationTime object stays unknown. Accounts with Shared Key authorization disabled do not fire: those keys are not credentials."
+    severity: medium
+  - id: "9.3.1.3"
+    title: Shared key access disabled on storage accounts
+    service: storage
+    status: covered
+    check_ids: [azure-storage-shared-key-access]
+    reason: "Reads properties.allowSharedKeyAccess (null is documented as true)."
+    severity: medium
+  - id: "9.3.2.1"
+    title: Storage accounts reached through private endpoints
+    service: storage
+    status: covered
+    check_ids: [azure-storage-no-private-endpoint]
+    reason: "Counts privateEndpointConnections whose connection state is Approved; fires on zero."
+    severity: medium
+  - id: "9.3.2.2"
+    title: Storage public network access disabled
+    service: storage
+    status: covered
+    check_ids: [azure-storage-default-network-allow, azure-storage-public-network-access]
+    reason: "Fires when publicNetworkAccess is Enabled (null is Enabled: Disabled is only ever set explicitly) — as azure-storage-default-network-allow when the firewall also defaults to Allow, otherwise as azure-storage-public-network-access, so one finding per account. SecuredByPerimeter is treated as compliant."
+    severity: high
+  - id: "9.3.2.3"
+    title: Storage network default action is deny
+    service: storage
+    status: covered
+    check_ids: [azure-storage-default-network-allow]
+    reason: "Reads properties.networkRuleSet.defaultAction; steps aside when public network access is Disabled or SecuredByPerimeter, where the firewall is not consulted."
+    severity: high
+  - id: "9.3.3.1"
+    title: Portal defaults to Entra authorization for storage
+    service: storage
+    status: covered
+    check_ids: [azure-storage-portal-not-entra-auth]
+    reason: "Reads properties.defaultToOAuthAuthentication (null is documented as false)."
+    severity: low
+  - id: "9.3.4"
+    title: Storage requires secure transfer
+    service: storage
+    status: covered
+    check_ids: [azure-storage-https-not-enforced]
+    reason: Reads properties.supportsHttpsTrafficOnly; silent when the property is absent.
+    severity: medium
+  - id: "9.3.5"
+    title: Trusted Azure services may bypass storage firewall
+    service: storage
+    status: covered
+    check_ids: [azure-storage-trusted-services-bypass-off]
+    reason: "Fires when networkRuleSet.defaultAction is Deny and bypass lacks AzureServices; the bypass is irrelevant while the firewall allows everything."
+    severity: low
+  - id: "9.3.6"
+    title: Storage minimum TLS version is 1.2
+    service: storage
+    status: covered
+    check_ids: [azure-storage-min-tls-below-12]
+    reason: "Reads properties.minimumTlsVersion (null is documented as TLS 1.0). Graded Low: Azure Storage has refused TLS below 1.2 platform-wide since February 2026."
+    severity: high
+  - id: "9.3.7"
+    title: Cross-tenant replication disabled
+    service: storage
+    status: covered
+    check_ids: [azure-storage-cross-tenant-replication]
+    reason: "Reads properties.allowCrossTenantReplication. Null is resolved by the documented cutover: it allows cross-tenant replication on accounts created before 15 December 2023 and disallows it after (properties.creationTime); with no creation time it stays unknown."
+    severity: medium
+  - id: "9.3.8"
+    title: Anonymous blob access disabled
+    service: storage
+    status: covered
+    check_ids: [azure-storage-public-blob-access]
+    reason: Reads properties.allowBlobPublicAccess (nil treated as allowed). Account-level permission only; per-container public access level is not read.
+    severity: high
+  - id: "9.3.9"
+    title: Delete locks on storage accounts
+    service: storage
+    status: covered
+    check_ids: [azure-storage-no-delete-lock]
+    reason: "Reads the subscription's management locks (ListAtSubscriptionLevel returns locks at every scope): fires when no CanNotDelete or ReadOnly lock (both block deletion) sits on the account, its resource group or the subscription. Unknown when the lock listing fails."
+    severity: low
+  - id: "9.3.10"
+    title: Consider read-only locks on storage accounts
+    service: storage
+    status: manual
+    reason: CIS asks only that read-only locks be considered; whether they fit the workload is a judgement.
+    severity: low
+  - id: "9.3.11"
+    title: Critical storage accounts are geo-redundant
+    service: storage
+    status: covered
+    check_ids: [azure-storage-not-geo-redundant]
+    reason: "Fires on Standard_LRS/Standard_ZRS accounts. No API marks an account critical, so every Standard account is evaluated and graded Info; Premium SKUs offer no geo-redundant option and are exempt."
+    severity: low

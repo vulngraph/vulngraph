@@ -1,0 +1,14 @@
+---
+controls:
+version: "gke-1.9.0"
+id: 5
+text: "Managed Services"
+type: "managedservices"
+groups:
+  - id: 5.10
+    text: "Other Cluster Configurations"
+    checks:
+      - id: 5.10.1
+        text: "Ensure the GKE Metadata Server is Enabled"
+      - id: 5.10.4
+        text: "Ensure use of Binary Authorization"

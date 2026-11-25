@@ -1,0 +1,282 @@
+# Connector domain (internal/app/connector). Cloud/source connectors; admin-only
+# writes. Responses never include credentials (Config stays server-side).
+components:
+  pathItems:
+    connectors:
+      get:
+        operationId: listConnectors
+        tags: [connectors]
+        summary: List connectors (never includes credentials)
+        responses:
+          '200':
+            description: Connectors.
+            content:
+              application/json:
+                schema:
+                  type: array
+                  items: { $ref: '#/components/schemas/Connector' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+      post:
+        operationId: createConnector
+        tags: [connectors]
+        summary: Create a connector (admin only)
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateConnectorRequest' }
+        responses:
+          '201':
+            description: Connector created.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/Connector' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '409': { $ref: '../openapi.yaml#/components/responses/Conflict' }
+
+    deleteConnector:
+      delete:
+        operationId: deleteConnector
+        tags: [connectors]
+        summary: Delete a connector (admin only)
+        description: >
+          Session-only: a request authenticated with an API key is refused
+          (403) before the body is read, and audited as auth.api_key_refused.
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '204': { description: Connector deleted. }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    purgeConnector:
+      post:
+        operationId: purgeConnector
+        summary: >-
+          Hard-delete a connector's entire target account from the graph —
+          every asset, every open finding on them, then the connector itself
+          (admin only). Strictly more destructive than DELETE, which touches
+          only the connector row. For a CONFIRMED-dead account only; never
+          inferred from staleness. confirm_name must exactly match the
+          connector's name — the role gate alone is not confirmation that this
+          is the connector the caller meant.
+        description: >
+          Session-only: a request authenticated with an API key is refused
+          (403) before the body is read, and audited as auth.api_key_refused.
+        tags: [connectors]
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [confirm_name]
+                properties:
+                  confirm_name: { type: string }
+        responses:
+          '200':
+            description: Connector and its account's data purged.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/PurgeResult' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    syncConnector:
+      post:
+        operationId: syncConnector
+        tags: [connectors]
+        summary: Enqueue an immediate sync (admin only)
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '202': { description: Sync enqueued. }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    setConnectorMode:
+      put:
+        operationId: setConnectorMode
+        tags: [connectors]
+        summary: Upgrade or downgrade a connector between read_only and read_write (admin only)
+        description: >
+          Session-only: a request authenticated with an API key is refused
+          (403) before the body is read, and audited as auth.api_key_refused.
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mode]
+                properties:
+                  mode: { $ref: '#/components/schemas/ConnectorMode' }
+        responses:
+          '204': { description: Mode updated. }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    orgAccounts:
+      get:
+        operationId: listOrgAccounts
+        tags: [connectors]
+        summary: >-
+          An aws_org connector's discovered accounts, what discovery did with
+          each, and the health of each account's child connector.
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '200':
+            description: Discovered accounts.
+            content:
+              application/json:
+                schema:
+                  type: array
+                  items: { $ref: '#/components/schemas/OrgAccount' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    testConnector:
+      post:
+        operationId: testConnector
+        tags: [connectors]
+        summary: >-
+          Test an aws_org connector (admin only): hub credential, organization
+          listing via the management role, and member-role assumption in a
+          sample of active accounts, each with its likely cause on failure.
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '200':
+            description: Test report. Failures are step results, not HTTP errors.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/OrgTestReport' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    awsOrgTemplate:
+      get:
+        operationId: getAwsOrgTemplate
+        tags: [connectors]
+        summary: Download one of graph's AWS CloudFormation templates (deploy/aws).
+        parameters:
+          - name: name
+            in: path
+            required: true
+            schema:
+              type: string
+              enum: [graph-readonly-role.yaml, graph-org-stackset.yaml, graph-hub-role.yaml, graph-execution-role.yaml]
+        responses:
+          '200':
+            description: The template.
+            content:
+              application/yaml:
+                schema: { type: string }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+  schemas:
+    OrgAccountStatus:
+      type: string
+      enum: [active, pending, suspended, closed, excluded, removed, conflict, unknown, error]
+    OrgChildHealth:
+      type: object
+      required: [enabled, sync_status, stale]
+      properties:
+        enabled: { type: boolean }
+        sync_status: { $ref: '#/components/schemas/SyncStatus' }
+        sync_error: { type: string }
+        last_success_at: { type: string, format: date-time }
+        stale: { type: boolean }
+    OrgAccount:
+      type: object
+      required: [account_id, name, email, aws_state, status, first_seen_at, last_seen_at, status_changed_at]
+      properties:
+        account_id: { type: string }
+        name: { type: string }
+        email: { type: string }
+        aws_state: { type: string, description: 'Organizations account State as last listed (ACTIVE, SUSPENDED, PENDING_CLOSURE, CLOSED, PENDING_ACTIVATION).' }
+        ou_path: { type: string, description: "Root-to-parent OU ids joined with '/'; only when an OU filter needed the walk." }
+        status: { $ref: '#/components/schemas/OrgAccountStatus' }
+        status_detail: { type: string }
+        child_connector_id: { type: string }
+        child: { $ref: '#/components/schemas/OrgChildHealth' }
+        first_seen_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        status_changed_at: { type: string, format: date-time }
+    OrgMemberCheck:
+      type: object
+      required: [account_id, ok, cause]
+      properties:
+        account_id: { type: string }
+        ok: { type: boolean }
+        cause:
+          type: string
+          enum: [ok, role_missing_or_untrusted, hub_not_permitted, scp_deny, reads_denied, hub_credentials_invalid, throttled, error]
+        detail: { type: string }
+    OrgTestReport:
+      type: object
+      required: [hub_ok, list_ran, list_ok, account_count, members]
+      properties:
+        hub_ok: { type: boolean }
+        hub_identity: { type: string }
+        hub_error: { type: string }
+        list_ran: { type: boolean }
+        list_ok: { type: boolean }
+        account_count: { type: integer }
+        list_error: { type: string }
+        members:
+          type: array
+          items: { $ref: '#/components/schemas/OrgMemberCheck' }
+    PurgeResult:
+      type: object
+      properties:
+        assets_deleted: { type: integer }
+        findings_resolved: { type: integer }
+        edges_deleted: { type: integer }
+    ConnectorType:
+      type: string
+      enum: [aws, aws_org, gcp, github, kubernetes, okta, google_workspace, azure, demo]
+    SyncStatus:
+      type: string
+      enum: [pending, ok, error]
+    ConnectorMode:
+      type: string
+      enum: [read_only, read_write]
+    Connector:
+      type: object
+      required: [id, type, name, enabled, sync_status, stale, partially_stale, mode, disk_scan_mode]
+      properties:
+        id: { type: string }
+        type: { $ref: '#/components/schemas/ConnectorType' }
+        name: { type: string }
+        enabled: { type: boolean }
+        event_source: { type: string }
+        sync_status: { $ref: '#/components/schemas/SyncStatus' }
+        sync_error: { type: string }
+        last_synced_at: { type: string, format: date-time, description: 'Last sync attempt (success or failure).' }
+        last_success_at: { type: string, format: date-time, description: 'Last sync that completed without error; null until the first success.' }
+        stale: { type: boolean, description: 'Enabled connector has not SUCCEEDED within the staleness window — surfaces a collector that has silently stopped working, including one that keeps attempting but errors every time.' }
+        partially_stale: { type: boolean, description: 'Enabled connector has racked up several consecutive Partial syncs — a best-effort collector (e.g. one AWS global service) keeps skipping. Distinct from stale: a Partial sync still succeeds overall (sync_status stays ok, last_success_at still advances), so this is the only signal that catches it.' }
+        mode: { $ref: '#/components/schemas/ConnectorMode' }
+        disk_scan_mode: { type: string, enum: [off, existing_snapshots, create_snapshots], description: 'Agentless disk scan opt-in; off until an admin enables it (PUT /api/connectors/{id}/disk-scan).' }
+    CreateConnectorRequest:
+      type: object
+      required: [type, name, config]
+      properties:
+        type: { $ref: '#/components/schemas/ConnectorType' }
+        name: { type: string }
+        config:
+          type: object
+          additionalProperties: { type: string }
+        event_source: { type: string }

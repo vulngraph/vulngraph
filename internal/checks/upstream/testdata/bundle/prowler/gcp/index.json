@@ -1,0 +1,7 @@
+[
+ {
+  "name": "cis_5.0_gcp.json",
+  "path": "prowler/compliance/gcp/cis_5.0_gcp.json",
+  "type": "file"
+ }
+]

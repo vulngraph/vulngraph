@@ -1,0 +1,153 @@
+# Package inventory ingest (internal/app/pkginv): a customer's own scanning
+# agent submits the installed-package list of one existing VM. The body is
+# facts, never findings: the server matches vulnerabilities itself and decides
+# whether the list is believed (inventory_known / cve_matchable_known are
+# server-owned, zero-false). Both routes need an inventory-scoped API key
+# minted by an admin; a session, or a key of any other scope, gets 403. The
+# findings equivalent is POST /api/scans/import.
+components:
+  pathItems:
+    putAssetPackageInventory:
+      put:
+        operationId: putAssetPackageInventory
+        tags: [pkginv]
+        summary: Replace this key's package inventory for one VM
+        description: >
+          Replace-by-source: one stored inventory per (API key, scanner.name,
+          asset). A submission with an observed_at older than the stored one is
+          409 and not stored; the same body twice is idempotent. The asset must
+          already exist as a live VM (ec2_instance, gce_instance, azure_vm) and
+          not be deleted or forgotten: this route never creates one (404
+          otherwise). Packages enter the graph as runs_package edges only when
+          the inventory is known; a gap writes none. Limits: 4 MiB body, 10,000
+          packages, 60 requests an hour per key and asset.
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PackageInventoryRequest' }
+        responses:
+          '200':
+            description: Accepted and stored. The verdict says whether the server believes it.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/PackageInventoryResult' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+          '409': { $ref: '../openapi.yaml#/components/responses/Conflict' }
+          '413': { description: Body over 4 MiB., content: { application/problem+json: { schema: { $ref: '../openapi.yaml#/components/schemas/Problem' } } } }
+          '429': { $ref: '../openapi.yaml#/components/responses/TooManyRequests' }
+
+    putPackageInventory:
+      put:
+        operationId: putPackageInventory
+        tags: [pkginv]
+        summary: Replace this key's package inventory for the VM named in the body
+        description: >
+          As putAssetPackageInventory, with the asset named by
+          cloud_resource_id (or asset_id) in the body. The identifier is matched
+          exactly against asset ids, so it names at most one asset; no match is 404.
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PackageInventoryRequest' }
+        responses:
+          '200':
+            description: Accepted and stored.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/PackageInventoryResult' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+          '409': { $ref: '../openapi.yaml#/components/responses/Conflict' }
+          '413': { description: Body over 4 MiB., content: { application/problem+json: { schema: { $ref: '../openapi.yaml#/components/schemas/Problem' } } } }
+          '429': { $ref: '../openapi.yaml#/components/responses/TooManyRequests' }
+
+  schemas:
+    PackageInventoryRequest:
+      type: object
+      description: Unknown fields are rejected.
+      additionalProperties: false
+      required: [scanner, observed_at, packages]
+      properties:
+        asset_id: { type: string, description: 'Ignored on the asset route (the path wins).' }
+        cloud_resource_id: { type: string, description: 'The VM id on PUT /api/package-inventory.' }
+        os:
+          type: object
+          additionalProperties: false
+          description: Selects the OSV ecosystem. Without a resolvable os the inventory is a gap (unknown_release).
+          properties:
+            id: { type: string, description: 'os-release ID, e.g. ubuntu, debian, rhel, amzn.' }
+            version_id: { type: string, description: 'os-release VERSION_ID, e.g. 22.04.' }
+            name: { type: string }
+        packages:
+          type: array
+          maxItems: 10000
+          items: { $ref: '#/components/schemas/PackageInventoryPackage' }
+        observed_at: { type: string, format: date-time, description: 'When the agent captured the list. At most 5 minutes ahead and 30 days old.' }
+        scanner:
+          type: object
+          additionalProperties: false
+          required: [name, version]
+          properties:
+            name: { type: string, description: 'Slug: a-z 0-9 . _ - (1-63 chars). Part of the source key.' }
+            version: { type: string }
+        complete:
+          type: boolean
+          default: false
+          description: >
+            A claim that the list is the machine's whole OS package set. It is
+            believed only while observed_at is under 7 days old and the os
+            resolves to an enabled advisory source.
+        covered:
+          type: array
+          maxItems: 64
+          items:
+            type: object
+            additionalProperties: false
+            description: Exactly one of path or volume_id.
+            properties:
+              path: { type: string }
+              volume_id: { type: string }
+
+    PackageInventoryPackage:
+      type: object
+      additionalProperties: false
+      description: Either purl, or ecosystem (os or a language ecosystem), name and version.
+      properties:
+        purl: { type: string, description: 'pkg:type/name@version without qualifiers. Types: deb, rpm, apk, npm, pypi, golang, maven, cargo, gem.' }
+        ecosystem: { type: string, description: 'os (the default), npm, PyPI, Go, Maven, crates.io or RubyGems.' }
+        name: { type: string }
+        version: { type: string }
+        source_name: { type: string, description: 'Source package name. Debian, Ubuntu, Rocky and SUSE advisories are keyed by it; without it the inventory is a gap.' }
+        source_version: { type: string }
+        epoch: { type: string }
+        release: { type: string }
+
+    PackageInventoryResult:
+      type: object
+      required: [accepted, asset_id, source, scanner, observed_at, complete, package_count, inventory_known, cve_matchable_known, gap]
+      properties:
+        accepted: { type: boolean }
+        asset_id: { type: string }
+        source: { type: string, description: 'byoa:<api key id>:<scanner name>' }
+        scanner:
+          type: object
+          required: [name, version]
+          properties:
+            name: { type: string }
+            version: { type: string }
+        observed_at: { type: string, format: date-time }
+        complete: { type: boolean, description: 'What the agent claimed.' }
+        package_count: { type: integer }
+        inventory_known: { type: boolean, description: 'Decided by the server. False means the VM reads as unknown, never clean.' }
+        cve_matchable_known: { type: boolean }
+        gap:
+          type: string
+          description: 'Empty when known. byoa_incomplete, byoa_stale, unknown_release, or an asset.CVEGap* value such as no_advisory_source, advisory_source_disabled, eol_distro, no_source_package_names.'

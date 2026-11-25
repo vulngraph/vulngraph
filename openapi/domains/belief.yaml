@@ -1,0 +1,41 @@
+# Belief domain (internal/app/belief). The belief engine's grounded true-severity
+# judgment for a finding.
+components:
+  pathItems:
+    getBelief:
+      get:
+        operationId: getBelief
+        tags: [belief]
+        summary: Get the current true-severity belief for a finding
+        parameters:
+          - { name: finding_id, in: path, required: true, schema: { type: string } }
+        responses:
+          '200':
+            description: The finding's current belief.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/Belief' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+  schemas:
+    Belief:
+      type: object
+      required: [finding_id, resource_id, claim, severity, confidence, status, provenance, evidence]
+      properties:
+        finding_id:  { type: string }
+        resource_id: { type: string }
+        claim:       { type: string, description: "The true-severity verdict + optional re-frame." }
+        severity:    { type: string, enum: [critical, high, medium, low, info], description: "Reconciled true severity." }
+        confidence:  { type: string, enum: [low, medium, high] }
+        status:      { type: string, enum: [proposed, confirmed, refuted, stale] }
+        provenance:  { type: string, description: "How the belief was formed: 'deterministic' (this slice) or 'adjudicator'." }
+        evidence:
+          type: array
+          description: "Grounded clauses; each cites a concrete organ-observed fact."
+          items:
+            type: object
+            required: [clause, source, fact]
+            properties:
+              clause: { type: string }
+              source: { type: string, description: "Organ/signal, e.g. must_fix, trust_entry, enrich_score." }
+              fact:   { type: string, description: "The observed value." }

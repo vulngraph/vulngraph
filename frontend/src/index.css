@@ -1,0 +1,378 @@
+@import "tailwindcss";
+
+/* Vulngraph design system: dark-first, teal accent, depth
+   through tonal opacity layering — never drop shadows on content. */
+:root {
+  --graph-bg: #050507;
+  --graph-surface: rgba(255, 255, 255, 0.025);
+  --graph-surface-2: rgba(255, 255, 255, 0.045);
+  --graph-surface-3: rgba(255, 255, 255, 0.065);
+  --graph-surface-4: rgba(255, 255, 255, 0.085);
+  /* Semantic aliases */
+  --graph-surface-hover: rgba(255, 255, 255, 0.085);
+  --graph-border: rgba(255, 255, 255, 0.07);
+  --graph-border-2: rgba(255, 255, 255, 0.1);
+  --graph-border-hover: rgba(255, 255, 255, 0.1);
+  --graph-text: #f4f4f5;
+  --graph-text-2: rgba(255, 255, 255, 0.65);
+  /* 0.55 keeps text-3 above 4.5:1 (WCAG AA) on bg and the surface washes. */
+  --graph-text-3: rgba(255, 255, 255, 0.55);
+  --graph-teal: #0d9488;
+  --graph-emerald: #10b981;
+  --graph-amber: #f59e0b;
+  --graph-red: #ef4444;
+  --graph-sky: #0ea5e9;
+  --graph-orange: #f97316;
+  --graph-glow-teal: 0 0 12px rgba(13, 148, 136, 0.4);
+  --graph-glow-sm: 0 0 6px rgba(13, 148, 136, 0.25);
+  --graph-panel-bg: rgba(5, 5, 7, 0.97);
+  --graph-panel-border: rgba(255, 255, 255, 0.08);
+}
+
+/* Light mode — toggle by adding class="light" to <html>. All dark rgba(255,255,255,...)
+   surfaces flip to rgba(0,0,0,...); text inverts; background goes to near-white.
+   Teal and the semantic hues darken in light mode — the dark-theme values sit at
+   1.9–3.4:1 on the light ground, well below AA. */
+html.light {
+  --graph-bg: #f0f4f8;
+  --graph-surface: rgba(0, 0, 0, 0.04);
+  --graph-surface-2: rgba(0, 0, 0, 0.06);
+  --graph-surface-3: rgba(0, 0, 0, 0.09);
+  --graph-surface-4: rgba(0, 0, 0, 0.12);
+  --graph-surface-hover: rgba(0, 0, 0, 0.12);
+  --graph-border: rgba(0, 0, 0, 0.1);
+  --graph-border-2: rgba(0, 0, 0, 0.16);
+  --graph-border-hover: rgba(0, 0, 0, 0.16);
+  --graph-text: #0f172a;
+  --graph-text-2: rgba(0, 0, 0, 0.68);
+  --graph-text-3: rgba(0, 0, 0, 0.6);
+  --graph-teal: #0f766e;
+  --graph-emerald: #047857;
+  --graph-amber: #b45309;
+  --graph-red: #dc2626;
+  --graph-sky: #0369a1;
+  --graph-orange: #c2410c;
+  --graph-panel-bg: rgba(255, 255, 255, 0.97);
+  --graph-panel-border: rgba(0, 0, 0, 0.1);
+}
+
+/* Light mode body — swap teal/sky mesh for softer warm gradients */
+html.light body {
+  background-image:
+    radial-gradient(60% 50% at 15% 0%, rgba(13, 148, 136, 0.06), transparent),
+    radial-gradient(50% 50% at 100% 100%, rgba(14, 165, 233, 0.04), transparent);
+}
+
+/* Light mode — panel and overlay surfaces use CSS vars instead of hardcoded rgba */
+html.light .glass {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+@theme {
+  --color-bg: var(--graph-bg);
+  --color-surface: var(--graph-surface);
+  --color-surface-2: var(--graph-surface-2);
+  --color-surface-3: var(--graph-surface-3);
+  --color-border-subtle: var(--graph-border);
+  --color-border-strong: var(--graph-border-2);
+  --color-text: var(--graph-text);
+  --color-text-2: var(--graph-text-2);
+  --color-text-3: var(--graph-text-3);
+  --color-teal: var(--graph-teal);
+  --color-emerald: var(--graph-emerald);
+  --color-amber: var(--graph-amber);
+  --color-red: var(--graph-red);
+  --color-sky: var(--graph-sky);
+  --color-orange: var(--graph-orange);
+  --font-display: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--graph-bg);
+  /* Mesh: teal 15% + sky 8% radial gradients on the root canvas only. */
+  background-image:
+    radial-gradient(60% 50% at 15% 0%, rgba(13, 148, 136, 0.15), transparent),
+    radial-gradient(50% 50% at 100% 100%, rgba(14, 165, 233, 0.08), transparent);
+  background-attachment: fixed;
+  color: var(--graph-text);
+  font-family: var(--font-body);
+  font-feature-settings: "tnum" 1; /* tabular-nums for aligned figures */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Display face for headings, with vulngraph's tight tracking. */
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  letter-spacing: -0.025em;
+}
+
+/* Glass surface tiers — a layered glass system. */
+.glass {
+  background: var(--graph-surface-2);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid var(--graph-border);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+}
+.glass-1 {
+  background: var(--graph-surface);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid var(--graph-border);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+}
+.glass-card {
+  background: var(--graph-surface-2);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid var(--graph-border);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  transition: background 0.15s ease-out, border-color 0.15s ease-out;
+}
+.glass-card:hover {
+  background: var(--graph-surface-3);
+  border-color: var(--graph-border-hover);
+}
+.glass-panel {
+  background: var(--graph-surface-2);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid var(--graph-border);
+  border-radius: 16px;
+}
+
+/* Interactive lift on clickable cards/rows. */
+.card-hover {
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+              box-shadow 0.15s ease, transform 0.12s ease;
+}
+.card-hover:hover {
+  background: var(--graph-surface-hover);
+  border-color: var(--graph-border-hover);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35), var(--graph-glow-sm);
+  transform: translateY(-1px);
+}
+
+/* Teal CTA: vulngraph's gradient + glow on hover. */
+.btn-teal {
+  background: linear-gradient(135deg, #0d9488, #0f766e);
+  color: #f4f4f5;
+  transition: box-shadow 0.2s ease, transform 0.1s ease;
+}
+.btn-teal:hover {
+  box-shadow: 0 0 20px rgba(13, 148, 136, 0.25), 0 0 40px rgba(13, 148, 136, 0.1);
+}
+.btn-teal:active {
+  transform: scale(0.98);
+}
+
+/* Unified input style. */
+.graph-input {
+  background: rgba(9, 9, 11, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: #e4e4e7;
+  font-size: 13px;
+  padding: 8px 12px;
+  transition: border-color 0.15s ease-out, box-shadow 0.15s ease-out;
+}
+.graph-input::placeholder { color: #52525b; }
+.graph-input:focus {
+  outline: none;
+  border-color: rgba(13, 148, 136, 0.5);
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.08);
+}
+.graph-input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Slim teal-on-hover scrollbars (vulngraph). */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* ReactFlow zoom controls — dark-theme them so they don't render as glaring
+   white buttons on the dark canvas (the library default is light). */
+.react-flow__controls {
+  box-shadow: none;
+  border: 1px solid var(--graph-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.react-flow__controls-button {
+  background: var(--graph-surface-3);
+  border-bottom: 1px solid var(--graph-border);
+  color: var(--graph-text-2);
+  fill: var(--graph-text-2);
+}
+.react-flow__controls-button:hover {
+  background: var(--graph-surface-4);
+  color: var(--graph-text);
+  fill: var(--graph-text);
+}
+.react-flow__controls-button svg {
+  fill: currentColor;
+  max-width: 12px;
+  max-height: 12px;
+}
+
+/* Nodes are read-only (nodesConnectable=false) — hide the connection handle
+   dots so they don't add visual noise, especially on edgeless grids. */
+.react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── Additional glass tiers ─────────────────────────────────────────────── */
+.glass-2 {
+  background: var(--graph-surface-2);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  border: 1px solid var(--graph-border);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+}
+.glass-3 {
+  background: var(--graph-surface-3);
+  backdrop-filter: blur(48px) saturate(200%);
+  -webkit-backdrop-filter: blur(48px) saturate(200%);
+  border: 1px solid var(--graph-border);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.glass-inner {
+  background: var(--graph-surface);
+  border-bottom: 1px solid var(--graph-border);
+}
+
+/* ── Button variants ─────────────────────────────────────────────────────── */
+.btn-primary {
+  background: var(--graph-teal);
+  color: #fff;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: box-shadow 0.15s ease, opacity 0.15s ease;
+}
+.btn-primary:hover { opacity: 0.9; box-shadow: var(--graph-glow-sm); }
+.btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--graph-text-2);
+  border: 1px solid var(--graph-border);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.btn-ghost:hover { background: var(--graph-surface-2); border-color: var(--graph-border-hover); color: var(--graph-text); }
+
+.btn-danger {
+  background: rgba(239,68,68,0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239,68,68,0.25);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s ease;
+}
+.btn-danger:hover { background: rgba(239,68,68,0.18); }
+
+/* ── Shimmer hover — used on decision/activity cards ───────────────────── */
+@keyframes shimmer-sweep {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.activity-shimmer-hover {
+  position: relative;
+  overflow: hidden;
+}
+.activity-shimmer-hover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.04) 50%, transparent 60%);
+  background-size: 200% 100%;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+.activity-shimmer-hover:hover::after {
+  opacity: 1;
+  animation: shimmer-sweep 0.6s ease forwards;
+}
+
+/* ── Conic rotating border — critical/escalated decision cards ──────────── */
+.activity-conic-border {
+  position: relative;
+}
+.activity-conic-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: conic-gradient(from 0deg, #ef4444, #f97316, #ef4444);
+  z-index: -1;
+  animation: conic-spin 2s linear infinite;
+  opacity: 0.6;
+}
+@keyframes conic-spin { to { transform: rotate(360deg); } }
+
+/* ── Severity glow on critical/high cards ────────────────────────────────── */
+.card-critical {
+  box-shadow: 0 0 0 1px rgba(239,68,68,0.15), 0 2px 8px rgba(239,68,68,0.08);
+}
+.card-high {
+  box-shadow: 0 0 0 1px rgba(249,115,22,0.12), 0 2px 8px rgba(249,115,22,0.06);
+}
+
+/* ── Reduced motion — silence perpetual animation for users who ask for it ── */
+@media (prefers-reduced-motion: reduce) {
+  .activity-conic-border::before,
+  .activity-shimmer-hover::after,
+  .animate-pulse {
+    animation: none !important;
+  }
+}
+
+/* ── Slide-over drawer — the single shared right-hand panel (SlideOver.tsx) ─
+   One keyframe for every drawer; panel chrome uses the themed panel vars so the
+   drawer is not a dark island in light mode. */
+@keyframes slide-over-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.slide-over-panel {
+  background: var(--graph-panel-bg);
+  border-left: 1px solid var(--graph-panel-border);
+  box-shadow: -12px 0 64px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  animation: slide-over-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .slide-over-panel { animation: none !important; }
+}

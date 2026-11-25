@@ -1,0 +1,21 @@
+<!-- Server settings for the compose ClickHouse, mirroring the Helm chart's
+     templates/clickhouse-config.yaml (see the rationale there). Compose sets no
+     container memory limit, so max_server_memory_usage is left at ClickHouse's
+     default (a share of host RAM); the cache ceilings still apply because
+     their upstream defaults (5 GiB + 5 GiB + 8 GiB) ignore that budget. -->
+<clickhouse>
+    <mark_cache_size>536870912</mark_cache_size>
+    <index_mark_cache_size>268435456</index_mark_cache_size>
+    <uncompressed_cache_size>134217728</uncompressed_cache_size>
+
+    <!-- System logs default to no TTL and grow until the disk is full. -->
+    <query_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></query_log>
+    <query_thread_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></query_thread_log>
+    <query_views_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></query_views_log>
+    <part_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></part_log>
+    <trace_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></trace_log>
+    <metric_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></metric_log>
+    <asynchronous_metric_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></asynchronous_metric_log>
+    <processors_profile_log><ttl>event_date + INTERVAL 1 DAY DELETE</ttl></processors_profile_log>
+    <text_log><ttl>event_date + INTERVAL 1 DAY DELETE</ttl></text_log>
+</clickhouse>

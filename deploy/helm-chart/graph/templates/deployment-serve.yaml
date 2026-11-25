@@ -1,0 +1,208 @@
+{{/* Chart-set env for the migrate container, merged with extraEnv by graph.env. */}}
+{{- define "graph.chartEnv.migrate" -}}
+{{ include "graph.podEnv" . }}
+{{ include "graph.datastoreEnv" (dict "migrate" true "Values" .Values) }}
+{{ include "graph.appSecretEnv" . }}
+{{- end -}}
+{{/* Chart-set env for the serve container, merged with extraEnv by graph.env. */}}
+{{- define "graph.chartEnv.serve" -}}
+{{ include "graph.podEnv" . }}
+{{ include "graph.datastoreEnv" (dict "Values" .Values) }}
+{{ include "graph.appSecretEnv" . }}
+{{- if .Values.config.oauth2Proxy }}
+# serve-only. Optional: with ID-token verification configured the
+# secret may be absent; serve refuses to start if neither is set.
+- name: OAUTH2_PROXY_SHARED_SECRET
+  valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: oauth2-proxy-shared-secret, optional: true } }
+{{- end }}
+{{- if .Values.config.requireAdminTotp }}
+# serve-only: TOTP is mandatory for admins on the password path.
+- name: REQUIRE_ADMIN_TOTP
+  value: "true"
+{{- end }}
+{{- if .Values.config.tlsProxy }}
+# serve-only: TLS ends in front of serve, so HSTS goes out on the plain hop.
+- name: TLS_PROXY
+  value: "true"
+{{- end }}
+{{- if .Values.serve.goMemLimit }}
+- name: GOMEMLIMIT
+  value: {{ .Values.serve.goMemLimit | quote }}
+{{- end }}
+{{- if and .Values.serveLadybug.enabled .Values.serveLadybug.snapshotEnabled }}
+- name: SERVE_LADYBUG_SNAPSHOT_PATH
+  value: {{ .Values.serveLadybug.snapshotPath | default "/data/serve-ladybug/snapshot.gz" | quote }}
+{{- end }}
+{{ include "graph.awsEnv" . }}
+{{- with .Values.sso.google }}
+{{- if .clientId }}
+{{- if not (or .allowedDomains .allowAnyDomain) }}
+{{- fail "sso.google.clientId is set but sso.google.allowedDomains is empty: serve would refuse every Google sign-in. Set allowedDomains (or allowAnyDomain=true deliberately)." }}
+{{- end }}
+# Google sign-in (serve-only). The client secret lives in the Secret.
+- name: GOOGLE_CLIENT_ID
+  value: {{ .clientId | quote }}
+- name: GOOGLE_CLIENT_SECRET
+  valueFrom: { secretKeyRef: { name: {{ $.Values.secretName }}, key: google-client-secret } }
+{{- if not (regexMatch "(?i)^https?://[^/?#@]+([/?#].*)?$" (required "sso.google.redirectUrl is required when sso.google.clientId is set (https://<your host>/api/auth/google/callback)" .redirectUrl)) }}
+{{- fail "sso.google.redirectUrl must be an absolute http(s) URL with a host (https://<your host>/api/auth/google/callback): serve refuses anything else at startup" }}
+{{- end }}
+- name: GOOGLE_REDIRECT_URL
+  value: {{ required "sso.google.redirectUrl is required when sso.google.clientId is set (https://<your host>/api/auth/google/callback)" .redirectUrl | quote }}
+{{- with .allowedDomains }}
+- name: GOOGLE_ALLOWED_DOMAINS
+  value: {{ . | quote }}
+{{- end }}
+{{- if .allowAnyDomain }}
+- name: GOOGLE_ALLOW_ANY_DOMAIN
+  value: "true"
+{{- end }}
+{{- end }}
+{{- end }}
+{{- with .Values.sso.okta }}
+{{- if .clientId }}
+{{- if not (or .allowedDomains .allowAnyDomain) }}
+{{- fail "sso.okta.clientId is set but sso.okta.allowedDomains is empty: serve would refuse every Okta sign-in. Set allowedDomains (or allowAnyDomain=true deliberately)." }}
+{{- end }}
+# Okta OIDC sign-in (serve-only). The client secret lives in the Secret.
+- name: OKTA_CLIENT_ID
+  value: {{ .clientId | quote }}
+- name: OKTA_CLIENT_SECRET
+  valueFrom: { secretKeyRef: { name: {{ $.Values.secretName }}, key: okta-client-secret } }
+- name: OKTA_DOMAIN
+  value: {{ required "sso.okta.domain is required with sso.okta.clientId" .domain | quote }}
+{{- if not (regexMatch "(?i)^https?://[^/?#@]+([/?#].*)?$" (required "sso.okta.redirectUrl is required when sso.okta.clientId is set (https://<your host>/api/auth/okta/callback)" .redirectUrl)) }}
+{{- fail "sso.okta.redirectUrl must be an absolute http(s) URL with a host (https://<your host>/api/auth/okta/callback): serve refuses anything else at startup" }}
+{{- end }}
+- name: OKTA_REDIRECT_URL
+  value: {{ required "sso.okta.redirectUrl is required when sso.okta.clientId is set (https://<your host>/api/auth/okta/callback)" .redirectUrl | quote }}
+{{- with .allowedDomains }}
+- name: OKTA_ALLOWED_DOMAINS
+  value: {{ . | quote }}
+{{- end }}
+{{- if .allowAnyDomain }}
+- name: OKTA_ALLOW_ANY_DOMAIN
+  value: "true"
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end -}}
+{{- if and .Values.serveLadybug.enabled .Values.serveLadybug.snapshotEnabled (gt (int .Values.serve.replicas) 1) }}
+{{- fail "serve.replicas must be 1 while serveLadybug.snapshotEnabled: every serve pod mounts the one ReadWriteOnce graph-serve-ladybug claim and writes the same snapshot file (turn snapshotEnabled off to scale serve)" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: graph-serve
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.serve.replicas }}
+  # Recreate (not RollingUpdate): in a namespace with a tight memory ResourceQuota
+  # a surge pod during a rollout — on top of whatever else in the namespace is
+  # mid-redeploy at the same time — can be rejected for quota. Terminate-then-create
+  # avoids that. Brief deploy downtime is acceptable for dashboards. Switch to RollingUpdate in your values/overlay if your quota has
+  # headroom for a surge pod.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "graph.selectorLabels" (dict "component" "serve") | nindent 6 }}
+  template:
+    metadata:
+      {{- if .Values.metrics.enabled }}
+      annotations:
+        {{- include "graph.metricsAnnotations" . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "graph.labels" . | nindent 8 }}
+        {{- include "graph.componentLabels" (dict "component" "serve") | nindent 8 }}
+        {{- include "graph.metricsLabels" (dict "component" "serve" "Values" .Values) | nindent 8 }}
+        {{- include "graph.offSpotLabels" . | nindent 8 }}
+        {{- include "graph.azureWorkloadIdentityLabel" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "graph.serveServiceAccountName" . }}
+      # serve never calls the Kubernetes API, so it mounts no API token: by
+      # default it shares the worker's ServiceAccount, which holds the
+      # collector's cluster-wide reads. Cloud identity is unaffected (the
+      # aws.enabled, IRSA, Pod Identity and Azure tokens are projected volumes
+      # of their own; GKE Workload Identity uses the metadata server).
+      automountServiceAccountToken: false
+      {{- include "graph.offSpotAffinity" . | nindent 6 }}
+      {{- if and .Values.serveLadybug.enabled .Values.serveLadybug.snapshotEnabled }}
+      # fsGroup=65532 makes the serve-ladybug PVC group-writable by the nonroot user
+      # so the snapshot can be written (same fix as the worker's graph-ladybug PVC).
+      {{- include "graph.podSecurityContext" (dict "fsGroup" 65532 "Values" .Values) | nindent 6 }}
+      {{- else }}
+      {{- include "graph.podSecurityContext" (dict "Values" .Values) | nindent 6 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        {{- include "graph.tmpVolume" . | nindent 8 }}
+        {{- include "graph.dbCAVolume" . | nindent 8 }}
+        {{- include "graph.awsVolume" . | nindent 8 }}
+        {{- if and .Values.serveLadybug.enabled .Values.serveLadybug.snapshotEnabled }}
+        - name: serve-ladybug-data
+          persistentVolumeClaim:
+            claimName: graph-serve-ladybug
+        {{- end }}
+      # migrate runs to completion before serve starts — single migration writer.
+      initContainers:
+        - name: migrate
+          image: {{ include "graph.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["migrate"]
+          env:
+            {{- include "graph.env" (dict "component" "migrate" "Values" .Values "chart" (include "graph.chartEnv.migrate" .)) | nindent 12 }}
+          {{- include "graph.envFrom" (dict "component" "migrate" "Values" .Values) | nindent 10 }}
+          # Required wherever a namespace ResourceQuota is in force: it rejects any
+          # pod whose containers (init included) don't declare cpu+memory requests. Kept small — it's a
+          # short-lived schema apply and stays under the serve container's request,
+          # so it doesn't raise the pod's effective quota cost. Overridable
+          # (serve.migrateResources) if your quota has a minimum-request floor
+          # above this, or first-install migrations are slow on your hardware.
+          volumeMounts:
+            {{- include "graph.tmpVolumeMount" . | nindent 12 }}
+            {{- include "graph.dbCAVolumeMount" . | nindent 12 }}
+          {{- include "graph.containerSecurityContext" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.serve.migrateResources | nindent 12 }}
+      containers:
+        - name: serve
+          image: {{ include "graph.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve"]
+          ports:
+            - containerPort: {{ .Values.service.port }}
+            {{- include "graph.metricsPort" . | nindent 12 }}
+          env:
+            {{- include "graph.env" (dict "component" "serve" "Values" .Values "chart" (include "graph.chartEnv.serve" .)) | nindent 12 }}
+          {{- include "graph.envFrom" (dict "component" "serve" "Values" .Values) | nindent 10 }}
+          volumeMounts:
+            {{- include "graph.tmpVolumeMount" . | nindent 12 }}
+            {{- include "graph.dbCAVolumeMount" . | nindent 12 }}
+            {{- include "graph.awsVolumeMount" . | nindent 12 }}
+            {{- if and .Values.serveLadybug.enabled .Values.serveLadybug.snapshotEnabled }}
+            - name: serve-ladybug-data
+              mountPath: /data/serve-ladybug
+            {{- end }}
+          # Readiness pings Postgres (/readyz) on a connection outside the pool,
+          # so a pod that cannot reach its database leaves the Service but a busy
+          # pool does not; liveness stays on the dependency-free /healthz, so a
+          # database outage never restarts serve.
+          readinessProbe:
+            httpGet: { path: /readyz, port: {{ .Values.service.port }} }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: {{ .Values.service.port }} }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          {{- include "graph.containerSecurityContext" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.serve.resources | nindent 12 }}

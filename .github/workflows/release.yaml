@@ -1,0 +1,234 @@
+name: Release image
+
+# Publishes the image to GHCR as
+# ghcr.io/<owner>/<repo> — ghcr.io/vulngraph/vulngraph for the upstream repo —
+# so users can `docker pull` / `helm install` instead of building from source.
+# Two triggers:
+#   - a `vX.Y.Z` tag → tags the image `vX.Y.Z`, `X.Y.Z` (what the chart's
+#     appVersion resolves to) and `latest`, and cuts a GitHub Release with
+#     auto-generated notes. The release fails before building if
+#     Chart.yaml's appVersion is not X.Y.Z.
+#   - push to main → tags the image `edge` (a rolling "main branch" build). It
+#     is linux/amd64 only: the arm64 half is built under emulation and would make
+#     every push to main wait on it. Release tags build both.
+# The chart's values.yaml defaults image.repository to the upstream image; a
+# fork's release lands under its own owner/repo and the fork overrides
+# image.repository to run it.
+
+on:
+  push:
+    branches: [main]
+    # A push to main that touches only these paths cannot change the image (the
+    # Dockerfile copies LICENSE, NOTICE and THIRD_PARTY_LICENSES.md, which are
+    # deliberately not listed, and no go:embed reads docs, llms.txt or these
+    # Markdown files), so it skips the rolling `edge` build. Path filters are
+    # not applied to tag pushes: a `vX.Y.Z` tag always builds.
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
+      - "CHANGELOG.md"
+      - "CONTRIBUTING.md"
+      - "CODE_OF_CONDUCT.md"
+      - "GOVERNANCE.md"
+      - "MAINTAINERS.md"
+      - "ROADMAP.md"
+      - "SECURITY.md"
+      - "SUPPORT.md"
+      - "llms.txt"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/CODEOWNERS"
+    tags: ["v*"]
+
+# Least privilege: read-only by default, elevated per job below.
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Build + push graph
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create the GitHub Release + upload assets
+      packages: write # push the image to GHCR
+      id-token: write # OIDC token for keyless cosign signing + attestations
+      attestations: write # store build-provenance attestations
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The chart pulls `image.tag | default .Chart.AppVersion`, so a tag whose
+      # version is not the chart's appVersion would ship a chart that pulls an
+      # image this release never pushed.
+      - name: Check Chart appVersion matches the tag
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          app_version=$(sed -n 's/^appVersion: *"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' deploy/helm-chart/graph/Chart.yaml)
+          if [[ "v${app_version}" != "${TAG}" ]]; then
+            echo "::error::deploy/helm-chart/graph/Chart.yaml appVersion is '${app_version}' but the tag is '${TAG}'; bump appVersion to '${TAG#v}' and re-tag."
+            exit 1
+          fi
+
+      # BuildKit cache mounts do not survive an ephemeral runner, so the Go
+      # compile of the dependency graph (about 9 of the ~11 minutes of a cold
+      # image build) would otherwise rerun on every push. Compile it on the
+      # runner instead, with the same toolchain and flags the Dockerfile uses
+      # (-trimpath makes cache entries independent of the source directory), keep
+      # that cache between runs, and hand it to the Dockerfile as the `gocache`
+      # build context, which seeds its build cache. A miss only costs time: the
+      # Dockerfile still compiles whatever the seed lacks.
+      - name: Point the Go caches at the runner temp dir
+        run: |
+          mkdir -p "$RUNNER_TEMP/gocache" "$RUNNER_TEMP/gomod"
+          {
+            echo "GOCACHE=$RUNNER_TEMP/gocache"
+            echo "GOMODCACHE=$RUNNER_TEMP/gomod"
+          } >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.26.11"
+          cache: false
+
+      - name: Restore the Go caches
+        id: gocache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/gocache
+            ${{ runner.temp }}/gomod
+          key: release-go-${{ runner.os }}-${{ hashFiles('go.sum', 'internal/graphdb/ladybug/go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            release-go-${{ runner.os }}-${{ hashFiles('go.sum', 'internal/graphdb/ladybug/go.sum') }}-
+            release-go-${{ runner.os }}-
+
+      # cgo's link check needs liblbug.so: the same pinned, sha256-verified
+      # release the Dockerfile and CI use.
+      - name: Warm the Go build cache
+        continue-on-error: true
+        env:
+          CGO_ENABLED: "1"
+          CGO_LDFLAGS: "-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib"
+        run: |
+          set -euo pipefail
+          scripts/fetch-ladybug.sh --install-dir "$RUNNER_TEMP/ladybug" linux-amd64
+          sudo cp -P "$RUNNER_TEMP"/ladybug/liblbug.so* /usr/local/lib/ && sudo ldconfig
+          go mod download
+          go list -deps -f '{{if and (ne .Name "main") (ne .ImportPath "C")}}{{.ImportPath}}{{end}}' ./cmd/graph \
+            | xargs go build -trimpath
+
+      - name: Save the Go caches
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/gocache
+            ${{ runner.temp }}/gomod
+          key: ${{ steps.gocache.outputs.cache-primary-key }}
+
+      # arm64 runs under emulation for the cgo build and runtime stages only;
+      # the Dockerfile runs the library fetch and the frontend natively.
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        if: github.ref_type == 'tag'
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Login to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine tags
+        id: tags
+        run: |
+          # GHCR image names must be lowercase; github.repository keeps the
+          # owner's case.
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          TAGS="$IMAGE:${GITHUB_SHA}"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            TAGS="$TAGS,$IMAGE:${TAG},$IMAGE:${TAG#v},$IMAGE:latest"
+            VERSION="$TAG"
+          else
+            TAGS="$TAGS,$IMAGE:edge"
+            VERSION="edge-${GITHUB_SHA::12}"
+          fi
+          {
+            echo "tags=$TAGS"
+            echo "image=$IMAGE"
+            echo "version=$VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          build-contexts: gocache=${{ runner.temp }}/gocache
+          platforms: ${{ github.ref_type == 'tag' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            VERSION=${{ steps.tags.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max,compression=zstd
+          # Supply chain: attach a max-detail SLSA provenance attestation and
+          # an SBOM to the image manifest in the registry.
+          provenance: mode=max
+          sbom: true
+
+      # Keyless signing: the signature is bound to this workflow's OIDC
+      # identity (recorded in the Sigstore transparency log), so no long-lived
+      # signing key exists. Sign the digest, not the mutable tags.
+      # Signing and attestations only once the repo is public: keyless cosign
+      # writes the image reference to the PUBLIC Rekor transparency log (which
+      # would disclose a private repo's image names/digests), and GitHub
+      # attestations need a public repo or a paid plan.
+      - name: Install cosign
+        if: ${{ !github.event.repository.private }}
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+
+      - name: Sign image (keyless)
+        if: ${{ !github.event.repository.private }}
+        env:
+          IMAGE: ${{ steps.tags.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      - name: Attest build provenance (GitHub attestations)
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.tags.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      # A standalone SPDX SBOM (also attached to tagged Releases below), so it
+      # can be inspected without pulling the image.
+      - name: Generate SBOM (SPDX)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ steps.tags.outputs.image }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: graph-sbom.spdx.json
+          upload-artifact: true
+          upload-release-assets: false
+
+      # The release ships a container image, not binaries; the downloadable
+      # assets are the SBOM, so publish checksums for those.
+      - name: Checksum release assets
+        if: github.ref_type == 'tag'
+        run: sha256sum graph-sbom.spdx.json > SHA256SUMS
+
+      # Tagged releases also get a visible GitHub Release with auto-generated
+      # notes (from merged PRs since the last tag) — the image push alone is
+      # invisible from the repo's front page, and that page is what a
+      # first-time visitor checks to see whether the project is alive.
+      - name: Create GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --generate-notes graph-sbom.spdx.json SHA256SUMS

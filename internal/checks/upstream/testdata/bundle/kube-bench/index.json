@@ -1,0 +1,38 @@
+[
+ {
+  "name": "aks-1.8",
+  "type": "dir"
+ },
+ {
+  "name": "cis-1.24",
+  "type": "dir"
+ },
+ {
+  "name": "cis-1.24-microk8s",
+  "type": "dir"
+ },
+ {
+  "name": "cis-2.0",
+  "type": "dir"
+ },
+ {
+  "name": "config.yaml",
+  "type": "dir"
+ },
+ {
+  "name": "eks-1.7.0",
+  "type": "dir"
+ },
+ {
+  "name": "eks-1.8.0",
+  "type": "dir"
+ },
+ {
+  "name": "gke-1.8.0",
+  "type": "dir"
+ },
+ {
+  "name": "gke-1.9.0",
+  "type": "dir"
+ }
+]

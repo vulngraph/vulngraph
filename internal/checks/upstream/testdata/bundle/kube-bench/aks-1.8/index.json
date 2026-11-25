@@ -1,0 +1,22 @@
+[
+ {
+  "name": "controlplane.yaml",
+  "path": "cfg/aks-1.8/controlplane.yaml",
+  "type": "file"
+ },
+ {
+  "name": "managedservices.yaml",
+  "path": "cfg/aks-1.8/managedservices.yaml",
+  "type": "file"
+ },
+ {
+  "name": "node.yaml",
+  "path": "cfg/aks-1.8/node.yaml",
+  "type": "file"
+ },
+ {
+  "name": "policies.yaml",
+  "path": "cfg/aks-1.8/policies.yaml",
+  "type": "file"
+ }
+]

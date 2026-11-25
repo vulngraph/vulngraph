@@ -1,0 +1,124 @@
+# Costdata domain (internal/app/costdata). Per-connector cloud cost snapshots
+# and detected cost anomalies. Read-only.
+components:
+  pathItems:
+    costSnapshots:
+      get:
+        operationId: listCostSnapshots
+        tags: [costdata]
+        summary: List daily cost snapshots for a connector
+        parameters:
+          - name: connector_id
+            in: query
+            required: true
+            schema: { type: string }
+          - name: days
+            in: query
+            required: false
+            description: Lookback window in days (default 30).
+            schema: { type: integer, minimum: 1, maximum: 365, default: 30 }
+        responses:
+          '200':
+            description: Cost snapshots.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items: { $ref: '#/components/schemas/CostSnapshot' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    costAnomalies:
+      get:
+        operationId: listCostAnomalies
+        tags: [costdata]
+        summary: List detected cost anomalies for a connector
+        parameters:
+          - name: connector_id
+            in: query
+            required: true
+            schema: { type: string }
+        responses:
+          '200':
+            description: Cost anomalies.
+            content:
+              application/json:
+                schema:
+                  type: object
+                  required: [items]
+                  properties:
+                    items:
+                      type: array
+                      items: { $ref: '#/components/schemas/CostAnomaly' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    costStatus:
+      get:
+        operationId: getCostCollectionStatus
+        tags: [costdata]
+        summary: Per-connector cost-collection outcome and the IAM permission it needs
+        description: >
+          Explains why the cost panels are empty, distinguishing a permission
+          denial, a connector-config skip and a genuine zero (which would otherwise
+          all look like "no cost anomalies", since an empty snapshot batch is a
+          valid save). `outcome` is the last
+          attempt in this server process (empty string = no attempt yet);
+          `snapshots_stored` is the durable answer to "did it ever work".
+        responses:
+          '200':
+            description: Cost collection status.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/CostStatus' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+  schemas:
+    CostStatus:
+      type: object
+      required: [connectors, snapshots_total, collected, required_iam_permission]
+      properties:
+        connectors:
+          type: array
+          items: { $ref: '#/components/schemas/CostCollectStatus' }
+        snapshots_total: { type: integer, description: 'Cost snapshot rows stored across all connectors.' }
+        collected: { type: boolean, description: 'False means no dollar figure can be shown for any account.' }
+        required_iam_permission:
+          type: string
+          description: 'The IAM action collection needs (ce:GetCostAndUsage). See docs/iam/cost-explorer-permission.md.'
+    CostCollectStatus:
+      type: object
+      required: [connector_id, outcome, snapshots_stored]
+      properties:
+        connector_id: { type: string }
+        account_id: { type: string }
+        outcome:
+          type: string
+          description: 'ok | empty | permission_denied | config_error | api_error | store_error. Empty string = no attempt recorded in this process.'
+        detail: { type: string, description: 'The underlying error, when there was one.' }
+        attempt_at: { type: string, format: date-time }
+        snapshots_stored: { type: integer }
+        last_collected_at: { type: string, format: date-time }
+    CostSnapshot:
+      type: object
+      required: [connector_id, account_id, service, cost_usd, period_date]
+      properties:
+        connector_id: { type: string }
+        account_id: { type: string }
+        service: { type: string }
+        cost_usd: { type: number, format: double }
+        period_date: { type: string, format: date }
+    CostAnomaly:
+      type: object
+      required: [connector_id, service, latest_cost_usd, rolling_avg_usd, delta_usd, period_date]
+      properties:
+        connector_id: { type: string }
+        service: { type: string }
+        latest_cost_usd: { type: number, format: double }
+        rolling_avg_usd: { type: number, format: double, description: 'Rolling average cost the latest value is compared against.' }
+        delta_usd: { type: number, format: double, description: 'latest_cost_usd minus rolling_avg_usd.' }
+        period_date: { type: string, format: date }

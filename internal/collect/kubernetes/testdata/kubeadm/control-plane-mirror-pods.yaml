@@ -1,0 +1,156 @@
+# Control-plane mirror pods of a default `kubeadm init` (v1.30), as the API
+# server returns them from `kubectl get pods -n kube-system -o yaml`.
+# Commands are the exact output of kubeadm's builders with no extraArgs:
+#   cmd/kubeadm/app/phases/controlplane/manifests.go (getAPIServerCommand,
+#   getControllerManagerCommand, getSchedulerCommand)
+#   cmd/kubeadm/app/phases/etcd/local.go (getEtcdCommand)
+# Labels come from cmd/kubeadm/app/util/staticpod/utils.go (ComponentPod:
+# component=<container name>, tier=control-plane); the kubernetes.io/config.*
+# annotations are added by the kubelet when it mirrors a static pod.
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: v1
+    kind: Pod
+    metadata:
+      name: kube-apiserver-cp-1
+      namespace: kube-system
+      labels: {component: kube-apiserver, tier: control-plane}
+      annotations:
+        kubeadm.kubernetes.io/kube-apiserver.advertise-address.endpoint: 10.0.0.10:6443
+        kubernetes.io/config.hash: 6f1c2a0e3b9d4c5e8a7b1c2d3e4f5a6b
+        kubernetes.io/config.mirror: 6f1c2a0e3b9d4c5e8a7b1c2d3e4f5a6b
+        kubernetes.io/config.source: file
+      ownerReferences:
+        - {apiVersion: v1, kind: Node, name: cp-1, uid: 0d5a7e64-58d4-4c1e-9b0a-1f2e3d4c5b6a, controller: true}
+    spec:
+      nodeName: cp-1
+      hostNetwork: true
+      containers:
+        - name: kube-apiserver
+          image: registry.k8s.io/kube-apiserver:v1.30.0
+          command:
+            - kube-apiserver
+            - --advertise-address=10.0.0.10
+            - --allow-privileged=true
+            - --authorization-mode=Node,RBAC
+            - --client-ca-file=/etc/kubernetes/pki/ca.crt
+            - --enable-admission-plugins=NodeRestriction
+            - --enable-bootstrap-token-auth=true
+            - --etcd-cafile=/etc/kubernetes/pki/etcd/ca.crt
+            - --etcd-certfile=/etc/kubernetes/pki/apiserver-etcd-client.crt
+            - --etcd-keyfile=/etc/kubernetes/pki/apiserver-etcd-client.key
+            - --etcd-servers=https://127.0.0.1:2379
+            - --kubelet-client-certificate=/etc/kubernetes/pki/apiserver-kubelet-client.crt
+            - --kubelet-client-key=/etc/kubernetes/pki/apiserver-kubelet-client.key
+            - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+            - --proxy-client-cert-file=/etc/kubernetes/pki/front-proxy-client.crt
+            - --proxy-client-key-file=/etc/kubernetes/pki/front-proxy-client.key
+            - --requestheader-allowed-names=front-proxy-client
+            - --requestheader-client-ca-file=/etc/kubernetes/pki/front-proxy-ca.crt
+            - --requestheader-extra-headers-prefix=X-Remote-Extra-
+            - --requestheader-group-headers=X-Remote-Group
+            - --requestheader-username-headers=X-Remote-User
+            - --secure-port=6443
+            - --service-account-issuer=https://kubernetes.default.svc.cluster.local
+            - --service-account-key-file=/etc/kubernetes/pki/sa.pub
+            - --service-account-signing-key-file=/etc/kubernetes/pki/sa.key
+            - --service-cluster-ip-range=10.96.0.0/12
+            - --tls-cert-file=/etc/kubernetes/pki/apiserver.crt
+            - --tls-private-key-file=/etc/kubernetes/pki/apiserver.key
+  - apiVersion: v1
+    kind: Pod
+    metadata:
+      name: kube-controller-manager-cp-1
+      namespace: kube-system
+      labels: {component: kube-controller-manager, tier: control-plane}
+      annotations:
+        kubernetes.io/config.hash: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d
+        kubernetes.io/config.mirror: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d
+        kubernetes.io/config.source: file
+    spec:
+      nodeName: cp-1
+      hostNetwork: true
+      containers:
+        - name: kube-controller-manager
+          image: registry.k8s.io/kube-controller-manager:v1.30.0
+          command:
+            - kube-controller-manager
+            - --allocate-node-cidrs=true
+            - --authentication-kubeconfig=/etc/kubernetes/controller-manager.conf
+            - --authorization-kubeconfig=/etc/kubernetes/controller-manager.conf
+            - --bind-address=127.0.0.1
+            - --client-ca-file=/etc/kubernetes/pki/ca.crt
+            - --cluster-cidr=10.244.0.0/16
+            - --cluster-name=kubernetes
+            - --cluster-signing-cert-file=/etc/kubernetes/pki/ca.crt
+            - --cluster-signing-key-file=/etc/kubernetes/pki/ca.key
+            - --controllers=*,bootstrapsigner,tokencleaner
+            - --kubeconfig=/etc/kubernetes/controller-manager.conf
+            - --leader-elect=true
+            - --requestheader-client-ca-file=/etc/kubernetes/pki/front-proxy-ca.crt
+            - --root-ca-file=/etc/kubernetes/pki/ca.crt
+            - --service-account-private-key-file=/etc/kubernetes/pki/sa.key
+            - --service-cluster-ip-range=10.96.0.0/12
+            - --use-service-account-credentials=true
+  - apiVersion: v1
+    kind: Pod
+    metadata:
+      name: kube-scheduler-cp-1
+      namespace: kube-system
+      labels: {component: kube-scheduler, tier: control-plane}
+      annotations:
+        kubernetes.io/config.hash: 9f8e7d6c5b4a39281706f5e4d3c2b1a0
+        kubernetes.io/config.mirror: 9f8e7d6c5b4a39281706f5e4d3c2b1a0
+        kubernetes.io/config.source: file
+    spec:
+      nodeName: cp-1
+      hostNetwork: true
+      containers:
+        - name: kube-scheduler
+          image: registry.k8s.io/kube-scheduler:v1.30.0
+          command:
+            - kube-scheduler
+            - --authentication-kubeconfig=/etc/kubernetes/scheduler.conf
+            - --authorization-kubeconfig=/etc/kubernetes/scheduler.conf
+            - --bind-address=127.0.0.1
+            - --kubeconfig=/etc/kubernetes/scheduler.conf
+            - --leader-elect=true
+  - apiVersion: v1
+    kind: Pod
+    metadata:
+      name: etcd-cp-1
+      namespace: kube-system
+      labels: {component: etcd, tier: control-plane}
+      annotations:
+        kubeadm.kubernetes.io/etcd.advertise-client-urls: https://10.0.0.10:2379
+        kubernetes.io/config.hash: 0a1b2c3d4e5f60718293a4b5c6d7e8f9
+        kubernetes.io/config.mirror: 0a1b2c3d4e5f60718293a4b5c6d7e8f9
+        kubernetes.io/config.source: file
+    spec:
+      nodeName: cp-1
+      hostNetwork: true
+      containers:
+        - name: etcd
+          image: registry.k8s.io/etcd:3.5.12-0
+          command:
+            - etcd
+            - --advertise-client-urls=https://10.0.0.10:2379
+            - --cert-file=/etc/kubernetes/pki/etcd/server.crt
+            - --client-cert-auth=true
+            - --data-dir=/var/lib/etcd
+            - --experimental-initial-corrupt-check=true
+            - --experimental-watch-progress-notify-interval=5s
+            - --initial-advertise-peer-urls=https://10.0.0.10:2380
+            - --initial-cluster=cp-1=https://10.0.0.10:2380
+            - --key-file=/etc/kubernetes/pki/etcd/server.key
+            - --listen-client-urls=https://127.0.0.1:2379,https://10.0.0.10:2379
+            - --listen-metrics-urls=http://127.0.0.1:2381
+            - --listen-peer-urls=https://10.0.0.10:2380
+            - --name=cp-1
+            - --peer-cert-file=/etc/kubernetes/pki/etcd/peer.crt
+            - --peer-client-cert-auth=true
+            - --peer-key-file=/etc/kubernetes/pki/etcd/peer.key
+            - --peer-trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt
+            - --snapshot-count=10000
+            - --trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt

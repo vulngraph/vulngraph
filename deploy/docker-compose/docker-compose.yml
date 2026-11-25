@@ -1,0 +1,242 @@
+# Batteries-included stack: Postgres + ClickHouse + graph serve + graph worker
+# (with the in-memory graph engine), all from one image — no Go/bun toolchain
+# required. The image is built from this checkout and tagged vulngraph:local,
+# never a published name. To run a published release instead, add
+# docker-compose.release.yml, which requires GRAPH_VERSION:
+#   docker compose -f docker-compose.yml -f docker-compose.release.yml up -d
+# For local development against a source checkout, use the root
+# docker-compose.yml instead (datastores only, run `go run ./cmd/graph ...`
+# yourself).
+#
+# Quickstart (from this directory — `cd deploy/docker-compose` first):
+#   cp app.env.example app.env  # optional: LLM_* provider, SMTP, other settings
+#   docker compose up -d        # builds the image (several minutes the first time)
+#   docker compose exec serve /graph user create --email you@example.com --role admin
+#   open http://localhost:8080
+#
+# No secrets to supply: the init service generates them on the first start (see
+# init-secrets.sh), one env file per consumer in its own volume. serve, worker
+# and migrate read theirs through GRAPH_ENV_FILE; postgres and clickhouse source
+# theirs in their entrypoint. app.env (optional) reaches serve and worker whole
+# (env_file), so any setting in docs/configuration.md can be set there. .env is
+# read by Compose only, for the optional values in .env.example.
+#
+# No app container holds a datastore admin password. Postgres: migrate, serve
+# and worker connect as graph, a role that owns the graph database but is not a
+# superuser (created on first start by the Helm chart's
+# files/postgres-init.sql); the postgres superuser's password reaches only the
+# postgres container. ClickHouse: serve and worker connect as graph (rows only,
+# no DDL, no rewriting audit_events), migrate as graph_migrate (the schema), from
+# the chart's files/clickhouse-users.xml, which has no admin user. Both
+# datastores also get the chart's graph_scanner users, which nothing here
+# connects as: this stack has no scanner container, and the worker runs nuclei.
+# README.md ("Datastore users") has the details.
+#
+# Upgrading: `git pull` and `docker compose up -d` rebuild from the checkout;
+# with docker-compose.release.yml, bump GRAPH_VERSION in .env and run
+# `docker compose pull` first. Migrations run automatically on every start via
+# the migrate service.
+
+# A fixed project name, so volumes are vulngraph_pgdata etc. whatever this
+# directory is called.
+name: vulngraph
+
+x-graph-image: &graph-image vulngraph:local
+x-postgres-image: &postgres-image postgres:16-alpine@sha256:f2f98726820d0342055351c6e9d36e705f5bfffb3dd53ff556325114b08afb6d
+
+services:
+  # Generates the secrets once and exits. Reusing the pinned Postgres image
+  # keeps the stack to the images it already pulls.
+  init:
+    image: *postgres-image
+    entrypoint: ["/bin/sh", "/init-secrets.sh"]
+    volumes:
+      - type: bind
+        source: ./init-secrets.sh
+        target: /init-secrets.sh
+        read_only: true
+        bind: { create_host_path: false }
+      - secrets-postgres:/secrets/postgres
+      - secrets-clickhouse:/secrets/clickhouse
+      - secrets-migrate:/secrets/migrate
+      - secrets-app:/secrets/app
+
+  postgres:
+    image: *postgres-image
+    # The image's bootstrap superuser is postgres. The app role graph is
+    # created by the init script below on the first start of an empty volume;
+    # its passwords come from the generated env file (init-secrets.sh).
+    entrypoint: ["/bin/sh", "-c", "set -a; . /secrets/env; set +a; exec docker-entrypoint.sh postgres"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: graph
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - type: volume
+        source: secrets-postgres
+        target: /secrets
+        read_only: true
+      # Long syntax: run outside the checkout, a missing file is an error
+      # instead of an empty directory mounted in its place.
+      - type: bind
+        source: ../helm-chart/graph/files/postgres-init.sql
+        target: /docker-entrypoint-initdb.d/10-graph-role.sql
+        read_only: true
+        bind: { create_host_path: false }
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U graph -d graph"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.8-alpine@sha256:31d60795ca6ac748a20712b5d8d047e415c44d370a86e89a63cd251b0eaed9e9
+    environment:
+      CLICKHOUSE_DB: graph
+      # The users are the chart's files/clickhouse-users.xml, mounted below,
+      # not the image's user setup, and the image's default admin is removed.
+      # CLICKHOUSE_USER and CLICKHOUSE_PASSWORD only name the user the image
+      # creates CLICKHOUSE_DB as on an empty volume: graph_migrate.
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
+      CLICKHOUSE_USER: graph_migrate
+    # The passwords (CLICKHOUSE_PASSWORD, GRAPH_CH_*_PASSWORD) come from the
+    # generated env file (init-secrets.sh).
+    entrypoint: ["/bin/sh", "-c", "set -a; . /secrets/env; set +a; exec /entrypoint.sh"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    volumes:
+      - chdata:/var/lib/clickhouse
+      - type: volume
+        source: secrets-clickhouse
+        target: /secrets
+        read_only: true
+      # Same server settings as the Helm chart (templates/clickhouse-config.yaml):
+      # cache ceilings, system-log TTLs, the max_execution_time backstop.
+      - ./clickhouse/config.xml:/etc/clickhouse-server/config.d/zz-graph.xml:ro
+      - ./clickhouse/users.xml:/etc/clickhouse-server/users.d/zz-graph.xml:ro
+      - type: bind
+        source: ../helm-chart/graph/files/clickhouse-users.xml
+        target: /etc/clickhouse-server/users.d/zz-graph-users.xml
+        read_only: true
+        bind: { create_host_path: false }
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    image: *graph-image
+    # serve and worker run the image migrate builds; building on every up keeps
+    # it current with the checkout (unchanged layers come from the build cache).
+    build: ../..
+    pull_policy: build
+    command: ["migrate"]
+    environment:
+      # DATABASE_URL and CLICKHOUSE_URL, the latter as the ClickHouse user that
+      # may change the schema; serve and worker never get it.
+      GRAPH_ENV_FILE: /secrets/env
+    volumes:
+      - type: volume
+        source: secrets-migrate
+        target: /secrets
+        read_only: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+
+  serve:
+    image: *graph-image
+    pull_policy: never
+    command: ["serve"]
+    env_file:
+      - path: app.env
+        required: false
+    # A local LLM (LLM_BASE_URL=http://host.docker.internal:11434/v1) runs on
+    # the host. Docker Desktop resolves that name already; Linux Docker Engine
+    # needs this mapping.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # DATABASE_URL, CLICKHOUSE_URL, GRAPH_SECRET_KEY and LADYBUG_RPC_SECRET.
+      GRAPH_ENV_FILE: /secrets/env
+      GRAPH_RETIRED_SECRET_KEYS: ${GRAPH_RETIRED_SECRET_KEYS:-}
+      # Graph queries go to the worker's in-memory engine over the internal RPC.
+      LADYBUG_RPC_URL: http://worker:8090
+    volumes:
+      - type: volume
+        source: secrets-app
+        target: /secrets
+        read_only: true
+    ports:
+      # Loopback only. To reach it from other machines, put a TLS-terminating
+      # proxy in front rather than publishing plain http on 0.0.0.0.
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # The runtime image has no wget/curl; the binary probes its own /healthz.
+      test: ["CMD", "/graph", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  worker:
+    image: *graph-image
+    pull_policy: never
+    command: ["worker"]
+    # The worker drains in-flight jobs for up to 50s on SIGTERM; Docker's default
+    # 10s would SIGKILL it mid-job.
+    stop_grace_period: 60s
+    env_file:
+      - path: app.env
+        required: false
+    # A local LLM (LLM_BASE_URL=http://host.docker.internal:11434/v1) runs on
+    # the host. Docker Desktop resolves that name already; Linux Docker Engine
+    # needs this mapping.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      GRAPH_ENV_FILE: /secrets/env
+      GRAPH_RETIRED_SECRET_KEYS: ${GRAPH_RETIRED_SECRET_KEYS:-}
+      # The graph engine: on when LADYBUG_INTERNAL_PORT is set. serve reaches it
+      # at worker:8090 on the compose network (not published to the host).
+      LADYBUG_INTERNAL_PORT: "8090"
+      # Snapshot after each rebuild so a restart warm-starts instead of
+      # rebuilding the graph from ClickHouse. A disposable cache.
+      LADYBUG_SNAPSHOT_PATH: /data/ladybug/snapshot.gz
+    volumes:
+      - ladybug:/data/ladybug
+      - type: volume
+        source: secrets-app
+        target: /secrets
+        read_only: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # Ready once the first graph build finishes; the build reads every
+      # asset and edge from ClickHouse, so allow it minutes on a large estate.
+      test: ["CMD", "/graph", "healthcheck", "worker"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5m
+      retries: 30
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  chdata:
+  ladybug:
+  secrets-postgres:
+  secrets-clickhouse:
+  secrets-migrate:
+  secrets-app:

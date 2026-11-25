@@ -1,0 +1,32 @@
+# Vendored test fixture, unmodified apart from this header, from
+# https://github.com/kubernetes/kubernetes/blob/master/cluster/addons/rbac/cluster-loadbalancing/glbc/user-rolebindings.yaml
+# Copyright The Kubernetes Authors. Licensed under the Apache License, Version 2.0:
+# http://www.apache.org/licenses/LICENSE-2.0
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: system:controller:glbc
+  namespace: kube-system
+  labels:
+    addonmanager.kubernetes.io/mode: Reconcile
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: system:controller:glbc
+subjects:
+- kind: User
+  name: system:controller:glbc
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system:controller:glbc
+  labels:
+    addonmanager.kubernetes.io/mode: Reconcile
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:controller:glbc
+subjects:
+- kind: User
+  name: system:controller:glbc

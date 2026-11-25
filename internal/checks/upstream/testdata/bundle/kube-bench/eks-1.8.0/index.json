@@ -1,0 +1,12 @@
+[
+ {
+  "name": "config.yaml",
+  "path": "cfg/eks-1.8.0/config.yaml",
+  "type": "file"
+ },
+ {
+  "name": "node.yaml",
+  "path": "cfg/eks-1.8.0/node.yaml",
+  "type": "file"
+ }
+]

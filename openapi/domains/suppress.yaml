@@ -1,0 +1,190 @@
+# Suppress domain (internal/app/suppress). Silences findings; admin-only writes.
+# The suppress/unsuppress routes hang off /api/findings/{id}/suppress but are owned
+# by this domain (one service, mapped here).
+components:
+  pathItems:
+    suppression:
+      post:
+        operationId: suppressFinding
+        tags: [suppressions]
+        summary: Suppress a finding (admin only)
+        description: >
+          On an API key (which an agent may hold) the MCP suppress_finding
+          rules apply: a finding that is critical, must-fix, in the page or
+          high band, or not yet scored is refused with 403 (audited as
+          suppress.refused), and expires_at may be at most 30 days away
+          (400). A finding that does not exist is a 404 on a key.
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuppressRequest' }
+        responses:
+          '201':
+            description: Suppression created.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/Suppression' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+      delete:
+        operationId: unsuppressFinding
+        tags: [suppressions]
+        summary: Lift a suppression (admin only)
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '204': { description: Suppression lifted. }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    reviewSuppression:
+      post:
+        operationId: reviewSuppression
+        tags: [suppressions]
+        summary: Renew a suppression with a new expiry (admin only)
+        description: >-
+          Records that an admin re-reviewed the exception and moves its expiry.
+          Works on an expired suppression too, which re-instates it. The reviewer
+          is taken from the session. On an API key the suppressFinding API-key
+          rules apply (403 for a finding only a person may silence, at most 30
+          days).
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewSuppressionRequest' }
+        responses:
+          '200':
+            description: Suppression renewed.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/Suppression' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    bulkSuppress:
+      post:
+        operationId: bulkSuppress
+        tags: [suppressions]
+        summary: Suppress many findings in one call (admin only)
+        description: >
+          Best-effort per id; partial failures still apply the rest. Returns
+          how many were applied. On an API key the suppressFinding API-key
+          rules apply to every id, and the batch is all or nothing: one
+          refused finding is a 403 and one unknown finding a 404, and nothing
+          is applied.
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BulkSuppressRequest' }
+        responses:
+          '200':
+            description: Number of suppressions applied.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/BulkResult' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    bulkUnsuppress:
+      post:
+        operationId: bulkUnsuppress
+        tags: [suppressions]
+        summary: Lift suppressions for many findings (admin only)
+        description: Idempotent; returns how many suppressions were lifted.
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BulkUnsuppressRequest' }
+        responses:
+          '200':
+            description: Number of suppressions lifted.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/BulkResult' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+
+    listSuppressions:
+      get:
+        operationId: listSuppressions
+        tags: [suppressions]
+        summary: List suppressions, expired ones included (flagged by `expired`)
+        responses:
+          '200':
+            description: Suppressions.
+            content:
+              application/json:
+                schema:
+                  type: array
+                  items: { $ref: '#/components/schemas/Suppression' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+  schemas:
+    Suppression:
+      type: object
+      required: [finding_id, reason, suppressed_by, suppressed_at, expires_at, expired, last_reviewed_at, reviewed_by]
+      properties:
+        finding_id: { type: string }
+        reason: { type: string }
+        suppressed_by: { type: string }
+        suppressed_at: { type: string, format: date-time }
+        expires_at:
+          type: string
+          format: date-time
+          description: When the suppression stops matching and the finding re-enters the pipeline.
+        expired:
+          type: boolean
+          description: True once expires_at has passed. Expired suppressions are kept so the finding can say its exception expired.
+        last_reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Last renewal; null when never reviewed since it was created.
+        reviewed_by: { type: string, description: Who last renewed it; empty when never reviewed. }
+    SuppressRequest:
+      type: object
+      required: [reason, expires_at]
+      properties:
+        reason: { type: string }
+        expires_at:
+          type: string
+          format: date-time
+          description: Required. Must be in the future and at most 365 days away (one day of slack for date pickers).
+    ReviewSuppressionRequest:
+      type: object
+      required: [expires_at]
+      properties:
+        expires_at:
+          type: string
+          format: date-time
+          description: The new expiry. Same bounds as SuppressRequest.expires_at.
+    BulkSuppressRequest:
+      type: object
+      required: [finding_ids, reason, expires_at]
+      properties:
+        finding_ids: { type: array, items: { type: string }, minItems: 1 }
+        reason: { type: string }
+        expires_at: { type: string, format: date-time, description: Applies to every finding in the batch. Same bounds as SuppressRequest.expires_at. }
+    BulkUnsuppressRequest:
+      type: object
+      required: [finding_ids]
+      properties:
+        finding_ids: { type: array, items: { type: string }, minItems: 1 }
+    BulkResult:
+      type: object
+      required: [applied]
+      properties:
+        applied: { type: integer, minimum: 0, description: How many findings the operation applied to. }

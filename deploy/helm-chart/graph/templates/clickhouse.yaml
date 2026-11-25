@@ -1,0 +1,161 @@
+{{- if .Values.clickhouse.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: graph-clickhouse
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+spec:
+  clusterIP: None # headless — stable DNS for the StatefulSet pod
+  selector:
+    {{- include "graph.selectorLabels" (dict "component" "clickhouse") | nindent 4 }}
+  ports:
+    - name: native
+      port: 9000
+      targetPort: 9000
+    - name: http
+      port: 8123
+      targetPort: 8123
+    {{- if .Values.clickhouse.tlsSecret }}
+    - name: native-secure
+      port: 9440
+      targetPort: 9440
+    {{- end }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: graph-clickhouse
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+spec:
+  serviceName: graph-clickhouse
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "graph.selectorLabels" (dict "component" "clickhouse") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Roll the pod when the CH tuning config or its users change.
+        checksum/ch-config: {{ include (print $.Template.BasePath "/clickhouse-config.yaml") . | sha256sum }}
+      labels:
+        {{- include "graph.labels" . | nindent 8 }}
+        {{- include "graph.componentLabels" (dict "component" "clickhouse") | nindent 8 }}
+        {{- include "graph.offSpotLabels" . | nindent 8 }}
+    spec:
+      {{- include "graph.offSpotAffinity" . | nindent 6 }}
+      {{- with .Values.clickhouse.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: clickhouse
+          image: {{ .Values.clickhouse.image }}
+          {{- with .Values.clickhouse.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - { name: native, containerPort: 9000 }
+            - { name: http, containerPort: 8123 }
+            {{- if .Values.clickhouse.tlsSecret }}
+            - { name: native-secure, containerPort: 9440 }
+            {{- end }}
+          # The users are files/clickhouse-users.xml, with their passwords from
+          # the Secret: graph (serve, the worker), graph_scanner (the scanner)
+          # and graph_migrate (migrate). The image's user setup is skipped and
+          # its default admin removed. CLICKHOUSE_USER and CLICKHOUSE_PASSWORD
+          # only name the user its bootstrap creates CLICKHOUSE_DB as on an
+          # empty volume: graph_migrate.
+          env:
+            - name: CLICKHOUSE_DB
+              value: graph
+            - name: CLICKHOUSE_SKIP_USER_SETUP
+              value: "1"
+            - name: CLICKHOUSE_USER
+              value: graph_migrate
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: clickhouse-migrate-password } }
+            - name: GRAPH_CH_APP_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: clickhouse-password } }
+            - name: GRAPH_CH_MIGRATE_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: clickhouse-migrate-password } }
+            - name: GRAPH_CH_SCANNER_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: clickhouse-scanner-password } }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/clickhouse
+            - name: ch-config
+              mountPath: /etc/clickhouse-server/config.d/zz-graph.xml
+              subPath: config.xml
+            - name: ch-users
+              mountPath: /etc/clickhouse-server/users.d/zz-graph.xml
+              subPath: users.xml
+            - name: ch-graph-users
+              mountPath: /etc/clickhouse-server/users.d/zz-graph-users.xml
+              subPath: graph-users.xml
+            {{- if .Values.clickhouse.tlsSecret }}
+            - name: tls
+              mountPath: /etc/clickhouse-server/tls
+              readOnly: true
+            {{- end }}
+          # exec, not httpGet: an HTTP probe would make the NetworkPolicy admit node
+          # addresses to 8123, ClickHouse's full HTTP SQL interface.
+          readinessProbe:
+            exec: { command: ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8123/ping"] }
+            timeoutSeconds: 3
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          # Startup loads every table's parts before /ping answers, which on a
+          # large data volume can take well past the liveness budget. The
+          # startupProbe holds liveness off for up to 30 min (180 x 10s) so a
+          # slow load is not killed and restarted from scratch in a loop.
+          startupProbe:
+            exec: { command: ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8123/ping"] }
+            timeoutSeconds: 5
+            periodSeconds: 10
+            failureThreshold: 180
+          livenessProbe:
+            exec: { command: ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8123/ping"] }
+            timeoutSeconds: 5
+            initialDelaySeconds: 120
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.clickhouse.resources | nindent 12 }}
+      volumes:
+        - name: ch-config
+          configMap:
+            name: graph-clickhouse-config
+            items: [{ key: config.xml, path: config.xml }]
+        - name: ch-users
+          configMap:
+            name: graph-clickhouse-config
+            items: [{ key: users.xml, path: users.xml }]
+        - name: ch-graph-users
+          configMap:
+            name: graph-clickhouse-config
+            items: [{ key: graph-users.xml, path: graph-users.xml }]
+        {{- with .Values.clickhouse.tlsSecret }}
+        - name: tls
+          secret:
+            secretName: {{ . }}
+            defaultMode: 0640
+        {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.clickhouse.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.clickhouse.storage }}
+{{- end }}

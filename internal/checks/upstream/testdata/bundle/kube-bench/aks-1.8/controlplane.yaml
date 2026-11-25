@@ -1,0 +1,9 @@
+---
+controls:
+version: "aks-1.8"
+groups:
+  - id: x
+    text: "ids only"
+    checks:
+      - id: 2.1.1
+        text: ""

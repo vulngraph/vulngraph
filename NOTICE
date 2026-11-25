@@ -1,0 +1,166 @@
+Vulngraph
+Copyright (c) 2026 The Vulngraph Authors
+
+This repository is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It also contains, or depends on, third-party software under separate licenses.
+
+== LadybugDB (liblbug) ==
+
+Vulngraph's embedded in-memory graph engine is LadybugDB
+(https://github.com/LadybugDB/ladybug), the community-maintained successor of
+Kùzu (https://github.com/kuzudb/kuzu, archived), used unmodified
+as the prebuilt shared library of a pinned release (scripts/fetch-ladybug.sh,
+docs/adr/095-upstream-ladybugdb.md).
+LadybugDB's license carries the copyright notices of both Kùzu Inc. and
+Ladybug Memory Inc.
+This repository contains no LadybugDB source: only its C header
+(internal/graphdb/ladybug/lbug.h) and its MIT license (internal/graphdb/LICENSE).
+The Go binding in internal/graphdb/ladybug started from the upstream LadybugDB
+Go binding and is MIT-licensed under the same upstream copyright notices
+(internal/graphdb/ladybug/LICENSE).
+
+The library bundles LadybugDB's own third-party C++ dependencies (DuckDB-derived
+code, {fmt}, ANTLR and the openCypher grammar, zstd, mbedtls, re2, utf8proc
+and others), each under its own license. They are listed in the upstream
+repository at the pinned tag:
+https://github.com/LadybugDB/ladybug/tree/v0.21.2/third_party. The library links
+OpenSSL 3 dynamically; it is provided by the operating system (Debian libssl3t64),
+not shipped by this project.
+
+== License texts in the container image ==
+
+The image ships the license texts of everything it distributes under
+/usr/share/doc/graph/, next to this NOTICE, LICENSE and THIRD_PARTY_LICENSES.md.
+They are collected at build time (Dockerfile, scripts/collect-licenses.sh,
+scripts/fetch-ladybug.sh --licenses-dir), and the build fails if a linked
+component has none:
+
+  licenses/go/<module path>/       every Go module linked into /graph
+  licenses/go-stdlib-LICENSE       the Go standard library and runtime
+  licenses/npm/<package>/          every npm package that can reach the
+                                   embedded web UI (production dependencies)
+  licenses/ladybug/LICENSE         LadybugDB (liblbug)
+  licenses/ladybug/third_party/    the C++ components bundled in liblbug, from
+                                   the source archive of the pinned tag; for
+                                   single-header components and adapted files
+                                   that carry their notice inline, the notice
+                                   is extracted into <file>.NOTICE; where that
+                                   notice is not the full licence text
+                                   (cpp-httplib, fast_float, and the DuckDB and
+                                   robin-hood-hashing code in checksum.cpp), the
+                                   upstream LICENSE at the bundled version is
+                                   shipped beside it; the Cypher parser in
+                                   third_party/antlr4_cypher/ ships the
+                                   openCypher grammar's Apache-2.0 licence
+                                   (openCypher-LICENSE) and its NOTICE (openCypher-NOTICE)
+
+The MPL-2.0 modules listed under "Go dependencies" are shipped unmodified;
+their source is available from the upstream locations given there.
+
+== Vulnerability data sources ==
+
+Vulngraph fetches vulnerability data at runtime from the sources below and does
+not redistribute it, except for the small trimmed excerpts kept as test
+fixtures (internal/intel/osv/testdata, internal/intel/updateinfo/testdata).
+Each source's own terms apply to its data.
+
+  OSV.dev (https://osv.dev), Google — aggregated advisories, including:
+    Red Hat security data (https://security.access.redhat.com/data/),
+    Copyright Red Hat, Inc., licensed under CC BY 4.0;
+    SUSE security advisories (https://ftp.suse.com/pub/projects/security/),
+    Copyright SUSE LLC.
+  Amazon Linux Security Center advisories (ALAS, https://alas.aws.amazon.com),
+    read from the Amazon Linux repositories' updateinfo metadata
+    (cdn.amazonlinux.com). Copyright Amazon.com, Inc. or its affiliates.
+  Oracle Linux errata (ELSA, https://linux.oracle.com/errata/), read from the
+    Oracle Linux yum server's updateinfo metadata (yum.oracle.com).
+    Copyright Oracle and/or its affiliates.
+  CISA Known Exploited Vulnerabilities catalog and FIRST.org EPSS scores.
+
+== Trademarks, references and acknowledgements ==
+
+Vulngraph is an independent project, not affiliated with or endorsed by any vendor
+or organization named in its code or docs. Product names (AWS, Google Cloud,
+Azure, GitHub, Kubernetes, Okta, Google Workspace, ClickHouse, PostgreSQL,
+Anthropic, OpenAI and others) are trademarks of their respective owners and are
+used only to identify what the software integrates with.
+
+CIS and CIS Benchmarks are trademarks of the Center for Internet Security,
+Inc. CIS Benchmark documents are licensed under CC BY-NC-SA 4.0, and no
+benchmark text is reproduced anywhere in this repository. Vulngraph's checks are
+original implementations that reference CIS Benchmark topics. Two kinds of
+identifier appear:
+  - Compliance control IDs in internal/app/compliance (for example
+    "CIS-AWS-4.1") are Vulngraph's own labels, not official CIS recommendation
+    numbers.
+  - The coverage matrices in internal/checks/benchmarks cite official CIS
+    recommendation numbers (identifiers only). Each comes with a short title
+    written by this project, not taken from the benchmark.
+AWS Foundational Security Best Practices control IDs come from AWS's public
+Security Hub documentation, and the matrix titles are shortened from it.
+
+The cloud privilege-escalation catalogue (internal/app/ciem) draws on public
+research by Rhino Security Labs. Check coverage was informed by public catalogues such as Prowler
+(Apache-2.0); no third-party check code or text is incorporated.
+
+Compliance framework mappings (internal/checks/frameworks) are derived from:
+  - Prowler's compliance mappings (https://github.com/prowler-cloud/prowler,
+    prowler/compliance/*), Copyright Prowler / Toni de la Fuente and
+    contributors, licensed under the Apache License 2.0. Vulngraph uses the
+    requirement IDs and which Prowler checks each one lists, joined to Vulngraph's
+    benchmark controls; no Prowler requirement text is reproduced.
+  - The "Related requirements" AWS publishes for each Security Hub control
+    (docs.aws.amazon.com/securityhub), identifiers only.
+  - NIST SP 800-53 Rev. 5 control titles from NIST's OSCAL catalog
+    (github.com/usnistgov/oscal-content), a US government work in the public
+    domain, and HIPAA Security Rule section titles (45 CFR Part 164), US law.
+ISO/IEC 27001, PCI DSS and the AICPA Trust Services Criteria are copyrighted
+by ISO/IEC, the PCI Security Standards Council and the AICPA. Only their
+requirement identifiers appear, each with a short title written by this
+project. No text from those standards is reproduced. The benchmark-watch test
+bundle (internal/checks/upstream/testdata) holds small synthetic excerpts in
+the shape of the Prowler, kube-bench and Security Hub sources.
+
+== Go dependencies ==
+
+A module-by-module license report is in THIRD_PARTY_LICENSES.md. Dependencies
+under weak-copyleft terms are used unmodified, as ordinary linked modules; their
+source is available from the upstream locations listed in that report:
+
+  github.com/hashicorp/hcl/v2                MPL-2.0 (https://github.com/hashicorp/hcl)
+  github.com/riverqueue/river (and driver,
+    riverpgxv5, rivershared, rivertype)      MPL-2.0 (https://github.com/riverqueue/river)
+  github.com/go-sql-driver/mysql             MPL-2.0
+  github.com/hashicorp/go-cleanhttp,
+    go-retryablehttp, go-uuid, go-version,
+    golang-lru/v2                            MPL-2.0
+  github.com/gosimple/slug                   MPL-2.0
+  github.com/cyphar/filepath-securejoin      MPL-2.0
+  github.com/projectdiscovery/retryablehttp-go  MPL-2.0
+
+MPL-2.0 is a file-level copyleft: it applies to the covered files of those
+modules only and does not extend to this project's own source.
+
+Replaced modules (never linked into this project's builds). go.mod replaces
+each with an inert, API-compatible stand-in written for this project (MIT,
+see third_party/<stub>/README.md); a test fails if a replace is dropped:
+
+  github.com/projectdiscovery/ldapserver — GPL-2.0; reached via nuclei ->
+    interactsh/pkg/server. Stub: third_party/ldapserver-stub.
+  github.com/censys/censys-sdk-go — ships no LICENSE file (no clear
+    redistribution grant); reached via nuclei -> uncover's Censys agent,
+    which Vulngraph never invokes. Stub: third_party/censys-sdk-stub.
+
+== Frontend (frontend/, embedded in the binary as web/dist) ==
+
+The web UI bundle includes 40 npm packages (production dependencies,
+transitively): 25 MIT, 11 ISC, 1 BSD-3-Clause, 1 Unlicense, 2 OFL-1.1 (fonts) — no copyleft.
+The package-by-package list is in THIRD_PARTY_LICENSES.md. Their license texts
+are in each package under frontend/node_modules after `bun install`, and in the
+container image under /usr/share/doc/graph/licenses/npm.
+
+Fonts are bundled locally (no third-party font CDN) under the SIL Open Font
+License 1.1: Instrument Sans (Copyright 2022 The Instrument Sans Project
+Authors) and JetBrains Mono (Copyright 2020 The JetBrains Mono Project
+Authors), via the @fontsource-variable packages, which ship the OFL text.

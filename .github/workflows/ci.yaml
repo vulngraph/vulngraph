@@ -1,0 +1,1099 @@
+name: CI
+
+# The quality gate: lint, unit tests, secret scan, frontend, integration, a
+# Docker build smoke test. Wire your own deploy pipeline on top of this using
+# the Helm chart in deploy/helm-chart (see deploy/README.md) — this repo ships
+# none.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Cancel redundant CI runs on the same branch (saves queue time on rapid pushes).
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # A new push to a pull request supersedes its older run. A push to main never
+  # cancels the run for the commit before it: that run is the record of main.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # ── Fetch liblbug.so once, share via artifact ───────────────────────────
+  # All jobs that need CGO against LadybugDB download this artifact: the pinned
+  # prebuilt release, sha256-verified by scripts/fetch-ladybug.sh.
+  fetch-ladybug:
+    name: Fetch liblbug.so
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch pinned LadybugDB release
+        run: scripts/fetch-ladybug.sh --install-dir "$RUNNER_TEMP/ladybug" linux-amd64
+
+      - name: Upload liblbug artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: liblbug-so
+          path: ${{ runner.temp }}/ladybug/
+          retention-days: 1
+
+  # ── Go lint ────────────────────────────────────────────────────────────
+  lint:
+    name: golangci-lint (v2)
+    needs: fetch-ladybug
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # .tool-versions is the one list of toolchain versions. The Dockerfile's
+      # base-image tags and the workflows' setup-go versions repeat it (setup-go
+      # cannot read that file), so a bump that misses one of them fails here
+      # rather than leaving the release built with a different Go than CI tests.
+      - name: Toolchain pins match .tool-versions
+        run: |
+          set -euo pipefail
+          want() { awk -v tool="$1" '$1 == tool { print $2 }' .tool-versions; }
+          go_v="$(want golang)"; bun_v="$(want bun)"; lint_v="$(want golangci-lint)"
+          fail=0
+          require() {
+            if ! grep -qF -- "$2" "$1"; then
+              echo "::error file=$1::expected \"$2\" to match .tool-versions"; fail=1
+            fi
+          }
+          require Dockerfile "FROM golang:${go_v}-"
+          require Dockerfile "oven/bun:${bun_v}@"
+          require .github/workflows/ci.yaml "Install golangci-lint ${lint_v}"
+          for f in .github/workflows/*.yaml; do
+            if awk '$1 == "go-version:" { print $2 }' "$f" | grep -vqxF "\"${go_v}\""; then
+              echo "::error file=$f::setup-go version differs from golang ${go_v} in .tool-versions"; fail=1
+            fi
+          done
+          exit "$fail"
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.26.11"
+          cache: true
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: liblbug-so
+          path: /tmp/ladybug
+
+      - name: Install liblbug
+        run: sudo cp -P /tmp/ladybug/liblbug.so* /usr/local/lib/ && sudo ldconfig
+
+      # golangci-lint keeps a per-package analysis cache; restoring the last run's makes
+      # the next run re-analyse only what changed.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/golangci-lint
+          key: golangci-lint-${{ runner.os }}-2.12.2-${{ hashFiles('go.sum', '.golangci.yml') }}-${{ github.sha }}
+          restore-keys: |
+            golangci-lint-${{ runner.os }}-2.12.2-${{ hashFiles('go.sum', '.golangci.yml') }}-
+            golangci-lint-${{ runner.os }}-2.12.2-
+
+      # The release tarball, checked against the sha256 pinned here (from the
+      # release's checksums.txt). curl retries transient fetch failures.
+      - name: Install golangci-lint 2.12.2
+        env:
+          VERSION: "2.12.2"
+          SHA256: 8df580d2670fed8fa984aac0507099af8df275e665215f5c7a2ae3943893a553
+        run: |
+          set -euo pipefail
+          tarball="golangci-lint-${VERSION}-linux-amd64.tar.gz"
+          curl -sSfL --retry 3 --retry-all-errors -o "$RUNNER_TEMP/$tarball" \
+            "https://github.com/golangci/golangci-lint/releases/download/v${VERSION}/${tarball}"
+          echo "${SHA256}  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          mkdir -p "$(go env GOPATH)/bin"
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$(go env GOPATH)/bin" --strip-components=1 \
+            "golangci-lint-${VERSION}-linux-amd64/golangci-lint"
+
+      - run: '"$(go env GOPATH)/bin/golangci-lint" run'
+        env:
+          CGO_LDFLAGS: "-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib"
+
+      # The cgo binding is its own module, which the root run does not lint.
+      - name: golangci-lint (LadybugDB binding module)
+        working-directory: internal/graphdb/ladybug
+        run: '"$(go env GOPATH)/bin/golangci-lint" run ./...'
+        env:
+          CGO_LDFLAGS: "-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib"
+
+  # ── Go unit tests ──────────────────────────────────────────────────────
+  unit:
+    name: go test
+    needs: fetch-ladybug
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.26.11"
+          cache: false
+
+      # setup-go's own cache is keyed on go.sum alone and is never saved again once
+      # one job has saved it, so it froze at whatever that job had compiled (the
+      # guard shards then spent ~11 minutes warming a cold build cache). Here the
+      # build cache is re-saved on every push to main, by `unit` for the family
+      # shared with the guard and integration jobs and by `race` for -race
+      # builds; pull requests and the other jobs restore it. Saved from only one
+      # job per family to stay inside the repo's 10 GB cache quota.
+      - name: Restore the Go caches
+        id: gocache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-test-${{ runner.os }}-${{ hashFiles('go.sum', 'internal/graphdb/ladybug/go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-${{ hashFiles('go.sum', 'internal/graphdb/ladybug/go.sum') }}-
+            go-test-${{ runner.os }}-
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: liblbug-so
+          path: /tmp/ladybug
+
+      - name: Install liblbug
+        run: sudo cp -P /tmp/ladybug/liblbug.so* /usr/local/lib/ && sudo ldconfig
+
+      - run: go test ./... -count=1
+        env:
+          CGO_LDFLAGS: "-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib"
+
+      # The cgo binding is its own module (internal/graphdb/ladybug/go.mod), and
+      # `./...` above does not descend into nested modules, so its tests (the
+      # native-heap leak checks, NULL scans, C++ exceptions as Go errors) run here
+      # (internal/graphdb/ladybug/README.md#tests).
+      - name: LadybugDB binding tests
+        working-directory: internal/graphdb/ladybug
+        run: go vet ./... && go test ./... -count=1
+        env:
+          CGO_LDFLAGS: "-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib"
+
+      - name: Save the Go caches
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.gocache.outputs.cache-primary-key }}
+
+  # The next three jobs were steps of `go test`. Run in series they made that one job
+  # the slowest after the guards; as separate jobs they overlap with it.
+  race:
+    name: go test (race detector)
+    needs: fetch-ladybug
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.26.11"
+          cache: false
+
+      # Restores the build cache that `unit` (first job above) saves; see there.
+      - name: Restore the Go caches
+        id: gocache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-race-${{ runner.os }}-${{ hashFiles('go.sum', 'internal/graphdb/ladybug/go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-race-${{ runner.os }}-${{ hashFiles('go.sum', 'internal/graphdb/ladybug/go.sum') }}-
+            go-race-${{ runner.os }}-
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: liblbug-so
+          path: /tmp/ladybug
+
+      - name: Install liblbug
+        run: sudo cp -P /tmp/ladybug/liblbug.so* /usr/local/lib/ && sudo ldconfig
+
+      # The tests in these packages drive concurrent code (collector fan-outs,
+      # the correlate coalescer and job dispatch, the LLM budget reservation,
+      # parallel tool calls, enrich's concurrent stages, the webhook replay guard,
+      # shared registry credentials, the metrics scrape budget). A data race in
+      # that code is reported only under the race detector; the plain `go test` job
+      # would pass them. internal/app/graphstore is not listed: its tests run
+      # the Ladybug engine in-process, and beside a live engine the race
+      # runtime aborts ("too many address space collisions for -race mode") on
+      # macOS and is unproven on this runner. The CGO_LDFLAGS below link liblbug
+      # into every test binary here; linking it alone does not trip the abort.
+      - name: Race detector on the packages with concurrency tests
+        run: >-
+          go test -race -count=1
+          ./internal/collect/aws ./internal/collect/github ./internal/collect/gcp
+          ./internal/collect/azure ./internal/collect/kubernetes
+          ./internal/app/correlate ./internal/jobs ./internal/app/llmusage
+          ./internal/llm/toolloop ./internal/app/enrich ./internal/app/webhook
+          ./internal/scanner/imagevuln ./internal/obs
+        env:
+          CGO_LDFLAGS: "-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib"
+
+      - name: Save the Go caches
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.gocache.outputs.cache-primary-key }}
+
+  generated:
+    name: generated files are current
+    needs: fetch-ladybug
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.26.11"
+          cache: true
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: liblbug-so
+          path: /tmp/ladybug
+
+      - name: Install liblbug
+        run: sudo cp -P /tmp/ladybug/liblbug.so* /usr/local/lib/ && sudo ldconfig
+
+      # frontend/src/generated/graph-schema.json is a committed derivation of the
+      # graphschema registry, the single source of truth. Nothing regenerated
+      # or diffed it, so a registry edit that forgot `go run ./cmd/graphschema-gen`
+      # shipped a frontend reading a stale edge-type set — silently, which is the
+      # registry-drift class this check exists to prevent. Mirrors the frontend job's
+      # api.gen.ts gate.
+      - name: graph-schema.json is regenerated from the registry
+        run: |
+          go run ./cmd/graphschema-gen
+          git diff --exit-code frontend/src/generated/graph-schema.json
+        env:
+          CGO_LDFLAGS: "-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib"
+
+      # frontend/src/generated/score-bands.json carries enrich's band thresholds to
+      # every UI filter, legend and colour. Same gate as graph-schema.json above
+      # (TestExportBandsJSONIsFresh fails the same drift inside go test).
+      - name: score-bands.json is regenerated from the enrich thresholds
+        run: |
+          go run ./cmd/scoreband-gen
+          git diff --exit-code frontend/src/generated/score-bands.json
+        env:
+          CGO_LDFLAGS: "-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib"
+
+      # docs/cspm-coverage.md is the published benchmark-coverage answer, rendered
+      # from internal/checks/benchmarks/*.yaml. Same gate as graph-schema.json
+      # above (TestCoverageDocIsCurrent fails the same drift inside go test).
+      - name: cspm-coverage.md is regenerated from the benchmark matrices
+        run: |
+          go run ./cmd/cspm-coverage
+          git diff --exit-code docs/cspm-coverage.md
+
+  govulncheck:
+    name: govulncheck
+    needs: fetch-ladybug
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.26.11"
+          cache: true
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: liblbug-so
+          path: /tmp/ladybug
+
+      - name: Install liblbug
+        run: sudo cp -P /tmp/ladybug/liblbug.so* /usr/local/lib/ && sudo ldconfig
+
+      # Known-vulnerability gate on the shipped binary. Binary mode, because
+      # source-mode govulncheck peaks near 20 GB RSS on this dependency graph
+      # and gets OOM-killed on a standard runner. See scripts/govulncheck.sh.
+      - name: govulncheck (binary)
+        run: |
+          go build -o /tmp/graph ./cmd/graph
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          scripts/govulncheck.sh /tmp/graph
+        env:
+          CGO_LDFLAGS: "-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib"
+
+  # ── Structural-guard mutation audit ────────────────────────────────────
+  # This repo's most valuable tests are the guards catalogued in
+  # internal/guardmutation/mutations_test.go: mostly structural guards that fail
+  # when a bug class is reintroduced, plus selected behavioural tests. A guard
+  # NAMED for a specific bug can still pass
+  # with that bug fully reintroduced, and nothing notices short of a manual
+  # check. A guard's existence is no evidence it guards anything, so this job proves it:
+  # for each guard it reintroduces the bug the guard exists to prevent, runs
+  # that guard alone, and requires it to FAIL.
+  #
+  # It EDITS FILES IN THE WORKING TREE, which is why it is its own job on its
+  # own checkout (never beside `unit`) and behind the `guardmutation` build tag
+  # (never a side effect of `go test ./...`). The catalogue's own consistency
+  # checks are untagged and already run in `unit`.
+  #
+  # Runs on PRs and on main alike: main is what releases are cut from, so the
+  # gate has to be the same on both. Nothing here is skipped by event.
+
+  guard-mutation:
+    name: structural guards bite (${{ matrix.shard }}/5)
+    needs: fetch-ladybug
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # The harness mutates one guard at a time (about 5 seconds each, after a build
+    # warm-up), so the catalogue splits cleanly: each shard has its own checkout
+    # and audits every fifth mutation.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4]
+    env:
+      GUARD_SHARD: ${{ matrix.shard }}/5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.26.11"
+          cache: false
+
+      # Restores the build cache that `unit` (first job above) saves; see there.
+      - name: Restore the Go caches
+        id: gocache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-test-${{ runner.os }}-${{ hashFiles('go.sum', 'internal/graphdb/ladybug/go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-${{ hashFiles('go.sum', 'internal/graphdb/ladybug/go.sum') }}-
+            go-test-${{ runner.os }}-
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: liblbug-so
+          path: /tmp/ladybug
+
+      - name: Install liblbug
+        run: sudo cp -P /tmp/ladybug/liblbug.so* /usr/local/lib/ && sudo ldconfig
+
+      # Warm the build cache BEFORE the harness. Each guard is run as its own
+      # `go test` subprocess under a 10-minute guardTimeout, and on a cold runner
+      # the first guard that touches cmd/graph spends that entire budget linking
+      # liblbug rather than evaluating anything. That timeout then surfaces as
+      # "baseline is not green on the unmutated tree" with EMPTY output, which
+      # reads as a broken guard rather than a slow build. Compiling every test binary up front (without running
+      # a single test) makes the timeout measure the guard, which is what it is
+      # for.
+      - name: Warm the build cache
+        run: go test -run NONE -count=1 ./cmd/... ./internal/... > /dev/null
+        env:
+          CGO_LDFLAGS: "-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib"
+
+      # Each mutation runs ONLY the guard under test (`go test -run '^Name$'`);
+      # the full suite per mutation would take hours and says nothing extra.
+      - name: Every structural guard fails under its own mutation
+        run: go test -tags=guardmutation ./internal/guardmutation -run TestGuardsBite -v -count=1 -timeout 40m
+        env:
+          CGO_LDFLAGS: "-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib"
+
+      # The harness auditing itself: a fixture module holding one real guard and
+      # one deliberately toothless one, which the driver must tell apart. Without
+      # it, "all guards bite" is indistinguishable from a runner that never
+      # noticed anything — the exact failure mode this job exists to fix.
+      - name: The harness itself detects a non-biting guard
+        if: matrix.shard == 0
+        run: go test -tags=guardmutation ./internal/guardmutation -run TestHarnessDetectsANonBitingGuard -v -count=1
+        env:
+          CGO_LDFLAGS: "-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib"
+
+  # ── Migration numbering ────────────────────────────────────────────────
+  # goose runs in strict order, so a migration numbered below one main already
+  # carries makes every deployed database refuse to boot. Only a PR knows which
+  # side landed first; the unit test (internal/migrate) guards duplicates and
+  # gaps. See docs/migrations.md.
+  migration-order:
+    name: migration numbering
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: New migrations are numbered above the base branch's highest
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: scripts/check-migration-order.sh "origin/${BASE_REF}"
+
+  # ── Secret scan ────────────────────────────────────────────────────────
+  # gitleaks with its default rules over the tree and every commit a change
+  # adds, and no ignore file:
+  # test fixtures stay clean by construction (low-entropy placeholders, or
+  # values built at run time), so a hit is a real leak to remove, never one to
+  # allowlist. The release binary is checked against the sha256 pinned here.
+  secret-scan:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install gitleaks 8.30.1
+        env:
+          VERSION: "8.30.1"
+          SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          tarball="gitleaks_${VERSION}_linux_x64.tar.gz"
+          curl -sSfL --retry 3 --retry-all-errors -o "$RUNNER_TEMP/$tarball" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/${tarball}"
+          echo "${SHA256}  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" gitleaks
+      - name: No secrets in the tree
+        run: '"$RUNNER_TEMP/gitleaks" dir --no-banner --redact --exit-code 1 .'
+      # The commits a pull request or push adds, so a secret committed and then
+      # deleted inside the change still fails. With no earlier commit to start
+      # from (the first push to main, or a force push), the tree scan above is
+      # the check.
+      - name: No secrets in the commits this change adds
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            echo "no base commit ${BASE}; the tree scan covers this push"
+            exit 0
+          fi
+          "$RUNNER_TEMP/gitleaks" git --no-banner --redact --exit-code 1 \
+            --log-opts="${BASE}..HEAD" .
+
+  # ── Frontend ────────────────────────────────────────────────────────────
+  frontend:
+    name: frontend (typecheck, test, spec drift)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .tool-versions
+      - run: bun install --frozen-lockfile
+      - run: bun run gen:api
+      - run: git diff --exit-code src/lib/api.gen.ts
+      # The "lint" script is the TypeScript type check (tsc); there is no linter.
+      - name: typecheck
+        run: bun run lint
+      - run: bun run test
+      # web/'s SPA and CSP tests skip without a built bundle, and no other job
+      # builds one. web/ has no cgo dependency, so plain Go runs them here.
+      - run: bun run build
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.26.11"
+          cache: true
+      - run: go test -count=1 ./web/
+        working-directory: .
+
+  # ── Integration + OpenAPI contract ─────────────────────────────────────
+  integration:
+    name: integration + spec contract
+    needs: fetch-ladybug
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.26.11"
+          cache: false
+
+      # Restores the build cache that `unit` (first job above) saves; see there.
+      - name: Restore the Go caches
+        id: gocache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-test-${{ runner.os }}-${{ hashFiles('go.sum', 'internal/graphdb/ladybug/go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-${{ hashFiles('go.sum', 'internal/graphdb/ladybug/go.sum') }}-
+            go-test-${{ runner.os }}-
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: liblbug-so
+          path: /tmp/ladybug
+
+      - name: Install liblbug
+        run: sudo cp -P /tmp/ladybug/liblbug.so* /usr/local/lib/ && sudo ldconfig
+
+      - name: Start infra
+        run: docker compose up -d
+
+      - name: Wait for postgres + clickhouse
+        run: |
+          ok=""
+          for _ in $(seq 1 60); do
+            if curl -sf http://localhost:8123/ping >/dev/null \
+               && docker compose exec -T postgres pg_isready -U graph -d graph >/dev/null 2>&1; then
+              ok=1; break
+            fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then
+            echo "::error::postgres/clickhouse did not become ready"
+            docker compose ps
+            docker compose logs clickhouse | tail -40
+            exit 1
+          fi
+
+      - name: Apply migrations
+        run: go run ./cmd/graph migrate
+        env:
+          CGO_LDFLAGS: "-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib"
+          DATABASE_URL: postgres://graph:graph@localhost:5432/graph?sslmode=disable
+          CLICKHOUSE_URL: clickhouse://graph:graph@localhost:9000/graph
+
+      - name: Integration tests (incl. openapi contract test)
+        # -p 1: run one package's tests at a time against the shared ClickHouse
+        # container. docker-compose.yml sets no memory/connection limit on it, so
+        # Go's default cross-package parallelism (= GOMAXPROCS) would open that
+        # many packages' worth of concurrent connections against it, which can
+        # surface as dropped-connection errors across unrelated packages.
+        # Trades CI wall-clock time for not overwhelming the one container every
+        # package's setup/teardown/migration talks to.
+        run: go test -tags=integration -p 1 ./... -count=1
+        env:
+          CGO_LDFLAGS: "-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib"
+
+  # ── Release stack, least-privilege users ───────────────────────────────
+  # The integration job uses the root docker-compose.yml's admin users. This
+  # one boots deploy/docker-compose as shipped (the chart's postgres-init.sql
+  # and clickhouse-users.xml), so a grant the code needs and the users file
+  # lacks fails here instead of on a fresh install: migrate runs as
+  # graph_migrate, serve and the worker as graph, a scanner container as
+  # graph_scanner, and the datastores must refuse each what it was not given.
+  release-stack:
+    name: release stack (least-privilege datastore users)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: deploy/docker-compose
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No .env: the init service generates every secret, as for a first-time user.
+      - name: Build and start
+        run: docker compose up -d --build --wait --wait-timeout 900
+
+      - name: Serve and the worker work as the app users
+        run: |
+          set -euo pipefail
+          docker compose exec -T serve /graph user create --email ci@example.com --role admin > /dev/null
+          TOKEN=$(docker compose exec -T serve /graph user token --email ci@example.com | tr -d '\r')
+          for path in /readyz /api/assets /api/assets/summary /api/findings /api/findings/summary; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8080$path")
+            case "$code" in 2??) ;; *) echo "GET $path returned $code" >&2; exit 1 ;; esac
+          done
+          if docker compose logs serve worker migrate | grep -iE 'ACCESS_DENIED|permission denied|Not enough privileges'; then
+            echo "an app process was refused a privilege it uses" >&2; exit 1
+          fi
+
+      - name: A restart keeps the data and the secrets
+        run: |
+          set -euo pipefail
+          docker compose down
+          docker compose up -d --wait --wait-timeout 300
+          TOKEN=$(docker compose exec -T serve /graph user token --email ci@example.com | tr -d '\r')
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/assets)
+          [ "$code" = 200 ] || { echo "GET /api/assets after a restart returned $code" >&2; exit 1; }
+
+      - name: The datastores give graph what the code runs and refuse the rest
+        run: |
+          set -euo pipefail
+          # The passwords the init service generated, from the container that holds them.
+          secret() { docker compose exec -T "$1" sh -c ". /secrets/env; printf %s \"\$$2\""; }
+          CLICKHOUSE_PASSWORD=$(secret clickhouse GRAPH_CH_APP_PASSWORD)
+          priv=$(docker compose exec -T postgres psql -U postgres -d graph -tAc \
+            "SELECT rolsuper OR rolcreaterole OR rolcreatedb FROM pg_roles WHERE rolname = 'graph'" | tr -d '\r')
+          [ "$priv" = f ] || { echo "Postgres role graph is privileged: '$priv'" >&2; exit 1; }
+          ch() { docker compose exec -T clickhouse clickhouse-client -u "$1" --password "$2" -q "$3" 2>&1; }
+          # The mutations the code runs as graph (connector purge, part compaction).
+          for q in "ALTER TABLE graph.assets DELETE WHERE 0" "ALTER TABLE graph.graph_edges DELETE WHERE 0" \
+                   "OPTIMIZE TABLE graph.findings FINAL" "SELECT count() FROM system.parts" \
+                   "SELECT count() FROM system.projection_parts"; do
+            ch graph "$CLICKHOUSE_PASSWORD" "$q" > /dev/null || { echo "ClickHouse user graph was refused: $q" >&2; exit 1; }
+          done
+          for q in "CREATE TABLE graph.ci_probe (a UInt8) ENGINE = Memory" \
+                   "ALTER TABLE graph.audit_events DELETE WHERE 1" \
+                   "ALTER TABLE graph.findings DELETE WHERE 0" \
+                   "TRUNCATE TABLE graph.signals" \
+                   "CREATE USER ci_probe"; do
+            if out=$(ch graph "$CLICKHOUSE_PASSWORD" "$q"); then
+              echo "ClickHouse user graph was allowed: $q" >&2; exit 1
+            fi
+            grep -q ACCESS_DENIED <<<"$out" || { echo "$q failed for another reason: $out" >&2; exit 1; }
+          done
+
+      - name: The bundled ClickHouse has no user without a password and no admin
+        run: |
+          set -euo pipefail
+          # Every user the image or clickhouse-users.xml could define, with an
+          # empty password and without the container's CLICKHOUSE_USER /
+          # CLICKHOUSE_PASSWORD: each must fail to authenticate.
+          for u in default graph graph_migrate graph_scanner; do
+            if out=$(docker compose exec -T clickhouse env -u CLICKHOUSE_USER -u CLICKHOUSE_PASSWORD \
+                clickhouse-client -u "$u" --password '' -q 'SELECT 1' 2>&1); then
+              echo "ClickHouse let $u in without a password" >&2; exit 1
+            fi
+            grep -q AUTHENTICATION_FAILED <<<"$out" || { echo "$u without a password failed for another reason: $out" >&2; exit 1; }
+          done
+          # The operator's path (README.md): in the container clickhouse-client
+          # logs in as graph_migrate, with the generated password.
+          mig() { docker compose exec -T clickhouse sh -c ". /secrets/env; clickhouse-client --password \"\$CLICKHOUSE_PASSWORD\" -q \"$1\"" 2>&1; }
+          who=$(mig 'SELECT currentUser()' | tr -d '\r')
+          [ "$who" = graph_migrate ] || { echo "in-container clickhouse-client is '$who', want graph_migrate" >&2; exit 1; }
+          if out=$(mig 'CREATE USER ci_probe'); then
+            echo "graph_migrate can manage users" >&2; exit 1
+          fi
+          grep -q ACCESS_DENIED <<<"$out" || { echo "CREATE USER failed for another reason: $out" >&2; exit 1; }
+
+      - name: The scanner works as graph_scanner and is refused the rest
+        run: |
+          set -euo pipefail
+          secret() { docker compose exec -T "$1" sh -c ". /secrets/env; printf %s \"\$$2\""; }
+          POSTGRES_SCANNER_PASSWORD=$(secret postgres GRAPH_SCANNER_DB_PASSWORD)
+          CLICKHOUSE_SCANNER_PASSWORD=$(secret clickhouse GRAPH_CH_SCANNER_PASSWORD)
+          # Compose runs nuclei in the worker. Stop it so the scan jobs below
+          # can only run in a scanner container with the scanner's users, as
+          # the Helm chart's scanner pod has them.
+          docker compose stop worker
+          docker run -d --name ci-scanner --network vulngraph_default \
+            -e DATABASE_URL="postgres://graph_scanner:${POSTGRES_SCANNER_PASSWORD}@postgres:5432/graph?sslmode=disable" \
+            -e CLICKHOUSE_URL="clickhouse://graph_scanner:${CLICKHOUSE_SCANNER_PASSWORD}@clickhouse:9000/graph" \
+            vulngraph:local scanner > /dev/null
+          for _ in $(seq 60); do
+            docker logs ci-scanner 2>&1 | grep -q 'graph scanner started' && break
+            [ "$(docker inspect -f '{{.State.Running}}' ci-scanner)" = true ] || break
+            sleep 2
+          done
+          docker logs ci-scanner 2>&1 | grep -q 'graph scanner started' || { echo "the scanner did not start" >&2; exit 1; }
+
+          # An estate scan and a profile run, each executed by the scanner
+          # (no assets, so no targets: they read assets, record their runs and
+          # finish).
+          TOKEN=$(docker compose exec -T serve /graph user token --email ci@example.com | tr -d '\r')
+          api() { curl -sSf -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' "$@"; }
+          api -X POST http://127.0.0.1:8080/api/scans
+          PROFILE=$(api -X POST -d '{"name":"ci","template_strategy":"all","scanner_type":"nuclei","enabled":true}' \
+            http://127.0.0.1:8080/api/scan-profiles | jq -r .id)
+          api -X POST "http://127.0.0.1:8080/api/scan-profiles/$PROFILE/trigger" > /dev/null
+          for _ in $(seq 60); do
+            RUNS=$(api http://127.0.0.1:8080/api/scans)
+            jq -e 'length == 2 and all(.status != "running")' <<<"$RUNS" > /dev/null && break
+            sleep 2
+          done
+          jq -e 'length == 2 and all(.status == "completed")' <<<"$RUNS" > /dev/null ||
+            { echo "the scanner's runs did not complete: $RUNS" >&2; exit 1; }
+          if docker logs ci-scanner 2>&1 | grep -iE 'ACCESS_DENIED|permission denied|Not enough privileges'; then
+            echo "the scanner was refused a privilege it uses" >&2; exit 1
+          fi
+
+          # What would make it a Vulngraph admin, open connector credentials or
+          # rewrite the graph and the audit trail.
+          for q in "INSERT INTO users DEFAULT VALUES" "UPDATE users SET role = 'admin'" \
+                   "INSERT INTO api_keys DEFAULT VALUES" "SELECT count(*) FROM sessions" \
+                   "SELECT count(*) FROM connectors" "DELETE FROM scan_profiles"; do
+            if out=$(docker compose exec -T postgres psql -U graph_scanner -d graph -v ON_ERROR_STOP=1 -tAc "$q" 2>&1); then
+              echo "Postgres role graph_scanner was allowed: $q" >&2; exit 1
+            fi
+            grep -q 'permission denied' <<<"$out" || { echo "$q failed for another reason: $out" >&2; exit 1; }
+          done
+          ch() { docker compose exec -T clickhouse clickhouse-client -u graph_scanner --password "$CLICKHOUSE_SCANNER_PASSWORD" -q "$1" 2>&1; }
+          for q in "INSERT INTO graph.findings (id) SELECT id FROM graph.findings WHERE 0" \
+                   "SELECT count() FROM graph.assets" "SELECT count() FROM graph.finding_enrichment"; do
+            ch "$q" > /dev/null || { echo "ClickHouse user graph_scanner was refused: $q" >&2; exit 1; }
+          done
+          for q in "SELECT count(*) FROM scan_profiles" "SELECT count(*) FROM scan_runs" \
+                   "SELECT count(*) FROM scan_findings" "SELECT count(*) FROM river_job"; do
+            docker compose exec -T postgres psql -U graph_scanner -d graph -v ON_ERROR_STOP=1 -tAc "$q" > /dev/null ||
+              { echo "Postgres role graph_scanner was refused: $q" >&2; exit 1; }
+          done
+          for q in "INSERT INTO graph.assets (id) SELECT id FROM graph.assets WHERE 0" \
+                   "SELECT count() FROM graph.audit_events" \
+                   "SELECT count() FROM graph.graph_edges" \
+                   "ALTER TABLE graph.findings DELETE WHERE 0" \
+                   "CREATE TABLE graph.ci_probe (a UInt8) ENGINE = Memory" \
+                   "SELECT * FROM url('http://127.0.0.1:8123/ping', 'LineAsString')"; do
+            if out=$(ch "$q"); then
+              echo "ClickHouse user graph_scanner was allowed: $q" >&2; exit 1
+            fi
+            grep -q ACCESS_DENIED <<<"$out" || { echo "$q failed for another reason: $out" >&2; exit 1; }
+          done
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose ps -a && docker compose logs --tail 80 && { docker logs --tail 80 ci-scanner || true; }
+
+  # ── Helm chart ─────────────────────────────────────────────────────────
+  # Lints the chart and renders it for the shapes deploy/README.md documents:
+  # defaults, the example values, external datastores, and the opt-in extras.
+  # A template error otherwise surfaces only at a user's `helm install`.
+  helm:
+    name: helm lint + template
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+        with:
+          version: v3.19.0
+      - name: Lint and render
+        env:
+          CHART: deploy/helm-chart/graph
+          # secretKey must be base64 of 32 bytes (the chart checks it): 32 zero bytes.
+          SECRETS: secret.secretKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=,secret.postgresPassword=ci-pg,secret.postgresSuperuserPassword=ci-pg-su,secret.postgresScannerPassword=ci-pg-scan,secret.clickhousePassword=ci-ch,secret.clickhouseMigratePassword=ci-ch-migrate,secret.clickhouseScannerPassword=ci-ch-scan
+          DB_SECRETS: secret.postgresPassword=ci-pg,secret.postgresSuperuserPassword=ci-pg-su,secret.postgresScannerPassword=ci-pg-scan,secret.clickhousePassword=ci-ch,secret.clickhouseMigratePassword=ci-ch-migrate,secret.clickhouseScannerPassword=ci-ch-scan
+          KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+        run: |
+          set -euo pipefail
+          helm lint --strict "$CHART" --set-string "$SECRETS"
+          helm lint --strict "$CHART" -f deploy/helm-values/example.yaml --set-string "$SECRETS"
+          helm template graph "$CHART" --set-string "$SECRETS" > /dev/null
+          helm template graph "$CHART" -f deploy/helm-values/example.yaml --set-string "$SECRETS" > /dev/null
+          EXTERNAL=(--set-string "secret.secretKey=$KEY" --set postgres.enabled=false --set clickhouse.enabled=false
+            --set-string secret.databaseUrl=postgres://u:p@db:5432/graph
+            --set-string secret.clickhouseUrl=clickhouse://u:p@ch:9000/graph)
+          SCANNER_URLS=(--set-string secret.scannerDatabaseUrl=postgres://s:p@db:5432/graph
+            --set-string secret.scannerClickhouseUrl=clickhouse://s:p@ch:9000/graph)
+          helm template graph "$CHART" "${EXTERNAL[@]}" "${SCANNER_URLS[@]}" > /dev/null
+          helm template graph "$CHART" "${EXTERNAL[@]}" --set scanner.enabled=false > /dev/null
+          # An external datastore without a scanner DSN refuses to render rather
+          # than handing the scanner the app's users.
+          for missing in scannerDatabaseUrl scannerClickhouseUrl; do
+            if helm template graph "$CHART" "${EXTERNAL[@]}" "${SCANNER_URLS[@]}" \
+              --set-string "secret.$missing=" > /dev/null 2>&1; then
+              echo "an external datastore rendered without secret.$missing" >&2; exit 1
+            fi
+          done
+          helm template graph "$CHART" --set-string "$SECRETS" \
+            --set scanner.enabled=true --set aws.enabled=true \
+            --set-string aws.roleArn=arn:aws:iam::123456789012:role/graph \
+            --set kubernetesRBAC.collectorRead=true \
+            --set ingress.enabled=true --set-string ingress.host=graph.example.com \
+            --set-string sso.google.clientId=id --set-string secret.googleClientSecret=s \
+            --set-string sso.google.allowedDomains=example.com \
+            --set-string sso.google.redirectUrl=https://graph.example.com/api/auth/google/callback > /dev/null
+          # Security-critical opt-ins, each rendered on its own so a guard that
+          # fails the render (or a template that stops rendering) shows up here.
+          NODES='networkPolicy.nodeCIDRs={10.0.0.0/16}'
+          INGRESS_NS=networkPolicy.ingressNamespace=ingress-nginx
+          helm template graph "$CHART" --set-string "$SECRETS" \
+            --set-string "$INGRESS_NS" --set "$NODES" --set metrics.enabled=true \
+            --show-only templates/networkpolicy.yaml > /dev/null
+          helm template graph "$CHART" --set-string "$SECRETS" \
+            --set config.oauth2Proxy=true --set-string "$INGRESS_NS" --set "$NODES" \
+            --set-string config.oauth2ProxyOidcIssuer=https://idp.example.com \
+            --set-string config.oauth2ProxyOidcAudience=graph \
+            --set-string config.oauth2ProxyAllowedDomains=example.com > /dev/null
+          helm template graph "$CHART" --set-string "$SECRETS" \
+            --set config.oauth2Proxy=true --set-string "$INGRESS_NS" --set "$NODES" \
+            --set-string secret.oauth2ProxySharedSecret=ci-shared-secret-at-least-32-characters \
+            --set-string config.oauth2ProxyAllowedDomains=example.com > /dev/null
+          # The default render is least-privilege: one NetworkPolicy per
+          # component, the datastores admit only the graph pods that hold their
+          # credentials, and no graph container gets an admin datastore password.
+          NETPOL=$(helm template graph "$CHART" --set-string "$SECRETS" --show-only templates/networkpolicy.yaml)
+          for name in serve worker scanner postgres clickhouse; do
+            if ! grep -qx "  name: graph-$name" <<<"$NETPOL"; then
+              echo "the default render has no graph-$name NetworkPolicy" >&2; exit 1
+            fi
+          done
+          if [[ $(grep -c 'values: \[serve, worker, scanner\]' <<<"$NETPOL") != 2 ]]; then
+            echo "a bundled datastore's NetworkPolicy admits pods other than serve, worker and scanner" >&2; exit 1
+          fi
+          GRAPH_PODS=$(helm template graph "$CHART" --set-string "$SECRETS" \
+            --show-only templates/deployment-serve.yaml --show-only templates/deployment-worker.yaml \
+            --show-only templates/deployment-scanner.yaml)
+          if grep -qE 'key: (postgres-superuser-password|clickhouse-migrate-password)' <<<"$GRAPH_PODS"; then
+            echo "a graph container reads a datastore admin password" >&2; exit 1
+          fi
+          if [[ $(grep -c 'key: clickhouse-migrate-url' <<<"$GRAPH_PODS") != 1 ]]; then
+            echo "clickhouse-migrate-url must reach the migrate init container and nothing else" >&2; exit 1
+          fi
+          # The scanner connects as graph_scanner on both datastores, and only it does.
+          SCANNER_POD=$(helm template graph "$CHART" --set-string "$SECRETS" --show-only templates/deployment-scanner.yaml)
+          if [[ $(grep -cE 'key: (scanner-database-url|scanner-clickhouse-url)$' <<<"$SCANNER_POD") != 2 ]] ||
+             grep -qE 'key: (database-url|clickhouse-url|clickhouse-migrate-url)$' <<<"$SCANNER_POD"; then
+            echo "the scanner pod does not connect as graph_scanner" >&2; exit 1
+          fi
+          if [[ $(grep -cE 'key: scanner-' <<<"$GRAPH_PODS") != 2 ]]; then
+            echo "a scanner DSN reaches a pod other than the scanner" >&2; exit 1
+          fi
+          for missing in postgresSuperuserPassword clickhouseMigratePassword postgresScannerPassword clickhouseScannerPassword; do
+            if helm template graph "$CHART" --set-string "$SECRETS" --set-string "secret.$missing=" > /dev/null 2>&1; then
+              echo "rendered without secret.$missing" >&2; exit 1
+            fi
+          done
+          for reused in postgresSuperuserPassword=ci-pg clickhouseMigratePassword=ci-ch \
+                        postgresScannerPassword=ci-pg postgresScannerPassword=ci-pg-su \
+                        clickhouseScannerPassword=ci-ch clickhouseScannerPassword=ci-ch-migrate; do
+            if helm template graph "$CHART" --set-string "$SECRETS" --set-string "secret.$reused" > /dev/null 2>&1; then
+              echo "rendered with secret.$reused, another user's password" >&2; exit 1
+            fi
+          done
+          helm template graph "$CHART" --set-string "$SECRETS" \
+            --set-string sso.okta.clientId=id --set-string sso.okta.domain=example.okta.com \
+            --set-string secret.oktaClientSecret=s --set-string sso.okta.allowedDomains=example.com \
+            --set-string sso.okta.redirectUrl=https://graph.example.com/api/auth/okta/callback > /dev/null
+          helm template graph "$CHART" --set-string "$SECRETS" \
+            --set scanner.enabled=true --set-string "$INGRESS_NS" --set "$NODES" \
+            --set serviceAccount.azureWorkloadIdentity=true \
+            --set-string secret.retiredSecretKeys=AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE= > /dev/null
+          # The scanner pod is the default; the opt-out must still render.
+          helm template graph "$CHART" --set-string "$SECRETS" --set scanner.enabled=false > /dev/null
+          if ! helm template graph "$CHART" --set-string "$SECRETS" \
+            --show-only templates/deployment-scanner.yaml | grep -q 'name: graph-scanner'; then
+            echo "the default render has no scanner pod: nuclei would run in the worker" >&2; exit 1
+          fi
+          # With no tag or digest set, every graph container pulls the appVersion
+          # tag, the tag release.yaml pushes for the matching vX.Y.Z.
+          APP_VERSION=$(sed -n 's/^appVersion: *"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$CHART/Chart.yaml")
+          DEFAULT=$(helm template graph "$CHART" --set-string "$SECRETS" --set nodePosture.enabled=true \
+            | grep -c "image: \"ghcr.io/vulngraph/vulngraph:$APP_VERSION\"")
+          if [[ "$DEFAULT" != 6 ]]; then
+            echo "the default image tag $APP_VERSION is pulled by $DEFAULT graph containers, want 6" >&2; exit 1
+          fi
+          # image.digest pins every graph container; a malformed one fails the render.
+          DIGEST=sha256:0000000000000000000000000000000000000000000000000000000000000000
+          PINNED=$(helm template graph "$CHART" --set-string "$SECRETS" --set nodePosture.enabled=true \
+            --set-string image.digest="$DIGEST" | grep -c "ghcr.io/vulngraph/vulngraph@$DIGEST")
+          if [[ "$PINNED" != 6 ]]; then
+            echo "image.digest pinned $PINNED graph containers, want 6" >&2; exit 1
+          fi
+          if helm template graph "$CHART" --set-string "$SECRETS" --set-string image.digest=latest > /dev/null 2>&1; then
+            echo "a malformed image.digest rendered" >&2; exit 1
+          fi
+          # The hardened overlay renders with the operator's values, and
+          # hardened: true refuses every gap it checks, naming it.
+          scripts/check-chart-hardened.sh "$CHART" deploy/helm-values/hardened.yaml
+          # avoidSpotNodes keeps pods off nodes whose spot label has a listed
+          # value (NotIn). A key values.yaml lists brings its cloud's value; any
+          # other key refuses to render without avoidSpotNodeLabelValues.
+          spot_values() {
+            helm template graph "$CHART" --set-string "$SECRETS" --set avoidSpotNodes=true "$@" \
+              --show-only templates/deployment-worker.yaml | grep -A3 'operator: NotIn' | tr -d ' \n'
+          }
+          for want in 'cloud.google.com/gke-spot|"true"' 'eks.amazonaws.com/capacityType|"SPOT"' \
+            'karpenter.sh/capacity-type|"spot"' 'kubernetes.azure.com/scalesetpriority|"spot"'; do
+            key=${want%%|*}
+            if ! spot_values --set-string "avoidSpotNodeLabelKey=$key" | grep -qF "values:-${want#*|}"; then
+              echo "avoidSpotNodes did not render NotIn [${want#*|}] for $key" >&2; exit 1
+            fi
+          done
+          if ! spot_values --set-string avoidSpotNodeLabelKey=example.com/spot \
+            --set-json 'avoidSpotNodeLabelValues=["yes"]' | grep -qF 'values:-"yes"'; then
+            echo "avoidSpotNodes did not render avoidSpotNodeLabelValues" >&2; exit 1
+          fi
+          if helm template graph "$CHART" --set-string "$SECRETS" --set avoidSpotNodes=true \
+            --set-string avoidSpotNodeLabelKey=example.com/spot > /dev/null 2>&1; then
+            echo "avoidSpotNodes rendered an unlisted key with no avoidSpotNodeLabelValues" >&2; exit 1
+          fi
+          # Bundled datastore TLS: the DSN modes that need a certificate refuse
+          # to render without one.
+          helm template graph "$CHART" --set-string "$SECRETS" \
+            --set-string postgres.tlsSecret=pg-tls --set-string postgres.sslMode=verify-full \
+            --set-string clickhouse.tlsSecret=ch-tls --set clickhouse.secure=true > /dev/null
+          if helm template graph "$CHART" --set-string "$SECRETS" --set-string postgres.sslMode=require > /dev/null 2>&1; then
+            echo "postgres.sslMode=require rendered without postgres.tlsSecret" >&2; exit 1
+          fi
+          if helm template graph "$CHART" --set-string "$SECRETS" --set clickhouse.secure=true > /dev/null 2>&1; then
+            echo "clickhouse.secure rendered without clickhouse.tlsSecret" >&2; exit 1
+          fi
+          # Worker and scanner must build the same periodic schedule.
+          scripts/check-chart-schedule-env.sh "$CHART" --set-string "$SECRETS" \
+            --set scanner.enabled=true --set-string scanner.scanInterval=168h \
+            --set-string config.syncInterval=1h --set config.adjudicatorEnabled=true
+          # Chart-wide extraEnv / extraEnvFrom must not hand app secrets to the scanner.
+          SCANNER=$(helm template graph "$CHART" --set-string "$SECRETS" --set scanner.enabled=true \
+            --set 'extraEnvFrom[0].secretRef.name=graph-extra' \
+            --set 'extraEnv[0].name=GRAPH_SECRET_KEY' --set-string 'extraEnv[0].value=x' \
+            --show-only templates/deployment-scanner.yaml)
+          if grep -qE 'graph-extra|GRAPH_SECRET_KEY' <<<"$SCANNER"; then
+            echo "chart-wide extraEnv/extraEnvFrom reached the scanner pod"; exit 1
+          fi
+          # Admin TOTP, the SSO group gate and TLS_PROXY are first-class values, off by default.
+          if helm template graph "$CHART" --set-string "$SECRETS" | grep -qE 'REQUIRE_ADMIN_TOTP|OIDC_REQUIRED_GROUPS|TLS_PROXY'; then
+            echo "the default render sets REQUIRE_ADMIN_TOTP, OIDC_REQUIRED_GROUPS or TLS_PROXY" >&2; exit 1
+          fi
+          SERVE=$(helm template graph "$CHART" --set-string "$SECRETS" --set config.requireAdminTotp=true \
+            --set config.tlsProxy=true \
+            --set-string config.oidcRequiredGroups=vulngraph-users --show-only templates/deployment-serve.yaml)
+          if ! grep -A1 'name: REQUIRE_ADMIN_TOTP' <<<"$SERVE" | grep -q 'value: "true"'; then
+            echo "config.requireAdminTotp=true did not set REQUIRE_ADMIN_TOTP on serve" >&2; exit 1
+          fi
+          if ! grep -A1 'name: TLS_PROXY' <<<"$SERVE" | grep -q 'value: "true"'; then
+            echo "config.tlsProxy=true did not set TLS_PROXY on serve" >&2; exit 1
+          fi
+          if ! grep -A1 'name: OIDC_REQUIRED_GROUPS' <<<"$SERVE" | grep -q 'value: vulngraph-users'; then
+            echo "config.oidcRequiredGroups did not set OIDC_REQUIRED_GROUPS on serve" >&2; exit 1
+          fi
+          # The opt-in guards must keep failing closed.
+          if helm template graph "$CHART" --set-string "$SECRETS" --set config.oauth2Proxy=true \
+            --set-string config.oauth2ProxyOidcIssuer=https://idp.example.com \
+            --set-string config.oauth2ProxyOidcAudience=graph > /dev/null 2>&1; then
+            echo "oauth2Proxy rendered with serve's port open to every source" >&2; exit 1
+          fi
+          if helm template graph "$CHART" --set-string "$SECRETS" --set config.oauth2Proxy=true \
+            --set networkPolicy.enabled=false --set-string "$INGRESS_NS" --set "$NODES" \
+            --set-string config.oauth2ProxyOidcIssuer=https://idp.example.com \
+            --set-string config.oauth2ProxyOidcAudience=graph > /dev/null 2>&1; then
+            echo "oauth2Proxy rendered without networkPolicy" >&2; exit 1
+          fi
+          if helm template graph "$CHART" --set-string "$SECRETS" --set config.oauth2Proxy=true \
+            --set-string "$INGRESS_NS" --set "$NODES" > /dev/null 2>&1; then
+            echo "oauth2Proxy rendered without a token issuer or shared secret" >&2; exit 1
+          fi
+          if helm template graph "$CHART" --set-string "$SECRETS" --set-string "$INGRESS_NS" > /dev/null 2>&1; then
+            echo "networkPolicy.ingressNamespace rendered without nodeCIDRs" >&2; exit 1
+          fi
+          if helm template graph "$CHART" --set-string "$SECRETS" --set "$NODES" > /dev/null 2>&1; then
+            echo "networkPolicy.nodeCIDRs rendered without ingressNamespace" >&2; exit 1
+          fi
+          if helm template graph "$CHART" --set-string "$SECRETS" \
+            --set-string sso.google.clientId=id --set-string secret.googleClientSecret=s \
+            --set-string sso.google.allowedDomains=example.com > /dev/null 2>&1; then
+            echo "google SSO rendered without a redirectUrl" >&2; exit 1
+          fi
+          if helm template graph "$CHART" --set-string "$SECRETS" \
+            --set-string sso.okta.clientId=id --set-string sso.okta.domain=example.okta.com \
+            --set-string secret.oktaClientSecret=s --set-string sso.okta.allowedDomains=example.com > /dev/null 2>&1; then
+            echo "okta SSO rendered without a redirectUrl" >&2; exit 1
+          fi
+          # A key the binary would reject at startup fails the render instead.
+          if helm template graph "$CHART" --set-string secret.secretKey=ci-key \
+            --set-string "$DB_SECRETS" > /dev/null 2>&1; then
+            echo "a secretKey that is not base64 of 32 bytes rendered" >&2; exit 1
+          fi
+          if helm template graph "$CHART" --set-string "$SECRETS" \
+            --set-string secret.retiredSecretKeys=ci-old-key > /dev/null 2>&1; then
+            echo "a retiredSecretKeys entry that is not base64 of 32 bytes rendered" >&2; exit 1
+          fi
+          # The single-writer graph and the RWO snapshot claims cannot scale out.
+          if helm template graph "$CHART" --set-string "$SECRETS" --set worker.replicas=2 > /dev/null 2>&1; then
+            echo "worker.replicas=2 rendered with ladybug.enabled" >&2; exit 1
+          fi
+          helm template graph "$CHART" --set-string "$SECRETS" --set worker.replicas=2 --set ladybug.enabled=false > /dev/null
+          if helm template graph "$CHART" --set-string "$SECRETS" --set serve.replicas=2 \
+            --set serveLadybug.enabled=true --set serveLadybug.snapshotEnabled=true > /dev/null 2>&1; then
+            echo "serve.replicas=2 rendered with serveLadybug.snapshotEnabled" >&2; exit 1
+          fi
+          helm template graph "$CHART" --set-string "$SECRETS" --set serve.replicas=2 --set serveLadybug.enabled=true > /dev/null
+          # serve leaves the Service when it cannot reach Postgres (/readyz) but is
+          # restarted only when the process itself stops answering (/healthz).
+          SERVE=$(helm template graph "$CHART" --set-string "$SECRETS" --show-only templates/deployment-serve.yaml)
+          if ! grep -A1 'readinessProbe:' <<<"$SERVE" | grep -q 'path: /readyz' \
+            || ! grep -A1 'livenessProbe:' <<<"$SERVE" | grep -q 'path: /healthz'; then
+            echo "serve's readiness probe is not /readyz or its liveness probe is not /healthz" >&2; exit 1
+          fi
+          # imagePullSecrets reaches every pod the chart renders.
+          PODS=$(helm template graph "$CHART" --set-string "$SECRETS" --set nodePosture.enabled=true | grep -cE '^kind: (Deployment|StatefulSet|DaemonSet)$')
+          PULL=$(helm template graph "$CHART" --set-string "$SECRETS" --set nodePosture.enabled=true \
+            --set 'imagePullSecrets[0].name=ci-regcred' | grep -c 'name: ci-regcred')
+          if [[ "$PULL" != "$PODS" ]]; then
+            echo "imagePullSecrets reached $PULL of $PODS pods" >&2; exit 1
+          fi
+          # image.pullPolicy reaches every graph container, the migrate init container included.
+          POLICY=$(helm template graph "$CHART" --set-string "$SECRETS" --set nodePosture.enabled=true \
+            --set image.pullPolicy=Always | grep -c 'imagePullPolicy: Always')
+          if [[ "$POLICY" != 6 ]]; then
+            echo "image.pullPolicy reached $POLICY graph containers, want 6" >&2; exit 1
+          fi
+          # The VMRule sits in the shared alerts.namespace, so its name carries the
+          # release namespace and name; the SCC feed group renders only with config.sccOrgId.
+          VMRULE=$(helm template graph "$CHART" -n ci-ns --set-string "$SECRETS" --set alerts.enabled=true \
+            --show-only templates/vmrule.yaml)
+          if ! grep -qx '  name: ci-ns-graph-alerts' <<<"$VMRULE"; then
+            echo "the VMRule name does not carry the release namespace and name" >&2; exit 1
+          fi
+          if grep -q 'feed="scc"' <<<"$VMRULE"; then
+            echo "an SCC feed alert rendered without config.sccOrgId" >&2; exit 1
+          fi
+          VMRULE=$(helm template graph "$CHART" --set-string "$SECRETS" --set alerts.enabled=true \
+            --set-string config.sccOrgId=123 --show-only templates/vmrule.yaml)
+          if ! grep -q 'alert: GraphSCCFeedNeverRefreshed' <<<"$VMRULE"; then
+            echo "config.sccOrgId did not render the SCC feed alert" >&2; exit 1
+          fi
+
+  # ── Docker smoke test (PRs only) ──────────────────────────────────────────
+  # Catches Dockerfile/frontend build breakage before merge. No external
+  # registry or cloud credentials required — layers are cached via the GitHub
+  # Actions cache.
+  docker-build:
+    name: docker image smoke test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: graph:ci-smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+
+      # `version` needs no database, so a non-zero exit here is a load failure
+      # (a missing or mismatched shared library), not missing infrastructure.
+      - name: Smoke test — shared libs load
+        run: |
+          docker run --rm graph:ci-smoke version
+          echo "OK: binary loads its shared libraries (graph version exited 0)"

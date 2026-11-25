@@ -1,0 +1,95 @@
+{{- if .Values.clickhouse.enabled }}
+# ClickHouse defaults its thread pools / max_threads to the HOST core count it
+# detects (e.g. a 32-vCPU node), not the cgroup CPU limit. On a 2-CPU
+# limit that means one argMax-heavy query fans out ~32 threads → CFS throttling →
+# a container pinned at its CPU limit. These overrides cap CH's concurrency
+# to its actual CPU allocation. Keep `tuning` in sync with resources.limits.cpu.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: graph-clickhouse-config
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+data:
+  # Loaded into /etc/clickhouse-server/config.d/ — server-wide pools.
+  config.xml: |
+    <clickhouse>
+        <max_concurrent_queries>{{ include "graph.clickhouseMaxConcurrentQueries" . }}</max_concurrent_queries>
+        <background_pool_size>{{ .Values.clickhouse.tuning.backgroundPoolSize }}</background_pool_size>
+        <background_merges_mutations_concurrency_ratio>2</background_merges_mutations_concurrency_ratio>
+        <max_server_memory_usage>{{ .Values.clickhouse.tuning.maxServerMemoryBytes }}</max_server_memory_usage>
+
+        <!-- The mark caches count against max_server_memory_usage, and their
+             DEFAULTS do not know about it: 5 GiB each (mark + index-mark) plus an
+             8 GiB uncompressed cache is 18 GiB of allowance, more than a typical
+             server budget. Left alone, the caches can grow into most of the floor
+             the server sits at while IDLE — quietly taking the headroom queries
+             get killed for. Capping them is what makes the server budget real; it
+             is not a workaround for a too-small cap. The primary mark cache keeps
+             the larger share because it has by far the highest hit rate.
+             The uncompressed cache is never populated (use_uncompressed_cache=0);
+             it is capped so the latent 8 GiB allowance cannot become a memory
+             cliff if anyone ever turns it on. -->
+        <mark_cache_size>{{ .Values.clickhouse.tuning.markCacheBytes }}</mark_cache_size>
+        <index_mark_cache_size>{{ .Values.clickhouse.tuning.indexMarkCacheBytes }}</index_mark_cache_size>
+        <uncompressed_cache_size>{{ .Values.clickhouse.tuning.uncompressedCacheBytes }}</uncompressed_cache_size>
+
+        <!-- ClickHouse's own diagnostic logs default to NO TTL and grow forever:
+             left unbounded they can fill a small data disk and fail all
+             ingest (asset sync, findings, enrich). Cap every system log
+             at a short TTL so they self-purge and can never fill the disk —
+             a bigger disk would only postpone the same failure. ClickHouse recreates
+             each *_log table with the new TTL on restart. text_log is the noisiest
+             (per-line server logging), so it gets the tightest retention. -->
+        <query_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></query_log>
+        <query_thread_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></query_thread_log>
+        <query_views_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></query_views_log>
+        <part_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></part_log>
+        <trace_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></trace_log>
+        <metric_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></metric_log>
+        <asynchronous_metric_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></asynchronous_metric_log>
+        <processors_profile_log><ttl>event_date + INTERVAL 1 DAY DELETE</ttl></processors_profile_log>
+        <text_log><ttl>event_date + INTERVAL 1 DAY DELETE</ttl></text_log>
+        {{- if .Values.clickhouse.tlsSecret }}
+
+        <!-- clickhouse.tlsSecret: the secure native port. The graph pods
+             present no client certificate, so the server does not ask for one. -->
+        <tcp_port_secure>9440</tcp_port_secure>
+        <openSSL>
+            <server>
+                <certificateFile>/etc/clickhouse-server/tls/tls.crt</certificateFile>
+                <privateKeyFile>/etc/clickhouse-server/tls/tls.key</privateKeyFile>
+                <verificationMode>none</verificationMode>
+                <disableProtocols>sslv2,sslv3,tlsv1,tlsv1_1</disableProtocols>
+                <preferServerCiphers>true</preferServerCiphers>
+            </server>
+        </openSSL>
+        {{- end }}
+    </clickhouse>
+  # Loaded into /etc/clickhouse-server/users.d/ — the default profile (per-query).
+  users.xml: |
+    <clickhouse>
+        <profiles>
+            <default>
+                <max_threads>{{ .Values.clickhouse.tuning.maxThreads }}</max_threads>
+                <max_memory_usage>{{ .Values.clickhouse.tuning.maxMemoryBytes }}</max_memory_usage>
+                <!-- A backstop, not the bound. Every query carries its own Go
+                     context timeout (db.defaultSelectTimeout, 10 min, is the
+                     longest; bulk reads such as the asset sync load and the
+                     correlate view load run for minutes on a large estate), and
+                     latency-sensitive reads set a tighter max_execution_time per
+                     query. A server default below the longest Go timeout kills
+                     those bulk reads mid-sweep. -->
+                <max_execution_time>{{ .Values.clickhouse.tuning.maxExecutionSeconds }}</max_execution_time>
+                <!-- Per-query processor profiling writes a very high row rate into
+                     processors_profile_log — pure churn nothing here queries. The TTL
+                     caps its disk, this stops it at the source. -->
+                <log_processors_profiles>0</log_processors_profiles>
+            </default>
+        </profiles>
+    </clickhouse>
+  # Loaded into /etc/clickhouse-server/users.d/ — the users and their grants.
+  # deploy/docker-compose mounts the same file.
+  graph-users.xml: |
+    {{- .Files.Get "files/clickhouse-users.xml" | trim | nindent 4 }}
+{{- end }}

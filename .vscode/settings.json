@@ -1,0 +1,12 @@
+{
+  "go.toolsEnvVars": {
+    "CGO_ENABLED": "1"
+  },
+  "go.buildFlags": ["-v"],
+  "go.lintOnSave": "workspace",
+  "gopls": {
+    "build.env": {
+      "CGO_ENABLED": "1"
+    }
+  }
+}

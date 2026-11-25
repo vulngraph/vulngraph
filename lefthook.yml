@@ -1,0 +1,15 @@
+# Install once with: lefthook install
+pre-commit:
+  parallel: true
+  jobs:
+    - name: lint
+      run: golangci-lint run
+    - name: test
+      run: go test ./... -count=1
+    # The LadybugDB cgo binding is its own module, which the two jobs above skip.
+    - name: lint-ladybug
+      root: internal/graphdb/ladybug/
+      run: golangci-lint run ./...
+    - name: test-ladybug
+      root: internal/graphdb/ladybug/
+      run: go test ./... -count=1

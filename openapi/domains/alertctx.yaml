@@ -1,0 +1,189 @@
+# Alert context (internal/app/alertctx). Resolves the identifiers a SIEM alert
+# carries (IPs, ARNs, instance ids, hostnames, emails, namespace/name) to graph
+# assets and returns a bounded context per asset. Read-only: the POST exists
+# only because the identifier list is multi-valued and ARNs are awkward in a
+# query string, so any authenticated role (API keys with read scope included)
+# may call it.
+#
+# Every context section carries `known`. known=false means the section was NOT
+# MEASURED (its sub-lookup failed); the rest of that section's fields are zero
+# values and must not be read as "no risk".
+components:
+  pathItems:
+    getAlertContext:
+      post:
+        operationId: getAlertContext
+        tags: [alert-context]
+        summary: Graph context for the identifiers in an alert
+        description: |
+          Resolves each identifier to live graph assets with a match_type and
+          confidence, then returns per asset: summary, direct internet exposure,
+          attacker-direction blast radius, open findings (must-fix called out)
+          and, for identities, privilege-escalation evidence. Every input
+          identifier appears in `identifiers` with status `resolved`,
+          `unresolved` or `lookup_failed` (the lookup errored, so absence is not
+          proven). An STS assumed-role session ARN collapses to the role ARN.
+          The response is bounded (at most 10 identifiers, 5 expanded assets, 5
+          entries per top list); `truncated` is true when anything was cut.
+          Rate limited per user by ALERT_CONTEXT_RATE_LIMIT_PER_USER (30 per
+          minute by default, shared with the MCP get_alert_context tool).
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [identifiers]
+                properties:
+                  identifiers:
+                    type: array
+                    minItems: 1
+                    maxItems: 10
+                    items: { type: string }
+                    example: ["arn:aws:sts::123456789012:assumed-role/deploy/session-1", "203.0.113.7", "alice@example.com"]
+        responses:
+          '200':
+            description: Resolution outcome and per-asset context.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/AlertContext' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '429': { $ref: '../openapi.yaml#/components/responses/TooManyRequests' }
+
+  schemas:
+    AlertContext:
+      type: object
+      required: [summary, truncated, identifiers, assets, omitted_assets]
+      properties:
+        summary: { type: string, description: 'Deterministic one-line resolution coverage, including unresolved and failed identifiers.' }
+        truncated: { type: boolean, description: 'True when any list, walk or fetch was cut to stay within bounds.' }
+        identifiers:
+          type: array
+          items: { $ref: '#/components/schemas/AlertIdentifier' }
+        assets:
+          type: array
+          items: { $ref: '#/components/schemas/AlertAsset' }
+        omitted_assets:
+          type: array
+          items: { type: string }
+          description: Resolved asset ids beyond the expansion limit; query them individually.
+
+    AlertIdentifier:
+      type: object
+      required: [input, normalized, status, more_matches, matches]
+      properties:
+        input: { type: string }
+        normalized: { type: string, description: What was looked up (e.g. the role ARN for a session ARN). }
+        status: { type: string, enum: [resolved, unresolved, lookup_failed] }
+        reason: { type: string, description: 'Why unresolved or failed, or a note that a partial lookup failed.' }
+        more_matches: { type: boolean, description: More assets matched than are listed. }
+        matches:
+          type: array
+          items:
+            type: object
+            required: [asset_id, match_type, confidence]
+            properties:
+              asset_id: { type: string }
+              match_type: { type: string, enum: [id, arn, instance_id, ip, dns, email, k8s, name] }
+              confidence: { type: string, enum: [exact, high, medium, low] }
+
+    AlertAsset:
+      type: object
+      required: [asset, matched_by, exposure, blast_radius, findings, summary]
+      properties:
+        asset: { $ref: '#/components/schemas/AlertAssetSummary' }
+        matched_by:
+          type: array
+          items:
+            type: object
+            required: [input, match_type, confidence]
+            properties:
+              input: { type: string }
+              match_type: { type: string }
+              confidence: { type: string }
+        exposure:
+          type: object
+          required: [known, exposed_to_internet]
+          properties:
+            known: { type: boolean }
+            unavailable_reason: { type: string }
+            exposed_to_internet: { type: boolean }
+        blast_radius:
+          type: object
+          required: [known, count, by_type, top_reachable, truncated]
+          properties:
+            known: { type: boolean }
+            unavailable_reason: { type: string }
+            count: { type: integer, description: Reachable assets excluding the asset itself (attacker direction). }
+            by_type: { type: object, additionalProperties: { type: integer } }
+            top_reachable:
+              type: array
+              items:
+                type: object
+                required: [id, name, type, risk_score]
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  type: { type: string }
+                  risk_score: { type: integer }
+            truncated: { type: boolean }
+        findings:
+          type: object
+          required: [known, total, by_severity, must_fix, top, truncated]
+          properties:
+            known: { type: boolean }
+            unavailable_reason: { type: string }
+            total: { type: integer, description: Open findings; a lower bound when truncated. }
+            by_severity: { type: object, additionalProperties: { type: integer } }
+            must_fix:
+              type: array
+              items: { $ref: '#/components/schemas/AlertFindingRef' }
+            top:
+              type: array
+              items: { $ref: '#/components/schemas/AlertFindingRef' }
+            truncated: { type: boolean }
+        privileges:
+          type: object
+          description: Present only for identity assets (roles, users, service accounts).
+          required: [known, can_escalate, techniques]
+          properties:
+            known: { type: boolean }
+            unavailable_reason: { type: string }
+            can_escalate: { type: boolean }
+            techniques: { type: array, items: { type: string } }
+        summary: { type: string, description: 'Deterministic one-paragraph summary; unavailable sections read "unmeasured".' }
+
+    AlertAssetSummary:
+      type: object
+      required: [id, name, type, provider, account_id, region, environment, owner, public_ip, private_ip, domain, risk_score, risk_score_source, last_seen]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        type: { type: string }
+        provider: { type: string }
+        account_id: { type: string }
+        region: { type: string }
+        environment: { type: string, description: 'From the environment/env tag when present, else empty.' }
+        owner: { type: string, description: 'From the owner/team tag when present, else empty.' }
+        public_ip: { type: string }
+        private_ip: { type: string }
+        domain: { type: string }
+        risk_score: { type: integer }
+        risk_score_source:
+          type: string
+          enum: [ladybug, stored]
+          description: 'ladybug = the graph-propagated (post-BFS) score; stored = the asset row''s pre-propagation score, served when the graph engine is unavailable or does not hold the asset.'
+        last_seen: { type: string, format: date-time }
+
+    AlertFindingRef:
+      type: object
+      required: [id, title, severity, score, check_id, must_fix_class]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        severity: { type: string }
+        score: { type: integer }
+        check_id: { type: string }
+        must_fix_class: { type: string }
+        must_fix_reason: { type: string }

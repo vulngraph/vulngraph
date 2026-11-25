@@ -1,0 +1,91 @@
+# One pull request per ecosystem per month, never one per dependency. Security
+# updates are separate and still open as soon as an advisory lands.
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 7
+    groups:
+      go-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: "gomod"
+    directory: "/internal/graphdb/ladybug"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 7
+    groups:
+      ladybug-dependencies:
+        patterns: ["*"]
+
+  # bun.lock is not readable by the npm ecosystem; Dependabot's bun ecosystem is.
+  - package-ecosystem: "bun"
+    directory: "/frontend"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 7
+    groups:
+      frontend-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 7
+    groups:
+      # init, autobuild and analyze must stay on one release; the catch-all
+      # below takes every other action.
+      codeql-action:
+        patterns: ["github/codeql-action/*"]
+      actions:
+        patterns: ["*"]
+
+  # The Go and Bun versions are pinned in more places than Dependabot edits
+  # (.tool-versions and the CI workflows must match the Dockerfile; CI fails
+  # when they differ). Bump them by hand, in one change.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 7
+    groups:
+      docker-images:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "golang"
+      - dependency-name: "oven/bun"
+
+  # The compose files pin the Postgres and ClickHouse images by tag and digest.
+  # The Helm chart's copies (deploy/helm-chart/graph/values.yaml) are not read
+  # by Dependabot: bump them to the same tag@digest in the same PR.
+  - package-ecosystem: "docker-compose"
+    directories:
+      - "/"
+      - "/deploy/docker-compose"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 7
+    groups:
+      compose-images:
+        patterns: ["*"]
+    # A new Postgres major cannot open the old data directory and moves the
+    # default PGDATA; upgrade deliberately, in the compose files and the Helm
+    # chart together, with a dump/restore note.
+    ignore:
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]

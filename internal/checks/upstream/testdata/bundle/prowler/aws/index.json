@@ -1,0 +1,27 @@
+[
+ {
+  "name": "__init__.py",
+  "path": "prowler/compliance/aws/__init__.py",
+  "type": "file"
+ },
+ {
+  "name": "cis_6.0_aws.json",
+  "path": "prowler/compliance/aws/cis_6.0_aws.json",
+  "type": "file"
+ },
+ {
+  "name": "cis_7.0_aws.json",
+  "path": "prowler/compliance/aws/cis_7.0_aws.json",
+  "type": "file"
+ },
+ {
+  "name": "cis_8.0_aws.json",
+  "path": "prowler/compliance/aws/cis_8.0_aws.json",
+  "type": "file"
+ },
+ {
+  "name": "soc2_aws.json",
+  "path": "prowler/compliance/aws/soc2_aws.json",
+  "type": "file"
+ }
+]

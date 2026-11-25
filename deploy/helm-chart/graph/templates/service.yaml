@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: graph
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP # internal-facing only — no public ingress
+  selector:
+    {{- include "graph.selectorLabels" (dict "component" "serve") | nindent 4 }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.port }}
+      protocol: TCP

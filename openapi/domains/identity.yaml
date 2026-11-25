@@ -1,0 +1,212 @@
+# Identity domain (internal/app/identity). The identity census: how many PEOPLE
+# exist, how many workload identities exist across every cloud, and what the AWS
+# IAM role population is actually made of.
+#
+# This is deliberately NOT derivable from /api/assets/summary. Those are raw
+# asset-row counts; a person is not a row (the same human holds an IAM user in
+# every AWS account they work in), "workload identity" is not one asset type
+# (it spans AWS roles, GCP service accounts, K8s service accounts and Azure
+# service principals), and a stale account's rows are not current identities.
+components:
+  pathItems:
+    getIdentitySummary:
+      get:
+        operationId: getIdentitySummary
+        tags: [identity]
+        summary: Identity census — distinct people, workload identities, IAM role split
+        responses:
+          '200':
+            description: The identity census.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/IdentityCensus' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+  schemas:
+    IdentityCensus:
+      type: object
+      description: >
+        The identity surface's headline measure. Every headline number is
+        accompanied by the population it excludes and by its staleness, so no
+        narrowing is silent and a stale account cannot inflate a figure the UI
+        calls current.
+      required: [humans, workloads, roles, staleness, generated_at]
+      properties:
+        humans: { $ref: '#/components/schemas/IdentityHumans' }
+        workloads: { $ref: '#/components/schemas/IdentityWorkloads' }
+        roles: { $ref: '#/components/schemas/IdentityRoles' }
+        staleness: { $ref: '#/components/schemas/IdentityStaleness' }
+        generated_at:
+          type: string
+          format: date-time
+          description: When the census was computed — the clock every staleness comparison in it used.
+
+    IdentityHumans:
+      type: object
+      description: >
+        The people census. `distinct` is the honest headcount; every other field
+        is either the raw population it came from or a population deliberately
+        excluded from it.
+      required: [distinct, with_corporate_email, console_principals, by_provider, excluded, federation]
+      properties:
+        distinct:
+          type: integer
+          description: Console-capable, non-root principals deduplicated across accounts and sources — one person counts once.
+        with_corporate_email:
+          type: integer
+          description: How many of `distinct` were identified by an email-shaped name (tie-able to a directory account).
+        console_principals:
+          type: integer
+          description: The un-deduplicated row count behind `distinct` — one per (person, AWS account).
+        by_provider:
+          type: object
+          additionalProperties: { type: integer }
+          description: >
+            Where each person was seen. Deduplication is global, so a person
+            present in both AWS IAM and a directory counts once in `distinct`
+            and once per provider here; these values need not sum to `distinct`.
+        excluded: { $ref: '#/components/schemas/IdentityHumansExcluded' }
+        federation: { $ref: '#/components/schemas/IdentityFederation' }
+
+    IdentityHumansExcluded:
+      type: object
+      description: >
+        Every IAM user row kept OUT of the human headcount. Reported, not
+        dropped — an excluded credential is still attack surface.
+        root_principals + programmatic + console_access_unknown +
+        console_principals equals the raw iam_user count.
+      required: [root_principals, programmatic, programmatic_distinct, console_access_unknown, inactive_principals]
+      properties:
+        root_principals:
+          type: integer
+          description: Account root principals — one per AWS account, the most privileged credential in it, and not a person.
+        programmatic:
+          type: integer
+          description: IAM user rows with no console access — access-key-only service accounts living in the human namespace.
+        programmatic_distinct:
+          type: integer
+          description: The same, deduplicated, so a CI credential replicated across accounts reads as one service identity.
+        console_access_unknown:
+          type: integer
+          description: IAM user rows whose console access could not be read — counted neither as people nor as key-only service accounts.
+        inactive_principals:
+          type: integer
+          description: Rows AWS flags inactive. Overlaps the classes above rather than partitioning them.
+
+    IdentityFederation:
+      type: object
+      description: >
+        The human federation surface. Zero `directory_identities` alongside
+        nonzero `sso_groups` means humans reach the cloud through a path the
+        inventory cannot yet name.
+      required:
+        [directory_identities, directory_by_provider, sso_permission_sets, sso_groups,
+         sso_group_assignments, sso_user_assignments, sso_federation_roles]
+      properties:
+        directory_identities:
+          type: integer
+          description: Collected human_identity assets (Identity Center, Okta, Google Workspace, GitHub).
+        directory_by_provider:
+          type: object
+          additionalProperties: { type: integer }
+        sso_permission_sets: { type: integer }
+        sso_groups: { type: integer }
+        sso_group_assignments:
+          type: integer
+          description: Permission-set grants made to a group.
+        sso_user_assignments:
+          type: integer
+          description: >
+            Permission-set grants made directly to a user. Zero here with
+            nonzero group assignments is why enumerating assignments alone
+            yields no people — the members are inside the groups.
+        sso_federation_roles:
+          type: integer
+          description: AWSReservedSSO_* landing roles — counted as human federation surface, not as machine roles.
+
+    IdentityWorkloads:
+      type: object
+      description: The cross-cloud non-human identity census.
+      required:
+        [total, by_provider, by_type, gcp_default_service_accounts,
+         programmatic_iam_users, roles_referenced_not_collected]
+      properties:
+        total:
+          type: integer
+          description: Distinct workload identities across every provider. by_provider and by_type both sum to this.
+        by_provider:
+          type: object
+          additionalProperties: { type: integer }
+        by_type:
+          type: object
+          additionalProperties: { type: integer }
+        gcp_default_service_accounts:
+          type: integer
+          description: >
+            The subset of gcp_service_account that Google creates automatically
+            in every project. Included in `total` (they are real, usable
+            identities) but broken out, because nobody provisioned them.
+        programmatic_iam_users:
+          type: integer
+          description: >
+            Distinct access-key-only IAM users excluded from the human headcount
+            and surfaced here instead, so they are not lost between the tiles.
+        roles_referenced_not_collected:
+          type: integer
+          description: >
+            Roles a live executes_as/federated_access edge points at that have
+            no inventory row — a workload running as an identity in an account
+            we are not collecting. A coverage hole, not a rounding error.
+
+    IdentityRoles:
+      type: object
+      description: >
+        The AWS IAM role population split by what each role is FOR. Classes are
+        mutually exclusive and exhaustive, so by_class sums to total.
+        `human_federation` is AWSReservedSSO_*; `workload` is proven by an
+        executes_as/federated_access edge; `platform` is AWS/IaC plumbing
+        (service-linked, service-role/, CDK, CloudFormation, Control Tower);
+        `unattributed` is the honest "we do not know who assumes this".
+      required: [total, by_class, stale_by_class]
+      properties:
+        total: { type: integer }
+        by_class:
+          type: object
+          additionalProperties: { type: integer }
+        stale_by_class:
+          type: object
+          additionalProperties: { type: integer }
+
+    IdentityStaleness:
+      type: object
+      description: >
+        Makes "current" falsifiable. Without it a single account that stopped
+        being collected keeps contributing its whole identity population to
+        every headline.
+      required: [threshold_days, stale_by_type, total_by_type, stale_accounts]
+      properties:
+        threshold_days:
+          type: integer
+          description: Age past which a row stops counting as evidence of a current identity.
+        stale_by_type:
+          type: object
+          additionalProperties: { type: integer }
+        total_by_type:
+          type: object
+          additionalProperties: { type: integer }
+        stale_accounts:
+          type: array
+          description: Accounts whose NEWEST identity sighting is already past the threshold — collection has stopped.
+          items: { $ref: '#/components/schemas/IdentityStaleAccount' }
+
+    IdentityStaleAccount:
+      type: object
+      required: [account_id, count, last_seen, age_days]
+      properties:
+        account_id: { type: string }
+        provider: { type: string }
+        count:
+          type: integer
+          description: Identity assets this account still contributes to the inventory.
+        last_seen: { type: string, format: date-time }
+        age_days: { type: integer }

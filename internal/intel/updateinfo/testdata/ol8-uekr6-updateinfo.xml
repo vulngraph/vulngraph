@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<updates>
+  <update status="final" type="security" version="1" from="el-errata@oss.oracle.com">
+    <id>ELSA-2025-20190</id>
+    <title>Unbreakable Enterprise kernel security update</title>
+    <severity>Important</severity>
+    <release>Oracle Linux 8</release>
+    <issued date="2025-03-20 00:00:00"/>
+    <updated date="2025-03-20 00:00:00"/>
+    <rights>Copyright 2025 Oracle, Inc.</rights>
+    <description>trimmed</description>
+    <solution>This update is available via the Unbreakable Linux Network (ULN) and the Oracle Public Yum Server. Details on how to use ULN or http://public-yum.oracle.com to apply this update are available at http://linux.oracle.com/applying_updates.html.</solution>
+    <references>
+      <reference href="https://linux.oracle.com/errata/ELSA-2025-20190.html" type="self" title="ELSA-2025-20190" />
+      <reference href="https://linux.oracle.com/cve/CVE-2024-39494.html" id="CVE-2024-39494" type="cve" title="CVE-2024-39494" />
+      <reference href="https://linux.oracle.com/cve/CVE-2024-57892.html" id="CVE-2024-57892" type="cve" title="CVE-2024-57892" />
+    </references>
+    <pkglist>
+      
+      <collection short="ol8_x86_64_UEKR6">
+        <name>ol8_x86_64_UEKR6</name>
+        <package name="kernel-uek-container" version="5.4.17" release="2136.341.3.3.el8uek" epoch="0" arch="x86_64">
+          <filename>kernel-uek-container-5.4.17-2136.341.3.3.el8uek.x86_64.rpm</filename>
+          <sum type="sha256">2f0b458b72ff8b5cffb01193ad110c265c927a60a7bf810f523bed339f20b44a</sum>
+        </package>
+        <package name="kernel-uek-devel" version="5.4.17" release="2136.341.3.3.el8uek" epoch="0" arch="x86_64">
+          <filename>kernel-uek-devel-5.4.17-2136.341.3.3.el8uek.x86_64.rpm</filename>
+          <sum type="sha256">a898100226c1c1d9a86ebc8f785977c65b0399bb14e66da691428bec9e7b3a98</sum>
+        </package>
+        <package name="kernel-uek-debug" version="5.4.17" release="2136.341.3.3.el8uek" epoch="0" arch="x86_64">
+          <filename>kernel-uek-debug-5.4.17-2136.341.3.3.el8uek.x86_64.rpm</filename>
+          <sum type="sha256">1fedbfe01858ccd6ce8197dbdf62e994d44c5b4fed55864d463379fa7e06d513</sum>
+        </package>
+        <package name="kernel-uek-debug-devel" version="5.4.17" release="2136.341.3.3.el8uek" epoch="0" arch="x86_64">
+          <filename>kernel-uek-debug-devel-5.4.17-2136.341.3.3.el8uek.x86_64.rpm</filename>
+          <sum type="sha256">ed49f0fe85e68816d1e607511ded92a0e479d034c8784dcff92e53384c2566be</sum>
+        </package>
+        <package name="kernel-uek" version="5.4.17" release="2136.341.3.3.el8uek" epoch="0" arch="x86_64">
+          <filename>kernel-uek-5.4.17-2136.341.3.3.el8uek.x86_64.rpm</filename>
+          <sum type="sha256">1037c036d8c7dcf9944e5943462b7d91c08f58b3f5853f56139821dbf49c4ffd</sum>
+        </package>
+        <package name="kernel-uek" version="5.4.17" release="2136.341.3.3.el8uek" epoch="0" arch="src">
+          <filename>kernel-uek-5.4.17-2136.341.3.3.el8uek.src.rpm</filename>
+          <sum type="sha256">cfe0f4f250f624eb9e70b6cd8786989998465a7b319016340692b2d5e25947f5</sum>
+        </package>
+        <package name="kernel-uek-container-debug" version="5.4.17" release="2136.341.3.3.el8uek" epoch="0" arch="x86_64">
+          <filename>kernel-uek-container-debug-5.4.17-2136.341.3.3.el8uek.x86_64.rpm</filename>
+          <sum type="sha256">f5fcf13a897636251c56b4248589d1aeb3752632c693557cb7003c85b1d26a99</sum>
+        </package>
+        <package name="kernel-uek-doc" version="5.4.17" release="2136.341.3.3.el8uek" epoch="0" arch="noarch">
+          <filename>kernel-uek-doc-5.4.17-2136.341.3.3.el8uek.noarch.rpm</filename>
+          <sum type="sha256">f079b837cbafb5994c6f35cab1dc924e82fffeb26d10a781e622df16a495c05b</sum>
+        </package>
+      </collection>
+    </pkglist>
+  </update>
+</updates>

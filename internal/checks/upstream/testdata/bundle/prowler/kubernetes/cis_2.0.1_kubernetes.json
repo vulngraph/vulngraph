@@ -1,0 +1,19 @@
+{
+ "Framework": "CIS",
+ "Name": "CIS 2.0.1",
+ "Version": "2.0.1",
+ "Provider": "Kubernetes",
+ "Description": "fixture",
+ "Requirements": [
+  {
+   "Id": "1.1.1",
+   "Description": "",
+   "Attributes": [
+    {
+     "Section": "s"
+    }
+   ],
+   "Checks": []
+  }
+ ]
+}

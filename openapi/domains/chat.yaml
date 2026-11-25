@@ -1,0 +1,64 @@
+# Chat domain (internal/app/chat). The conversational assistant seam.
+#
+# The response is a Server-Sent Events stream (text/event-stream), not a JSON
+# document, so there is no response body schema to validate. The contract that
+# DOES need pinning — and that was unpinned while this route sat outside the
+# spec — is the REQUEST body and the error statuses: the generated frontend
+# client is built from this file, and the integration contract test asserts the
+# documented error responses.
+components:
+  pathItems:
+    chatStream:
+      post:
+        operationId: chatStream
+        tags: [chat]
+        summary: Ask the assistant a question; responds with an SSE token stream
+        description: |
+          Streams the assistant's reply as `text/event-stream`. Each event carries a
+          JSON payload in its `data:` field: `{"type":"text","text":…}` deltas, then
+          exactly one terminal event — `{"type":"done"}` on success or
+          `{"type":"error","message":…}` when the turn failed mid-stream. A stream
+          that ends without a terminal event was cut and must be treated as failed.
+          A turn that fails before any output is sent gets a 503 problem response
+          instead of a 200. Blank turns in `messages` are ignored.
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatRequest' }
+        responses:
+          '200':
+            description: An SSE stream of assistant output.
+            content:
+              text/event-stream:
+                schema: { type: string }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '429': { $ref: '../openapi.yaml#/components/responses/TooManyRequests' }
+          '503':
+            description: The AI provider request failed before any output was streamed.
+            content:
+              application/problem+json:
+                schema: { $ref: '../openapi.yaml#/components/schemas/Problem' }
+
+  schemas:
+    ChatRequest:
+      type: object
+      description: A conversation turn. The full prior transcript is resent each time.
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/ChatMessage' }
+        context:
+          type: string
+          description: |
+            Optional caller-supplied grounding context (e.g. the finding or asset
+            the user opened the assistant from). Prepended to the system prompt.
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }

@@ -1,0 +1,226 @@
+# Compliance domain (internal/app/compliance). CIS control coverage.
+components:
+  pathItems:
+    getCompliance:
+      get:
+        operationId: getCompliance
+        tags: [compliance]
+        summary: CIS control coverage summary
+        responses:
+          '200':
+            description: Coverage.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ComplianceCoverage' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+    listComplianceFrameworks:
+      get:
+        operationId: listComplianceFrameworks
+        tags: [compliance]
+        summary: Requirement-level compliance frameworks, with per-state counts (ADR 093)
+        responses:
+          '200':
+            description: Every framework's summary.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ComplianceFrameworkList' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+    getComplianceFramework:
+      get:
+        operationId: getComplianceFramework
+        tags: [compliance]
+        summary: One framework's requirement-level status
+        parameters:
+          - $ref: '../openapi.yaml#/components/parameters/IdPath'
+        responses:
+          '200':
+            description: The framework and every requirement.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ComplianceFramework' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+    exportComplianceFramework:
+      get:
+        operationId: exportComplianceFramework
+        tags: [compliance]
+        summary: Auditor CSV of one framework (analyst or admin)
+        description: >-
+          One row per requirement: framework, framework_version, requirement,
+          title, status, mapped_controls, mapped_checks, failing_checks,
+          unevaluated_checks, gaps, partial_mapping, evidence_gaps (list cells are
+          "; "-separated), evidence_as_of ("unknown" when a cloud never synced) and
+          failing_resources (distinct resources with an open finding for a
+          failing check; "n/a" when a failing check's findings name no resource).
+        parameters:
+          - $ref: '../openapi.yaml#/components/parameters/IdPath'
+        responses:
+          '200':
+            description: CSV attachment.
+            content:
+              text/csv:
+                schema: { type: string }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+  schemas:
+    ComplianceFrameworkSummary:
+      type: object
+      required: [id, name, version, total, passing, failing, unknown, manual]
+      properties:
+        id: { type: string, description: 'e.g. nist-800-53-r5, pci-dss-4.0' }
+        name: { type: string }
+        version: { type: string }
+        total: { type: integer }
+        passing: { type: integer }
+        failing: { type: integer }
+        unknown: { type: integer }
+        manual: { type: integer }
+    ComplianceFrameworkList:
+      type: object
+      required: [frameworks]
+      properties:
+        frameworks:
+          type: array
+          items: { $ref: '#/components/schemas/ComplianceFrameworkSummary' }
+    ComplianceRequirement:
+      type: object
+      required: [id, title, state, controls, check_ids, failing_checks, unevaluated_checks, gaps, out_of_scope, unjoined_source_checks, partial_mapping, evidence_gaps, evidence_as_of]
+      properties:
+        id: { type: string }
+        title: { type: string, description: 'Short title; ISO, PCI and AICPA titles are paraphrased.' }
+        state:
+          type: string
+          enum: [passing, failing, unknown, manual]
+          description: >-
+            failing — a mapped check has an open finding. passing — every
+            in-scope mapped control is fully covered by checks, at least one
+            evaluated live evidence, none is unevaluable, none fails. unknown —
+            no open finding but the evidence is incomplete (a gap, an
+            unevaluable check, or nothing evaluated); never counted as passing.
+            manual — no benchmark control maps to the requirement.
+        controls:
+          type: array
+          items: { type: string }
+          description: 'Mapped benchmark controls, "<benchmark>/<control>".'
+        check_ids:
+          type: array
+          items: { type: string }
+        failing_checks:
+          type: array
+          items: { type: string }
+        unevaluated_checks:
+          type: array
+          items: { type: string }
+          description: Checks whose applicable assets lack the evidence they read.
+        gaps:
+          type: array
+          items: { type: string }
+          description: In-scope controls no check fully evaluates (partial, missing, manual, not_applicable).
+        out_of_scope:
+          type: array
+          items: { type: string }
+          description: Controls of benchmarks whose providers have no inventory.
+        unjoined_source_checks:
+          type: integer
+          description: >-
+            Source mappings (a Prowler check, an AWS related FSBP control) that
+            reach no graph control. Above zero the requirement is never passing.
+        partial_mapping:
+          type: string
+          description: '"partial mapping: N source checks without a graph control", or empty.'
+        evidence_gaps:
+          type: array
+          items: { type: string }
+          description: >-
+            In-scope controls whose cloud cannot vouch for its inventory: a
+            connector that never produced assets, a connector with no successful
+            sync within 24h (connector.DefaultStaleAfter) or repeatedly Partial,
+            or inventory no enabled connector refreshes. Never passing.
+        evidence_as_of:
+          type: string
+          format: date-time
+          nullable: true
+          description: Oldest last successful sync behind the requirement; null when unknown.
+    ComplianceCloud:
+      type: object
+      required: [provider, connectors, has_inventory, evidence_as_of, stale]
+      properties:
+        provider: { type: string }
+        connectors: { type: integer, description: Enabled collecting connectors. }
+        has_inventory: { type: boolean }
+        evidence_as_of:
+          type: string
+          format: date-time
+          nullable: true
+          description: Oldest last successful sync across the provider's connectors; null when one never synced.
+        stale: { type: boolean }
+    ComplianceFramework:
+      allOf:
+        - $ref: '#/components/schemas/ComplianceFrameworkSummary'
+        - type: object
+          required: [clouds, requirements]
+          properties:
+            clouds:
+              type: array
+              items: { $ref: '#/components/schemas/ComplianceCloud' }
+            requirements:
+              type: array
+              items: { $ref: '#/components/schemas/ComplianceRequirement' }
+    Control:
+      type: object
+      required: [id, title, check_ids, frameworks]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        check_ids:
+          type: array
+          items: { type: string }
+        frameworks:
+          type: array
+          items: { type: string }
+    ControlStatus:
+      type: object
+      required: [control, state, passing]
+      properties:
+        control: { $ref: '#/components/schemas/Control' }
+        state:
+          type: string
+          enum: [passing, failing, partial, not_assessed]
+          description: >-
+            failing — a mapped check has an open finding. passing — no open
+            finding, and every mapped check evaluated a live asset. partial — no
+            open finding, but only some mapped checks could evaluate anything;
+            the rest are not evidence of compliance. not_assessed — no open
+            finding, and no mapped check could evaluate anything (no applicable
+            assets, no connector, or the evidence the check reads was never
+            collected); absence of findings is not evidence of compliance.
+        passing:
+          type: boolean
+          description: state == passing (a partial or not-assessed control is not passing).
+    FrameworkCoverage:
+      type: object
+      required: [framework, total, passing, failing, partial, not_assessed]
+      properties:
+        framework: { type: string }
+        total: { type: integer }
+        passing: { type: integer }
+        failing: { type: integer }
+        partial: { type: integer }
+        not_assessed: { type: integer }
+    ComplianceCoverage:
+      type: object
+      required: [total, passing, failing, partial, not_assessed, controls, frameworks]
+      properties:
+        total: { type: integer }
+        passing: { type: integer }
+        failing: { type: integer }
+        partial: { type: integer }
+        not_assessed: { type: integer }
+        controls:
+          type: array
+          items: { $ref: '#/components/schemas/ControlStatus' }
+        frameworks:
+          type: array
+          items: { $ref: '#/components/schemas/FrameworkCoverage' }

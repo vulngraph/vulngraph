@@ -1,0 +1,176 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Vulngraph organization onboarding (ADR 091). Deploy ONCE in the management
+  account (or, with CallAs=DELEGATED_ADMIN, a StackSets delegated
+  administrator). It creates: (1) a service-managed StackSet that puts the
+  GraphReadOnly role in every account of the target OUs — including accounts
+  added later (auto-deployment); (2) with CallAs=SELF only, the same role in
+  this (management) account, which StackSets never target; (3) the discovery
+  role graph assumes to list the organization. Either mode yields exactly one
+  GraphReadOnly per account, see CallAs.
+
+# Prerequisites (once, in the management account):
+#   aws cloudformation activate-organizations-access
+#   Upload graph-readonly-role.yaml to an S3 bucket the management account can
+#   read, and pass its https URL as MemberTemplateURL.
+#
+#   aws cloudformation deploy --stack-name graph-org \
+#     --template-file graph-org-stackset.yaml --capabilities CAPABILITY_NAMED_IAM \
+#     --parameter-overrides HubRoleArn=<hub role arn> ExternalId=<external id> \
+#       TargetOUIds=<r-xxxx or ou-…> MemberTemplateURL=https://<bucket>.s3.amazonaws.com/graph-readonly-role.yaml
+
+Parameters:
+  HubRoleArn:
+    Type: String
+    Description: The hub role graph runs as (graph-hub-role.yaml output).
+    AllowedPattern: "^arn:aws[a-z-]*:iam::\\d{12}:role/.+$"
+  ExternalId:
+    Type: String
+    NoEcho: true
+    Description: The aws_org connector's external_id (graph's setup screen generates one).
+    MinLength: 2
+    MaxLength: 1224
+    AllowedPattern: "^[\\w+=,.@:/-]+$"
+  MemberRoleName:
+    Type: String
+    Default: GraphReadOnly
+    AllowedPattern: "^[\\w+=,.@-]{1,64}$"
+  DiscoveryRoleName:
+    Type: String
+    Default: GraphOrgDiscovery
+    Description: Becomes the aws_org connector's management_role_arn.
+    AllowedPattern: "^[\\w+=,.@-]{1,64}$"
+  TargetOUIds:
+    Type: CommaDelimitedList
+    Description: OU ids (ou-…), or the root id (r-…) for the whole organization.
+  StackSetRegion:
+    Type: String
+    Default: us-east-1
+    Description: IAM is global; the StackSet needs one region to run its stacks in.
+  MemberTemplateURL:
+    Type: String
+    Description: https URL of graph-readonly-role.yaml in S3.
+    AllowedPattern: "^https://.+$"
+  OrgId:
+    Type: String
+    Default: ""
+    Description: Optional organization id; also require the hub to be inside it.
+    AllowedPattern: "^(o-[a-z0-9]{10,32})?$"
+  GrantTerraformStateRead:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      Opt-in. "true" lets every member role read objects in the *tfstate* /
+      *terraform-state* buckets its own account owns (Terraform ownership).
+      Terraform state often holds plaintext secrets, and this grant lets the
+      role read them.
+  CallAs:
+    Type: String
+    Default: SELF
+    AllowedValues: [SELF, DELEGATED_ADMIN]
+    Description: >-
+      SELF: this stack runs in the management account. The StackSet covers the
+      target OUs, and this stack adds GraphReadOnly to the management account,
+      which StackSets never target.
+      DELEGATED_ADMIN: this stack runs in a StackSets delegated administrator,
+      a member account the StackSet already covers when it is in a target OU,
+      so no role is added here; deploy graph-readonly-role.yaml once, as a
+      plain stack, in the management account. The discovery role is created in
+      this account and lists the organization only if Organizations delegates
+      account listing to it (an Organizations resource policy).
+
+Conditions:
+  InManagementAccount: !Equals [!Ref CallAs, SELF]
+
+Resources:
+  GraphReadOnlyStackSet:
+    Type: AWS::CloudFormation::StackSet
+    Properties:
+      StackSetName: graph-readonly
+      Description: Vulngraph read-only member role in every account of the target OUs.
+      PermissionModel: SERVICE_MANAGED
+      CallAs: !Ref CallAs
+      AutoDeployment:
+        Enabled: true
+        # An account that leaves the organization loses the role; graph marks
+        # it removed and disables its connector, keeping the collected data.
+        RetainStacksOnAccountRemoval: false
+      ManagedExecution:
+        Active: true
+      Capabilities: [CAPABILITY_NAMED_IAM]
+      OperationPreferences:
+        FailureTolerancePercentage: 10
+        MaxConcurrentPercentage: 25
+        RegionConcurrencyType: PARALLEL
+      TemplateURL: !Ref MemberTemplateURL
+      Parameters:
+        - ParameterKey: HubRoleArn
+          ParameterValue: !Ref HubRoleArn
+        - ParameterKey: ExternalId
+          ParameterValue: !Ref ExternalId
+        - ParameterKey: RoleName
+          ParameterValue: !Ref MemberRoleName
+        - ParameterKey: OrgId
+          ParameterValue: !Ref OrgId
+        - ParameterKey: GrantTerraformStateRead
+          ParameterValue: !Ref GrantTerraformStateRead
+      StackInstancesGroup:
+        - DeploymentTargets:
+            OrganizationalUnitIds: !Ref TargetOUIds
+          Regions:
+            - !Ref StackSetRegion
+
+  # StackSets never deploy to the management account, so its role is a plain
+  # nested stack of the same template. With CallAs=DELEGATED_ADMIN this
+  # account is a member the StackSet covers, so a second role here would clash
+  # on the name.
+  ManagementAccountReadOnly:
+    Type: AWS::CloudFormation::Stack
+    Condition: InManagementAccount
+    Properties:
+      TemplateURL: !Ref MemberTemplateURL
+      Parameters:
+        HubRoleArn: !Ref HubRoleArn
+        ExternalId: !Ref ExternalId
+        RoleName: !Ref MemberRoleName
+        OrgId: !Ref OrgId
+        GrantTerraformStateRead: !Ref GrantTerraformStateRead
+
+  GraphOrgDiscoveryRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref DiscoveryRoleName
+      Description: Lets graph's hub list the organization's accounts and OUs. Read-only.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref HubRoleArn
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref ExternalId
+      Policies:
+        - PolicyName: graph-org-discovery
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: GraphListOrganization
+                Effect: Allow
+                Action:
+                  - organizations:ListAccounts
+                  - organizations:ListAccountsForParent
+                  - organizations:ListRoots
+                  - organizations:ListOrganizationalUnitsForParent
+                Resource: "*"
+
+Outputs:
+  ManagementRoleArn:
+    Description: The aws_org connector's management_role_arn.
+    Value: !GetAtt GraphOrgDiscoveryRole.Arn
+  MemberRoleName:
+    Description: The aws_org connector's member_role_name.
+    Value: !Ref MemberRoleName

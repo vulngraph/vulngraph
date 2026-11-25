@@ -1,0 +1,190 @@
+# Agentless VM disk scanning (internal/app/diskscan). Reads for any role; the
+# per-connector opt-in is the standing approval for reading, and in
+# create_snapshots mode creating, short-lived tagged snapshots with a dedicated
+# role, so changing it is admin-only and session-only (an API key gets 403 and
+# an auth.api_key_refused audit row). Nothing here starts a scan or reads a disk.
+# A VM whose state is not_enabled or none was NOT read: that is unknown, never
+# "no vulnerabilities".
+components:
+  pathItems:
+    listDiskScans:
+      get:
+        operationId: listDiskScans
+        tags: [diskscan]
+        summary: Recent disk scan runs, newest first
+        parameters:
+          - { name: connector_id, in: query, required: false, schema: { type: string }, description: Only runs of this connector. }
+          - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        responses:
+          '200':
+            description: The runs.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/DiskScanRunList' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    getAssetDiskScan:
+      get:
+        operationId: getAssetDiskScan
+        tags: [diskscan]
+        summary: One VM's disk scan state and the latest result per volume
+        description: >
+          state is scanned (a disk was read and its package list is known),
+          not_enabled (the connector has not opted in; stored volume results are
+          hidden) or none (nothing readable produced an inventory). Volumes with
+          inventory_known false carry a gap and no package count.
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '200':
+            description: The VM's disk scan state.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/AssetDiskScan' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    connectorDiskScan:
+      get:
+        operationId: getConnectorDiskScan
+        tags: [diskscan]
+        summary: A connector's disk scan opt-in and status (admin only)
+        description: >
+          Shows the mode, the dedicated role's identifier (an ARN, client id or
+          service account; never a credential), who enabled it and when, the
+          last run, the exact confirmation sentence an admin must type to
+          enable it, and the cost and permission warning.
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '200':
+            description: The connector's disk scan settings.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ConnectorDiskScan' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+      put:
+        operationId: setConnectorDiskScan
+        tags: [diskscan]
+        summary: Set a connector's disk scan mode (admin session only)
+        description: >
+          The standing approval for disk scanning. Session-only: a request
+          authenticated with an API key is refused (403) before the body is read
+          and audited as auth.api_key_refused; there is no MCP equivalent. Enabling
+          needs `confirmation` to equal the sentence GET returns. create_snapshots
+          also needs the connector's dedicated disk scan role set, and any
+          disk scan role must differ from the collection, read-only and execute
+          roles (409 otherwise). Every change is audited as connector.disk_scan_change.
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SetConnectorDiskScanRequest' }
+        responses:
+          '204': { description: Mode updated. }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+          '409': { $ref: '../openapi.yaml#/components/responses/Conflict' }
+
+  schemas:
+    DiskScanMode:
+      type: string
+      description: off is the default; nothing is read until an admin opts in.
+      enum: [off, existing_snapshots, create_snapshots]
+    DiskScanRunStatus:
+      type: string
+      enum: [queued, running, succeeded, partial, failed, not_enabled]
+    DiskScanGap:
+      type: string
+      description: Why a volume has no trustworthy package inventory.
+      enum:
+        - not_enabled
+        - no_snapshot_available
+        - snapshot_pending
+        - encrypted_no_key
+        - unsupported_fs
+        - unsupported_partition
+        - read_error
+        - over_cap
+        - permission_denied
+        - stale
+    DiskScanCounts:
+      type: object
+      required: [volumes, scanned, gaps, not_enabled]
+      properties:
+        volumes: { type: integer }
+        scanned: { type: integer }
+        gaps: { type: integer }
+        not_enabled: { type: integer }
+    DiskScanRun:
+      type: object
+      required: [id, connector_id, status, started_at, counts]
+      properties:
+        id: { type: string }
+        connector_id: { type: string }
+        status: { $ref: '#/components/schemas/DiskScanRunStatus' }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time, description: Absent while the run is still open. }
+        counts: { $ref: '#/components/schemas/DiskScanCounts' }
+    DiskScanRunList:
+      type: object
+      required: [runs]
+      properties:
+        runs:
+          type: array
+          items: { $ref: '#/components/schemas/DiskScanRun' }
+    DiskScanVolume:
+      type: object
+      required: [volume_ref, encrypted, inventory_known, cve_matchable_known, package_count, observed_at]
+      properties:
+        volume_ref: { type: string }
+        snapshot_id: { type: string }
+        snapshot_source:
+          type: string
+          description: Where the snapshot came from. Absent when no snapshot was read.
+          enum: [reused, created, image_baseline]
+        encrypted: { type: boolean }
+        inventory_known: { type: boolean, description: 'False: the disk was not read, so package_count is 0 and means nothing.' }
+        cve_matchable_known: { type: boolean }
+        gap: { $ref: '#/components/schemas/DiskScanGap' }
+        package_count: { type: integer }
+        observed_at: { type: string, format: date-time }
+    AssetDiskScan:
+      type: object
+      required: [asset_id, state, volumes]
+      properties:
+        asset_id: { type: string }
+        state:
+          type: string
+          enum: [scanned, not_enabled, none]
+        gap: { $ref: '#/components/schemas/DiskScanGap' }
+        volumes:
+          type: array
+          items: { $ref: '#/components/schemas/DiskScanVolume' }
+    ConnectorDiskScan:
+      type: object
+      required: [connector_id, type, mode, modes, confirmation, warning]
+      properties:
+        connector_id: { type: string }
+        type: { type: string, description: 'Connector type, for example aws, azure or gcp.' }
+        mode: { $ref: '#/components/schemas/DiskScanMode' }
+        modes:
+          type: array
+          description: The modes this connector type can be set to. gcp lists no create_snapshots.
+          items: { $ref: '#/components/schemas/DiskScanMode' }
+        role: { type: string, description: 'Identifier of the dedicated disk scan principal; never a credential.' }
+        enabled_by: { type: string }
+        enabled_at: { type: string, format: date-time }
+        last_run: { $ref: '#/components/schemas/DiskScanRun' }
+        confirmation: { type: string, description: The exact sentence an admin must send to enable disk scanning. }
+        warning: { type: string, description: The cost and permission warning to show before enabling. }
+    SetConnectorDiskScanRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode: { $ref: '#/components/schemas/DiskScanMode' }
+        confirmation: { type: string, description: Required unless mode is off. }

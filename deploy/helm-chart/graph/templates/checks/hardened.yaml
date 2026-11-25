@@ -1,0 +1,331 @@
+{{- /*
+hardened: true (values.yaml, deploy/helm-values/hardened.yaml) fails the render
+until every check below holds, listing each gap in one message. It renders no
+object. It sits in a subdirectory because Helm renders deeper templates first:
+the whole list then reaches the operator before any of the chart's
+single-setting guards (secret.yaml, networkpolicy.yaml, ...) stops the render
+on the first gap alone. The one exception: with an extraEnv list set, the
+extraEnv check renders that component's chart env, and a guard inside it (the
+SSO and proxy guards of graph.podEnv, aws.roleArn's) can stop the render
+first.
+*/ -}}
+{{- if .Values.hardened }}
+{{- $v := .Values }}
+{{- $c := .Values.config }}
+{{- $gaps := list }}
+
+{{- if not $v.image.digest }}
+{{- $gaps = append $gaps "image.digest: set the release image's sha256 digest (deploy/README.md \"Verifying a release image\"); a tag can be moved to another image" }}
+{{- end }}
+{{- if not (and $v.securityContext.enabled $v.securityContext.readOnlyRootFilesystem) }}
+{{- $gaps = append $gaps "securityContext.enabled and securityContext.readOnlyRootFilesystem must be true" }}
+{{- end }}
+{{- if not $v.scanner.enabled }}
+{{- $gaps = append $gaps "scanner.enabled must be true: without the scanner pod nuclei runs in the worker, which holds GRAPH_SECRET_KEY and the cloud identity" }}
+{{- end }}
+{{- if $v.worker.pprofPort }}
+{{- $gaps = append $gaps "worker.pprofPort must be empty: profiling endpoints are for a debugging session" }}
+{{- end }}
+
+{{- if not $v.networkPolicy.enabled }}
+{{- $gaps = append $gaps "networkPolicy.enabled must be true" }}
+{{- end }}
+{{- if not $v.networkPolicy.ingressNamespace }}
+{{- $gaps = append $gaps "networkPolicy.ingressNamespace: set the ingress controller's namespace, so serve's port stops accepting every source" }}
+{{- end }}
+{{- if not $v.networkPolicy.nodeCIDRs }}
+{{- $gaps = append $gaps "networkPolicy.nodeCIDRs: set the node address ranges (kubelet probes) and any load balancer that targets pod IPs" }}
+{{- end }}
+{{- range $v.networkPolicy.nodeCIDRs }}
+{{- if lt (include "graph.prefixBits" . | atoi) (include "graph.prefixFloor" . | atoi) }}
+{{- $gaps = append $gaps (printf "networkPolicy.nodeCIDRs holds %s, a range too wide (IPv4 /8, IPv6 /32, fc00::/7 /7 at most): it admits a large share of all sources to serve's port" (toString . | trim)) }}
+{{- end }}
+{{- end }}
+{{- if and $v.metrics.enabled (not $v.networkPolicy.metricsNamespace) }}
+{{- $gaps = append $gaps "networkPolicy.metricsNamespace: set the scraper's namespace, or the metrics port accepts every source" }}
+{{- end }}
+
+{{- if not (and $v.ingress.enabled $v.ingress.host) }}
+{{- $gaps = append $gaps "ingress.enabled and ingress.host: serve is reached through an ingress that terminates TLS (ingress.tlsSecret, or TLS at a load balancer in front of it)" }}
+{{- end }}
+{{- if not $c.tlsProxy }}
+{{- $gaps = append $gaps "config.tlsProxy must be true: TLS ends in front of serve, and without it serve sends no HSTS" }}
+{{- end }}
+{{- if not (and $c.clientIpHeader $c.trustedProxyCidrs) }}
+{{- $gaps = append $gaps "config.clientIpHeader and config.trustedProxyCidrs: set the header the ingress writes the client address to and the controller's address ranges, or every client shares one login rate-limit bucket and audit rows name the controller" }}
+{{- end }}
+{{- range splitList "," ($c.trustedProxyCidrs | default "" | toString) }}
+{{- if and (trim .) (lt (include "graph.prefixBits" . | atoi) (include "graph.prefixFloor" . | atoi)) }}
+{{- $gaps = append $gaps (printf "config.trustedProxyCidrs holds %s, a range too wide (IPv4 /8, IPv6 /32, fc00::/7 /7 at most): a large share of all clients could then write their own address into the header" (trim .)) }}
+{{- end }}
+{{- end }}
+
+{{- if not $c.requireAdminTotp }}
+{{- $gaps = append $gaps "config.requireAdminTotp must be true: an admin without TOTP cannot sign in with a password" }}
+{{- end }}
+{{- /* auth.RolePolicy.Provision makes the first allowlisted SSO sign-in admin
+while ADMIN_EMAILS and both OIDC_*_GROUPS split to no entries. splitCSV drops
+an entry that strings.TrimSpace empties, so a value of only commas and
+unicode.IsSpace runes counts as unset; the class below is the complement of
+those (TestHardenedRoleMappingClassMatchesSplitCSV). */ -}}
+{{- $sso := or $c.oauth2Proxy $c.iapAudience $v.sso.google.clientId $v.sso.okta.clientId }}
+{{- $roleMapping := false }}
+{{- range list $c.adminEmails $c.oidcAdminGroups $c.oidcAnalystGroups }}
+{{- if regexMatch `[^,\t\n\v\f\r\x{85}\p{Z}]` (. | default "" | toString) }}
+{{- $roleMapping = true }}
+{{- end }}
+{{- end }}
+{{- if and $sso (not $roleMapping) }}
+{{- $gaps = append $gaps "config.adminEmails, config.oidcAdminGroups or config.oidcAnalystGroups: with SSO and none of them set, the first allowlisted sign-in becomes admin" }}
+{{- end }}
+{{- if and $c.oauth2Proxy (not $c.oauth2ProxyOidcIssuer) }}
+{{- $gaps = append $gaps "config.oauth2ProxyOidcIssuer (with config.oauth2ProxyOidcAudience): verify the proxy's ID token rather than trust a shared secret anyone on the node network can replay" }}
+{{- end }}
+{{- range $name := list "google" "okta" }}
+{{- with index $v.sso $name }}
+{{- if and .clientId (not (hasPrefix "https://" (.redirectUrl | default "" | lower))) }}
+{{- $gaps = append $gaps (printf "sso.%s.redirectUrl must be an https:// URL" $name) }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- $refused := dict
+  "config.oauth2ProxyAllowAnyDomain" $c.oauth2ProxyAllowAnyDomain
+  "config.oauth2ProxyTrustGroups" $c.oauth2ProxyTrustGroups
+  "config.oauth2ProxyOidcAllowUnverifiedEmail" $c.oauth2ProxyOidcAllowUnverifiedEmail
+  "config.iapAllowAnyDomain" $c.iapAllowAnyDomain
+  "sso.google.allowAnyDomain" $v.sso.google.allowAnyDomain
+  "sso.okta.allowAnyDomain" $v.sso.okta.allowAnyDomain
+  "config.decisionWebhookAllowUnsigned" $c.decisionWebhookAllowUnsigned
+  "config.approvalWebhookAllowUnsigned" $c.approvalWebhookAllowUnsigned
+  "config.smtpAllowPlaintext" $c.smtpAllowPlaintext }}
+{{- range $key := keys $refused | sortAlpha }}
+{{- if get $refused $key }}
+{{- $gaps = append $gaps (printf "%s must be false (docs/security-hardening.md#dangerous-flags)" $key) }}
+{{- end }}
+{{- end }}
+
+{{- /* The dangerous flags of docs/security-hardening.md, plus PPROF_PORT.
+PASSWORD_LOGIN_BREAK_GLASS is among them: behind a proxy it lets every local
+password, not only an admin's, sign in without the proxy's MFA, and
+REQUIRE_ADMIN_TOTP holds only admins to TOTP. */ -}}
+{{- $dangerous := list "BYPASS_AUTH" "BYPASS_AUTH_I_UNDERSTAND" "LADYBUG_RPC_INSECURE" "SCAN_ALLOW_INTERNAL_TARGETS"
+  "COOKIE_INSECURE" "OAUTH_REDIRECT_FROM_HOST" "OAUTH2_PROXY_ALLOW_ANY_DOMAIN" "OAUTH2_PROXY_TRUST_GROUPS"
+  "OAUTH2_PROXY_OIDC_ALLOW_UNVERIFIED_EMAIL" "GOOGLE_ALLOW_ANY_DOMAIN" "OKTA_ALLOW_ANY_DOMAIN" "IAP_ALLOW_ANY_DOMAIN"
+  "APPROVAL_WEBHOOK_ALLOW_UNSIGNED" "DECISION_WEBHOOK_ALLOW_UNSIGNED" "SMTP_ALLOW_PLAINTEXT" "PASSWORD_LOGIN_BREAK_GLASS"
+  "PPROF_PORT" }}
+{{- /* graph.env lets an extraEnv entry replace a variable the chart sets, so
+an entry of a name the chart sets on a component the list reaches would undo
+the checks here; it is refused. $chartOwned are the variables a check here
+reads through a chart value, and their companions, refused even where this
+render does not set them: an OAUTH2_PROXY entry would turn on SSO past the SSO
+checks, a DECISION_WEBHOOK_URL entry would send unchecked posts. The chart-wide
+list reaches serve, migrate and the worker (graph.env). An envFrom source's
+names cannot be read here, so extraEnvFrom is refused. */ -}}
+{{- $chartOwned := list "DATABASE_URL" "CLICKHOUSE_URL" "REQUIRE_ADMIN_TOTP" "TLS_PROXY" "CLIENT_IP_HEADER" "TRUSTED_PROXY_CIDRS"
+  "OAUTH2_PROXY" "OAUTH2_PROXY_SHARED_SECRET" "OAUTH2_PROXY_OIDC_ISSUER" "OAUTH2_PROXY_OIDC_AUDIENCE" "OAUTH2_PROXY_ALLOWED_DOMAINS"
+  "IAP_AUDIENCE" "IAP_ALLOWED_DOMAINS" "GOOGLE_CLIENT_ID" "GOOGLE_CLIENT_SECRET" "GOOGLE_REDIRECT_URL" "GOOGLE_ALLOWED_DOMAINS"
+  "OKTA_CLIENT_ID" "OKTA_CLIENT_SECRET" "OKTA_DOMAIN" "OKTA_REDIRECT_URL" "OKTA_ALLOWED_DOMAINS"
+  "ADMIN_EMAILS" "OIDC_ADMIN_GROUPS" "OIDC_ANALYST_GROUPS" "OIDC_REQUIRED_GROUPS"
+  "DECISION_WEBHOOK_URL" "DECISION_WEBHOOK_SECRET" "APPROVAL_WEBHOOK_URL" "APPROVAL_WEBHOOK_SECRET"
+  "APPROVAL_TOKEN_SECRET" "APPROVAL_BASE_URL" "SMTP_HOST" }}
+{{- $reaches := dict "extraEnv" (list "serve" "migrate" "worker") }}
+{{- $envLists := dict "extraEnv" ($v.extraEnv | default list) }}
+{{- $envFromLists := dict "extraEnvFrom" ($v.extraEnvFrom | default list) }}
+{{- range $component := list "serve" "migrate" "worker" "scanner" }}
+{{- $values := index $v $component | default dict }}
+{{- $_ := set $reaches (printf "%s.extraEnv" $component) (list $component) }}
+{{- $_ = set $envLists (printf "%s.extraEnv" $component) ($values.extraEnv | default list) }}
+{{- $_ = set $envFromLists (printf "%s.extraEnvFrom" $component) ($values.extraEnvFrom | default list) }}
+{{- end }}
+{{- range $key := keys $envLists | sortAlpha }}
+{{- with get $envLists $key }}
+{{- $chartSet := $chartOwned }}
+{{- range get $reaches $key }}
+{{- range fromYamlArray (include (printf "graph.chartEnv.%s" .) $) }}
+{{- $chartSet = append $chartSet .name }}
+{{- end }}
+{{- end }}
+{{- range . }}
+{{- if has .name $dangerous }}
+{{- $gaps = append $gaps (printf "%s sets %s (docs/security-hardening.md#dangerous-flags)" $key .name) }}
+{{- else if has .name $chartSet }}
+{{- $gaps = append $gaps (printf "%s sets %s, which the chart sets from one of its values: set that value instead" $key .name) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- range $key := keys $envFromLists | sortAlpha }}
+{{- if get $envFromLists $key }}
+{{- $gaps = append $gaps (printf "%s must be empty: the names an envFrom source sets cannot be checked here; list each variable in the matching extraEnv (valueFrom.secretKeyRef for a Secret's)" $key) }}
+{{- end }}
+{{- end }}
+
+{{- if $c.decisionWebhookUrl }}
+{{- if not $v.secret.decisionWebhookSecret }}
+{{- $gaps = append $gaps "secret.decisionWebhookSecret: config.decisionWebhookUrl is set, and the worker skips a decision webhook it cannot sign" }}
+{{- end }}
+{{- end }}
+{{- if $c.approvalWebhookUrl }}
+{{- if not $v.secret.approvalWebhookSecret }}
+{{- $gaps = append $gaps "secret.approvalWebhookSecret: config.approvalWebhookUrl is set, and serve refuses to start without it" }}
+{{- end }}
+{{- end }}
+{{- range $key := list "decisionWebhookUrl" "approvalWebhookUrl" }}
+{{- with index $c $key }}
+{{- if not (hasPrefix "https://" (toString . | lower)) }}
+{{- $gaps = append $gaps (printf "config.%s must be an https:// URL: the posts carry decisions, and the URL may embed a token" $key) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if $c.smtpHost }}
+{{- if lt (len ($v.secret.approvalTokenSecret | default "")) 32 }}
+{{- $gaps = append $gaps "secret.approvalTokenSecret: at least 32 bytes, config.smtpHost is set" }}
+{{- end }}
+{{- if not (hasPrefix "https://" ($c.approvalBaseUrl | default "" | lower)) }}
+{{- $gaps = append $gaps "config.approvalBaseUrl must be an https:// URL: the approval links it builds are bearer credentials" }}
+{{- end }}
+{{- end }}
+
+{{- if not $v.secret.create }}
+{{- $gaps = append $gaps "secret.create must be true: the datastore DSNs are checked for TLS here, and an out-of-band Secret's DSNs cannot be (supply its values with --set-string or a values file your secret manager templates)" }}
+{{- else }}
+{{- if $v.postgres.enabled }}
+{{- if not $v.postgres.tlsSecret }}
+{{- $gaps = append $gaps "postgres.tlsSecret: a kubernetes.io/tls Secret whose certificate covers graph-postgres" }}
+{{- end }}
+{{- if not (has ($v.postgres.sslMode | default "prefer") (list "require" "verify-ca" "verify-full")) }}
+{{- $gaps = append $gaps "postgres.sslMode must be require, verify-ca or verify-full: prefer falls back to plaintext" }}
+{{- end }}
+{{- else }}
+{{- /* pgx parses a postgres:// or postgresql:// URL and keeps the first
+sslmode; anything else is a keyword/value string, not read here. */ -}}
+{{- range $key := list "databaseUrl" "scannerDatabaseUrl" }}
+{{- $dsn := index $v.secret $key | default "" | toString }}
+{{- if or $dsn (eq $key "databaseUrl") }}
+{{- $modes := include "graph.dsnQueryValues" (dict "dsn" $dsn "key" "sslmode") | fromJsonArray }}
+{{- $tls := and (or (hasPrefix "postgres://" $dsn) (hasPrefix "postgresql://" $dsn)) (not (empty $modes)) }}
+{{- range $modes }}
+{{- if not (has . (list "require" "verify-ca" "verify-full")) }}
+{{- $tls = false }}
+{{- end }}
+{{- end }}
+{{- if not $tls }}
+{{- $gaps = append $gaps (printf "secret.%s must be a postgres:// URL whose every sslmode is require, verify-ca or verify-full" $key) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if $v.clickhouse.enabled }}
+{{- if not $v.clickhouse.tlsSecret }}
+{{- $gaps = append $gaps "clickhouse.tlsSecret: a kubernetes.io/tls Secret whose certificate covers graph-clickhouse" }}
+{{- end }}
+{{- if not $v.clickhouse.secure }}
+{{- $gaps = append $gaps "clickhouse.secure must be true: the native protocol on 9000 is plaintext" }}
+{{- end }}
+{{- else }}
+{{- /* clickhouse-go reads the first secure parameter with strconv.ParseBool,
+and a bare secure as true. Every secure parameter must read as true, so a
+secure=false ahead of a secure=true is refused. */ -}}
+{{- $true := list "" "1" "t" "T" "true" "TRUE" "True" }}
+{{- range $key := list "clickhouseUrl" "clickhouseMigrateUrl" "scannerClickhouseUrl" }}
+{{- $dsn := index $v.secret $key | default "" | toString }}
+{{- if or $dsn (eq $key "clickhouseUrl") }}
+{{- $secure := include "graph.dsnQueryValues" (dict "dsn" $dsn "key" "secure") | fromJsonArray }}
+{{- $tls := not (empty $secure) }}
+{{- range $secure }}
+{{- if not (has . $true) }}
+{{- $tls = false }}
+{{- end }}
+{{- end }}
+{{- if not $tls }}
+{{- $gaps = append $gaps (printf "secret.%s must carry secure=true" $key) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- with $gaps }}
+{{- fail (printf "hardened: true refuses to render until these are fixed (docs/production-checklist.md):\n  - %s" (join "\n  - " .)) }}
+{{- end }}
+{{- end }}
+
+{{- /* graph.dsnQueryValues returns, as a JSON list in order, every value the
+query of the URL .dsn gives .key ("" for a bare key), as Go's url.Parse and
+Query see it. A key with a percent escape may decode to .key, so it adds "%",
+which no allowed value matches. */ -}}
+{{- define "graph.dsnQueryValues" -}}
+{{- $dsn := first (splitList "#" .dsn) }}
+{{- $query := "" }}
+{{- if contains "?" $dsn }}
+{{- $query = (splitn "?" 2 $dsn)._1 }}
+{{- end }}
+{{- $values := list }}
+{{- range splitList "&" $query }}
+{{- $pair := splitn "=" 2 . }}
+{{- if contains "%" $pair._0 }}
+{{- $values = append $values "%" }}
+{{- else if eq $pair._0 $.key }}
+{{- $values = append $values ($pair._1 | default "") }}
+{{- end }}
+{{- end }}
+{{- toJson $values }}
+{{- end -}}
+
+{{- /* graph.prefixBits returns the prefix length of the range . as
+auth.ParseTrustedProxies sees it: a bare address is a full-length range, and
+an IPv4-mapped IPv6 range (::ffff:0:0/96 and inside it) of /96 or longer is
+the IPv4 range of 96 bits fewer, so ::ffff:0:0/96 is 0.0.0.0/0. The address is
+expanded to eight groups (a trailing dotted quad is two) to find the mapped
+prefix in any spelling. A prefix length that does not parse is 0. */ -}}
+{{- /* graph.prefixFloor is the shortest prefix graph.prefixBits may return for
+the range .: /8 for IPv4 (an IPv4-mapped range counts as IPv4), /7 for the
+unique-local fc00::/7, and /32 for any other IPv6 range, since an IPv6 /8 such
+as 2000::/8 holds much of the allocated internet. */ -}}
+{{- define "graph.prefixFloor" -}}
+{{- $cidr := toString . | trim | lower }}
+{{- $raw := ternary 128 32 (contains ":" $cidr) }}
+{{- if contains "/" $cidr }}{{ $raw = atoi (splitn "/" 2 $cidr)._1 }}{{ end }}
+{{- $floor := 32 }}
+{{- if or (not (contains ":" $cidr)) (ne (include "graph.prefixBits" . | atoi) $raw) }}
+{{- $floor = 8 }}
+{{- else if regexMatch "^f[cd][0-9a-f]{2}:" $cidr }}
+{{- $floor = 7 }}
+{{- end }}
+{{- $floor }}
+{{- end -}}
+
+{{- define "graph.prefixBits" -}}
+{{- $cidr := toString . | trim | lower }}
+{{- $addr := $cidr }}
+{{- $bits := ternary 128 32 (contains ":" $cidr) }}
+{{- if contains "/" $cidr }}
+{{- $parts := splitn "/" 2 $cidr }}
+{{- $addr = $parts._0 }}
+{{- $bits = atoi $parts._1 }}
+{{- end }}
+{{- if and (contains ":" $addr) (ge $bits 96) }}
+{{- $groups := regexReplaceAll "[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$" $addr "x:x" }}
+{{- $head := list }}
+{{- $tail := list }}
+{{- if contains "::" $groups }}
+{{- $halves := splitn "::" 2 $groups }}
+{{- with $halves._0 }}{{ $head = splitList ":" . }}{{ end }}
+{{- with $halves._1 }}{{ $tail = splitList ":" . }}{{ end }}
+{{- else }}
+{{- $head = splitList ":" $groups }}
+{{- end }}
+{{- $full := $head }}
+{{- if lt (add (len $head) (len $tail)) 8 }}
+{{- range until (sub 8 (add (len $head) (len $tail)) | int) }}
+{{- $full = append $full "0" }}
+{{- end }}
+{{- end }}
+{{- $full = concat $full $tail }}
+{{- if regexMatch "^0{1,4}:0{1,4}:0{1,4}:0{1,4}:0{1,4}:0{0,3}ffff:[^:]+:[^:]+$" (join ":" $full) }}
+{{- $bits = sub $bits 96 }}
+{{- end }}
+{{- end }}
+{{- $bits }}
+{{- end -}}

@@ -1,0 +1,12 @@
+[
+ {
+  "name": "cis_5.0_azure.json",
+  "path": "prowler/compliance/azure/cis_5.0_azure.json",
+  "type": "file"
+ },
+ {
+  "name": "cis_6.0_azure.json",
+  "path": "prowler/compliance/azure/cis_6.0_azure.json",
+  "type": "file"
+ }
+]

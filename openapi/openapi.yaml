@@ -1,0 +1,370 @@
+openapi: 3.1.0
+
+# Root index for the Vulngraph REST API. This file holds only cross-cutting
+# pieces: API metadata, security, the path → operation map, and shared components
+# (the RFC 9457 Problem shape, the `id` path param, and the reusable error
+# responses). Each operation's detail and schemas live in openapi/domains/<domain>.yaml,
+# one file per Go domain (internal/app/<domain>) so a handler change and its spec
+# change touch matching files. Keep this index thin; keep domain files self-contained.
+#
+# Out of scope by design: the MCP seam (POST /api/mcp, JSON-RPC 2.0), the
+# provider webhook (POST /api/webhooks/github/{id}, HMAC-authed), and the four
+# browser OAuth redirect legs under /api/auth/{google,okta}[/callback] — see the
+# reasoned exemption list in internal/httpsrv/openapi_coverage_test.go, which fails
+# CI for any registered route that is neither documented here nor exempted there.
+
+info:
+  title: Vulngraph API
+  version: 1.0.0
+  description: |
+    REST API for the Vulngraph security platform. JSON over HTTP, snake_case
+    fields, RFC 9457 problem details for errors. Session auth via the HttpOnly
+    `graph_session` cookie; automation may use an equivalent bearer token.
+
+servers:
+  - url: /
+    description: Same-origin (the Go binary serves both the API and the SPA)
+
+tags:
+  - name: auth
+  - name: users
+  - name: assets
+  - name: identity
+  - name: alert-context
+  - name: findings
+  - name: suppressions
+  - name: decisions
+  - name: govern
+  - name: chat
+  - name: llm-usage
+  - name: kev
+  - name: drift
+  - name: pkginv
+  - name: diskscan
+  - name: compliance
+  - name: explore
+  - name: scans
+  - name: connectors
+
+security:
+  - cookieAuth: []
+  - bearerAuth: []
+
+paths:
+  /api/auth/login:
+    $ref: './domains/auth.yaml#/components/pathItems/login'
+  /api/auth/logout:
+    $ref: './domains/auth.yaml#/components/pathItems/logout'
+  /api/auth/me:
+    $ref: './domains/auth.yaml#/components/pathItems/getCurrentUser'
+  /api/users:
+    $ref: './domains/auth.yaml#/components/pathItems/users'
+  /api/users/{id}:
+    $ref: './domains/auth.yaml#/components/pathItems/user'
+  /api/users/{id}/revoke-sessions:
+    $ref: './domains/auth.yaml#/components/pathItems/revokeUserSessions'
+  /api/auth/providers:
+    $ref: './domains/auth.yaml#/components/pathItems/authProviders'
+
+  /api/assets:
+    $ref: './domains/asset.yaml#/components/pathItems/listAssets'
+  /api/assets/summary:
+    $ref: './domains/asset.yaml#/components/pathItems/getAssetsSummary'
+  /api/assets/{id}:
+    $ref: './domains/asset.yaml#/components/pathItems/getAsset'
+  /api/assets/{id}/blast-radius:
+    $ref: './domains/asset.yaml#/components/pathItems/getBlastRadius'
+  /api/assets/{id}/changes:
+    $ref: './domains/asset.yaml#/components/pathItems/getAssetChanges'
+  /api/assets/{id}/package-inventory:
+    $ref: './domains/pkginv.yaml#/components/pathItems/putAssetPackageInventory'
+  /api/package-inventory:
+    $ref: './domains/pkginv.yaml#/components/pathItems/putPackageInventory'
+  /api/assets/{id}/disk-scan:
+    $ref: './domains/diskscan.yaml#/components/pathItems/getAssetDiskScan'
+  /api/disk-scans:
+    $ref: './domains/diskscan.yaml#/components/pathItems/listDiskScans'
+  /api/drift/events:
+    $ref: './domains/asset.yaml#/components/pathItems/listDriftEvents'
+  /api/drift/analyses:
+    $ref: './domains/driftanalysis.yaml#/components/pathItems/listDriftAnalyses'
+  /api/drift/analyses/{batch_id}:
+    $ref: './domains/driftanalysis.yaml#/components/pathItems/getDriftAnalysis'
+
+  /api/context/alert:
+    $ref: './domains/alertctx.yaml#/components/pathItems/getAlertContext'
+  /api/identity/summary:
+    $ref: './domains/identity.yaml#/components/pathItems/getIdentitySummary'
+
+  /api/findings:
+    $ref: './domains/finding.yaml#/components/pathItems/listFindings'
+  /api/findings/summary:
+    $ref: './domains/finding.yaml#/components/pathItems/getFindingsSummary'
+  /api/findings/clusters:
+    $ref: './domains/finding.yaml#/components/pathItems/getFindingClusters'
+  /api/findings/cost-at-risk:
+    $ref: './domains/finding.yaml#/components/pathItems/getCostAtRisk'
+  /api/findings/{id}:
+    $ref: './domains/finding.yaml#/components/pathItems/getFinding'
+
+  /api/beliefs/{finding_id}:
+    $ref: './domains/belief.yaml#/components/pathItems/getBelief'
+
+  /api/findings/{id}/resolve:
+    $ref: './domains/finding.yaml#/components/pathItems/resolveFinding'
+  /api/findings/{id}/suppress:
+    $ref: './domains/suppress.yaml#/components/pathItems/suppression'
+  /api/findings/{id}/suppress/review:
+    $ref: './domains/suppress.yaml#/components/pathItems/reviewSuppression'
+  /api/suppressions:
+    $ref: './domains/suppress.yaml#/components/pathItems/listSuppressions'
+  /api/suppressions/bulk:
+    $ref: './domains/suppress.yaml#/components/pathItems/bulkSuppress'
+  /api/suppressions/bulk-remove:
+    $ref: './domains/suppress.yaml#/components/pathItems/bulkUnsuppress'
+
+  /api/decisions:
+    $ref: './domains/respond.yaml#/components/pathItems/listDecisions'
+  /api/decisions/summary:
+    $ref: './domains/respond.yaml#/components/pathItems/decisionsSummary'
+  /api/decisions/{id}/refine:
+    $ref: './domains/respond.yaml#/components/pathItems/refineDecision'
+  /api/decisions/{id}/execution:
+    $ref: './domains/executor.yaml#/components/pathItems/decisionExecutionPlan'
+  /api/decisions/{id}/execution/dry-run:
+    $ref: './domains/executor.yaml#/components/pathItems/decisionExecutionDryRun'
+  /api/decisions/{id}/execution/request:
+    $ref: './domains/executor.yaml#/components/pathItems/decisionExecutionRequest'
+  /api/decisions/{id}/execution/run:
+    $ref: './domains/executor.yaml#/components/pathItems/decisionExecutionRun'
+  /api/decisions/{id}/execution/mark-failed:
+    $ref: './domains/executor.yaml#/components/pathItems/decisionExecutionMarkFailed'
+
+  /api/chat:
+    $ref: './domains/chat.yaml#/components/pathItems/chatStream'
+  /api/llm/usage:
+    $ref: './domains/llmusage.yaml#/components/pathItems/getLLMUsage'
+  /api/kev/additions:
+    $ref: './domains/kevwatch.yaml#/components/pathItems/listKEVAdditions'
+
+  /api/queue:
+    $ref: './domains/govern.yaml#/components/pathItems/getQueue'
+  /api/queue/resolve:
+    $ref: './domains/govern.yaml#/components/pathItems/resolveDecision'
+  /api/queue/approve-link/{token}:
+    $ref: './domains/govern.yaml#/components/pathItems/approveLink'
+  /api/queue/deny-link/{token}:
+    $ref: './domains/govern.yaml#/components/pathItems/denyLink'
+
+  /api/compliance:
+    $ref: './domains/compliance.yaml#/components/pathItems/getCompliance'
+  /api/compliance/frameworks:
+    $ref: './domains/compliance.yaml#/components/pathItems/listComplianceFrameworks'
+  /api/compliance/frameworks/{id}:
+    $ref: './domains/compliance.yaml#/components/pathItems/getComplianceFramework'
+  /api/compliance/frameworks/{id}/export:
+    $ref: './domains/compliance.yaml#/components/pathItems/exportComplianceFramework'
+
+  /api/graph/query:
+    $ref: './domains/explore.yaml#/components/pathItems/queryGraph'
+  /api/graph/translate:
+    $ref: './domains/explore.yaml#/components/pathItems/translateQuery'
+  /api/graph/expand:
+    $ref: './domains/explore.yaml#/components/pathItems/expandNode'
+  /api/graph/cypher:
+    $ref: './domains/explore.yaml#/components/pathItems/queryCypher'
+  /api/graph/nl:
+    $ref: './domains/explore.yaml#/components/pathItems/queryNL'
+  /api/graph/status:
+    $ref: './domains/explore.yaml#/components/pathItems/graphStatus'
+  /api/graph/stats:
+    $ref: './domains/explore.yaml#/components/pathItems/graphStats'
+  /api/graph/queries/health:
+    $ref: './domains/explore.yaml#/components/pathItems/graphQueriesHealth'
+  /api/dspm/summary:
+    $ref: './domains/explore.yaml#/components/pathItems/dspmSummary'
+  /api/dspm/stores:
+    $ref: './domains/explore.yaml#/components/pathItems/dspmStores'
+
+  /api/scans:
+    $ref: './domains/scan.yaml#/components/pathItems/scans'
+  /api/scans/{id}:
+    $ref: './domains/scan.yaml#/components/pathItems/getScan'
+  /api/scans/{id}/findings:
+    $ref: './domains/scan.yaml#/components/pathItems/getScanFindings'
+  /api/scans/templates/validate:
+    $ref: './domains/scan.yaml#/components/pathItems/validateTemplate'
+  /api/scans/templates/test:
+    $ref: './domains/scan.yaml#/components/pathItems/testTemplate'
+  /api/scans/templates/generate:
+    $ref: './domains/scan.yaml#/components/pathItems/generateTemplate'
+  /api/scan-profiles:
+    $ref: './domains/scan.yaml#/components/pathItems/scanProfiles'
+  /api/scan-profiles/{id}:
+    $ref: './domains/scan.yaml#/components/pathItems/scanProfile'
+  /api/scan-profiles/{id}/trigger:
+    $ref: './domains/scan.yaml#/components/pathItems/triggerScanProfile'
+  /api/scans/import:
+    $ref: './domains/scan.yaml#/components/pathItems/importFindings'
+  /api/workflows/presets:
+    $ref: './domains/scan.yaml#/components/pathItems/workflowPresets'
+
+  /api/connectors:
+    $ref: './domains/connector.yaml#/components/pathItems/connectors'
+  /api/connectors/{id}:
+    $ref: './domains/connector.yaml#/components/pathItems/deleteConnector'
+  /api/connectors/{id}/purge:
+    $ref: './domains/connector.yaml#/components/pathItems/purgeConnector'
+  /api/connectors/{id}/sync:
+    $ref: './domains/connector.yaml#/components/pathItems/syncConnector'
+  /api/connectors/{id}/mode:
+    $ref: './domains/connector.yaml#/components/pathItems/setConnectorMode'
+  /api/connectors/{id}/disk-scan:
+    $ref: './domains/diskscan.yaml#/components/pathItems/connectorDiskScan'
+  /api/connectors/{id}/org-accounts:
+    $ref: './domains/connector.yaml#/components/pathItems/orgAccounts'
+  /api/connectors/{id}/test:
+    $ref: './domains/connector.yaml#/components/pathItems/testConnector'
+  /api/aws-org/templates/{name}:
+    $ref: './domains/connector.yaml#/components/pathItems/awsOrgTemplate'
+
+  /api/intel/domains:
+    $ref: './domains/intel.yaml#/components/pathItems/intelDomains'
+  /api/intel/domains/{domain}:
+    $ref: './domains/intel.yaml#/components/pathItems/removeIntelDomain'
+  /api/intel/phishing:
+    $ref: './domains/intel.yaml#/components/pathItems/phishingCandidates'
+  /api/intel/phishing/{id}/confirm:
+    $ref: './domains/intel.yaml#/components/pathItems/confirmPhishingCandidate'
+  /api/intel/phishing/{id}/dismiss:
+    $ref: './domains/intel.yaml#/components/pathItems/dismissPhishingCandidate'
+
+  /api/alerts/channels:
+    $ref: './domains/notify.yaml#/components/pathItems/alertChannels'
+  /api/alerts/channels/{id}:
+    $ref: './domains/notify.yaml#/components/pathItems/alertChannel'
+  /api/alerts/channels/{id}/test:
+    $ref: './domains/notify.yaml#/components/pathItems/testAlertChannel'
+
+  /api/saved-queries:
+    $ref: './domains/savedquery.yaml#/components/pathItems/savedQueries'
+  /api/saved-queries/{id}:
+    $ref: './domains/savedquery.yaml#/components/pathItems/savedQuery'
+  /api/saved-queries/{id}/run:
+    $ref: './domains/savedquery.yaml#/components/pathItems/runSavedQuery'
+  /api/saved-queries/{id}/runs:
+    $ref: './domains/savedquery.yaml#/components/pathItems/listSavedQueryRuns'
+
+  /api/policy:
+    $ref: './domains/policy.yaml#/components/pathItems/policy'
+
+  /api/keys:
+    $ref: './domains/apikey.yaml#/components/pathItems/apiKeys'
+  /api/keys/{id}:
+    $ref: './domains/apikey.yaml#/components/pathItems/apiKey'
+
+  /api/executor/aws/sg-rule-remove:
+    $ref: './domains/executor.yaml#/components/pathItems/executorSGRuleRemove'
+  /api/executor/aws/iam-key-disable:
+    $ref: './domains/executor.yaml#/components/pathItems/executorIAMKeyDisable'
+  /api/executor/execute:
+    $ref: './domains/executor.yaml#/components/pathItems/executorExecute'
+  /api/executor/approvals:
+    $ref: './domains/executor.yaml#/components/pathItems/executorApprovals'
+
+  /api/cost/snapshots:
+    $ref: './domains/costdata.yaml#/components/pathItems/costSnapshots'
+  /api/cost/anomalies:
+    $ref: './domains/costdata.yaml#/components/pathItems/costAnomalies'
+  /api/cost/status:
+    $ref: './domains/costdata.yaml#/components/pathItems/costStatus'
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: graph_session
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    BadRequest:
+      description: Invalid input.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Not authenticated.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Insufficient role.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Resource not found.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Conflicts with existing state.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    UnprocessableEntity:
+      description: Unprocessable entity — request body is well-formed JSON but fails validation.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ServiceUnavailable:
+      description: A backing engine is not available (not configured, or not ready yet).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    GatewayTimeout:
+      description: An upstream engine did not answer within its deadline.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: Rate limited. Retry after the `Retry-After` header (seconds, also in `retry_after_seconds`).
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem details. `violations` is present on field-level 400s.
+      required: [title, status]
+      properties:
+        type: { type: string, description: URI identifying the problem type. }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string, description: Trace ID for this occurrence. }
+        err_code: { type: string }
+        retry_after_seconds: { type: integer }
+        violations:
+          type: array
+          items: { $ref: '#/components/schemas/FieldViolation' }
+    FieldViolation:
+      type: object
+      required: [field, description]
+      properties:
+        field: { type: string }
+        description: { type: string }

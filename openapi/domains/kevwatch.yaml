@@ -1,0 +1,53 @@
+# KEV watch domain (internal/app/kevwatch). Every CISA KEV refresh is diffed
+# against the catalog last seen; each newly listed CVE gets exactly one durable
+# `kev.added` record, the trigger an exposure-hunting agent consumes
+# (ADR 085 §2, ADR 086 §1). The first refresh seeds the back catalog and
+# records only entries CISA added in the previous 7 days.
+components:
+  pathItems:
+    listKEVAdditions:
+      get:
+        operationId: listKEVAdditions
+        tags: [kev]
+        summary: CVEs newly added to CISA KEV, most recently detected first
+        parameters:
+          - name: limit
+            in: query
+            required: false
+            description: 'Maximum records to return (1 to 200; default 50).'
+            schema: { type: integer, minimum: 1, maximum: 200 }
+        responses:
+          '200':
+            description: The most recent additions.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/KEVAdditions' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+  schemas:
+    KEVAdditions:
+      type: object
+      required: [additions]
+      properties:
+        additions:
+          type: array
+          items: { $ref: '#/components/schemas/KEVAddition' }
+
+    KEVAddition:
+      type: object
+      required: [cve_id, name, date_added, open_findings_at_detection, detected_at]
+      properties:
+        cve_id: { type: string }
+        name: { type: string, description: "CISA's vulnerabilityName (may be empty)." }
+        date_added:
+          type: [string, 'null']
+          format: date-time
+          description: "CISA's dateAdded at midnight UTC; null when the feed's value did not parse."
+        open_findings_at_detection:
+          type: integer
+          description: 'Open findings matching the CVE when the addition was detected (a snapshot, not a live count).'
+        detected_at:
+          type: string
+          format: date-time
+          description: 'When this platform first saw the CVE in the catalog.'

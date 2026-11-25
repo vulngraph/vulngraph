@@ -1,0 +1,13 @@
+# Lint config for the Vulngraph API spec. Extends Redocly's recommended
+# ruleset but turns off house-style preferences we don't want enforced, so
+# `redocly lint` flags real contract problems (unresolved refs, invalid schemas,
+# undefined responses) rather than missing prose.
+apis:
+  graph:
+    root: openapi.yaml
+extends:
+  - recommended
+rules:
+  tag-description: off       # tags are self-describing for a single-tenant API
+  info-license: off          # single-tenant; no license block
+  info-contact: off

@@ -1,0 +1,1662 @@
+# VictoriaMetrics alert rules for the graph platform — the consumer end of the
+# metric pipeline. Rendered into the VMRule CR by templates/vmrule.yaml,
+# which substitutes the namespace placeholder below for the release namespace.
+# Requires a VictoriaMetrics operator (vmalert + VMRule CRD); off by default
+# (alerts.enabled). Each rule carries only its severity; templates/vmrule.yaml
+# adds alerts.labels (empty by default) to every rule, for whatever label your
+# Alertmanager routes on.
+#
+# Kept as plain YAML rather than a Go template so it can be parsed and validated:
+# internal/obs/alerts_test.go asserts every graph_* series named below is one the
+# binary can actually emit. An alert on a metric name that does not exist never
+# fires and never says so, which is this codebase's signature failure mode.
+#
+# Selector convention:
+#   component="worker"  — the pod that builds the graph and runs the sweeps. The
+#                         serve pod registers only QueueDepth/Connectors/Graph and
+#                         reports graph_ladybug_node_count 0 with serveLadybug disabled,
+#                         so anything graph- or finding-shaped MUST pin the worker
+#                         or it will be averaged against a structural zero.
+#   max by (...)        — deduplicates the sources both pods do emit, and keeps
+#                         every expression immune to a replica count change.
+#
+# Each rule's comment explains the failure shape it exists to catch and why its
+# window and threshold are what they are.
+#
+# Severity convention: every rule here is severity:warning except the two
+# outage rules, GraphServeNotReady and GraphWorkerOrScannerNotReady, which are
+# severity:critical. Route critical alerts to your on-call channel and warning
+# alerts to a lower-noise channel; if your Alertmanager fans critical alerts out
+# more widely than that, keep new rules at warning unless they genuinely need
+# that wider audience. The critical rules are allowlisted in
+# internal/obs/alerts_test.go.
+groups:
+  - name: graph-availability
+    rules:
+      # Total-outage backstop. If graph-serve cannot become ready (an
+      # Init:CrashLoopBackOff from a failed migration, a bad image, an OOM
+      # loop), every user-facing API/UI call is down, and without this rule the
+      # only way to notice is someone running `kubectl get pods` by hand. It is
+      # deliberately cause-agnostic: any reason for the symptom fires it.
+      #
+      # Metric choice: kube_deployment_status_replicas_ready vs
+      # kube_deployment_spec_replicas (kube-state-metrics), not a graph_*
+      # metric and not kube_pod_container_status_waiting_reason{reason=
+      # "CrashLoopBackOff"}. The reason string is cause-specific — it would
+      # catch an Init:CrashLoopBackOff but not an
+      # ImagePullBackOff, an OOMKilled restart loop, or a readiness probe that
+      # never turns green — where ready-vs-spec catches all of them by the one
+      # thing that actually matters: fewer pods answering traffic than the
+      # deployment is supposed to have. Both series come from kube-state-metrics
+      # (kube_deployment_status_replicas_ready and kube_deployment_spec_replicas
+      # carry series for graph-serve, graph-worker and graph-scanner) — the same
+      # scrape path GraphWorkerMemoryPeakNearLimit below already reads cAdvisor's
+      # container_memory_working_set_bytes from, so this is not a new dependency.
+      # kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"} is
+      # available as a fallback if a future rule wants the specific reason string.
+      #
+      # Split into two rules, not one, because the two `for:` windows that are
+      # actually safe are not the same number. graph-serve's Deployment
+      # strategy is Recreate with a fast readiness probe (initialDelaySeconds
+      # 5, periodSeconds 10, default failureThreshold 3 — ready or failed
+      # within ~35s of container start), so a normal deploy's replicas_ready
+      # dip is over in well under a minute. graph-worker and graph-scanner are
+      # a different shape: worker is replicas:1, maxUnavailable:1 ("kill old
+      # pod first"), and /internal/graph/ready (graphstore.Handler.Ready)
+      # only returns 200 once Ladybug's initial sync from ClickHouse completes —
+      # deployment-worker.yaml's own comment documents this Ladybug rebuild as
+      # NORMAL, by-design unavailability on every worker deploy, lasting several
+      # minutes (readinessProbe failureThreshold 30 x periodSeconds 10 = 300s of
+      # grace alone). A 10m for: would leave that deploy little margin and risk
+      # paging on routine worker rollouts; 20m gives the normal case a real
+      # cushion while still paging well inside an hour.
+      #
+      # severity: critical, allowlisted in internal/obs/alerts_test.go's
+      # criticalAlertsAllowlist. A total outage of the user-facing API/UI is the
+      # deliberate exception to this file's warning-by-default convention: route
+      # severity:critical to your on-call channel. Alertmanager receivers are
+      # outside this chart, so a page needs a receiver added there.
+      - alert: GraphServeNotReady
+        expr: |-
+          max by (namespace, deployment) (kube_deployment_status_replicas_ready{namespace="__NAMESPACE__", deployment="graph-serve"})
+            <
+          max by (namespace, deployment) (kube_deployment_spec_replicas{namespace="__NAMESPACE__", deployment="graph-serve"})
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "graph: graph-serve has fewer ready pods than desired for 10m"
+          description: >-
+            graph-serve has reported fewer ready replicas than its Deployment spec for
+            at least 10 minutes — this is the whole user-facing Graph API/UI down or
+            degraded. CrashLoopBackOff (Init or main container), ImagePullBackOff,
+            OOMKilled, or a readiness probe stuck failing all produce this shape. Run
+            `kubectl get pods -n {{ $labels.namespace }} | grep {{ $labels.deployment }}`
+            then `kubectl describe pod`/`kubectl logs` on the affected pod for the
+            reason. A failed init-container migration (Init:CrashLoopBackOff) is
+            one common cause.
+
+      - alert: GraphWorkerOrScannerNotReady
+        expr: |-
+          max by (namespace, deployment) (kube_deployment_status_replicas_ready{namespace="__NAMESPACE__", deployment=~"graph-worker|graph-scanner"})
+            <
+          max by (namespace, deployment) (kube_deployment_spec_replicas{namespace="__NAMESPACE__", deployment=~"graph-worker|graph-scanner"})
+        for: 20m
+        labels:
+          severity: critical
+        annotations:
+          summary: "graph: {{ $labels.deployment }} has fewer ready pods than desired for 20m"
+          description: >-
+            {{ $labels.deployment }} has reported fewer ready replicas than its
+            Deployment spec for at least 20 minutes — past the in-memory-graph
+            rebuild window a normal worker deploy is allowed to sit unready for (see
+            deployment-worker.yaml), so this is not a routine rollout. If graph-worker
+            is unready, the graph is not being rebuilt, resources are not being
+            re-linked, and nothing is being (re-)scored; if graph-scanner is unready,
+            vulnerability/security scans are not landing. Run
+            `kubectl get pods -n {{ $labels.namespace }} | grep {{ $labels.deployment }}`
+            then `kubectl describe pod`/`kubectl logs` on the affected pod to see why.
+
+      # The CAUSE-side counterpart of GraphServeNotReady above. Two branches
+      # that each add a migration with the same version number can leave the
+      # schema state silently wrong, surfacing only later as a CrashLoopBackOff
+      # symptom. This rule watches the schema-version fact directly instead of
+      # waiting for a downstream symptom to appear.
+      #
+      # internal/migrate.Run applies every pending migration as a Kubernetes
+      # INIT CONTAINER — a short-lived process that exits before the main
+      # container starts and long before any /metrics scrape could observe it.
+      # graph_migration_pending is therefore read later, by whatever long-running
+      # pod is wired to call internal/migrate.Status, and on a healthy boot it
+      # should already be caught up: Run's init container finished successfully
+      # before the main container was ever scheduled. There is no legitimate
+      # "still catching up" phase once the app container is serving — unlike
+      # GraphIntelFeedNeverRefreshed/GraphDomainMonitorNeverRefreshed's boot-offset
+      # gating above, there is no equivalent delayed-start window to account for
+      # here, so this does not need a process_start_time_seconds gate.
+      #
+      # 15m for:, not 30m/6h like most of this file: this is a boot-order
+      # invariant with no "normal churn" shape to ride out, so the only purpose
+      # of for: here is surviving a single bad scrape/eval, not waiting out a
+      # designed operating range.
+      - alert: GraphMigrationPending
+        expr: max by (namespace, db) (graph_migration_pending{namespace="__NAMESPACE__"}) == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: {{ $labels.db }} has an unapplied migration the running binary expects"
+          description: >-
+            The database {{ $labels.db }} has not applied a schema migration that the
+            currently running code expects. Migrations normally run automatically in
+            an init container before the app starts, so this staying true means either
+            that migration step failed partway through, or this pod is pointed at the
+            wrong database entirely. Check the init container's logs for the failed
+            migration, and confirm this pod's database connection matches the one
+            migrations were actually run against.
+
+  - name: graph-observability-loop
+    rules:
+      # The loop-closer. If METRICS_PORT is missing from the chart or the scrape
+      # path breaks, the entire metrics pipeline is dead and every defect has to
+      # be found by hand running ClickHouse queries. This is the alert that says
+      # so instead of every other alert quietly evaluating to nothing.
+      - alert: GraphMetricsPipelineDown
+        expr: absent(graph_ladybug_node_count{namespace="__NAMESPACE__", component="worker"})
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: no metrics scraped from the worker pod for 30m"
+          description: >-
+            No metrics have been received from the graph-worker pod in 30 minutes.
+            This is not just one broken gauge — the entire metrics pipeline is down,
+            which means every other alert in this file is silently evaluating against
+            no data at all and will not fire even if something is badly wrong. Check
+            the pod's prometheus.io/scrape annotations and confirm the METRICS_PORT
+            environment variable is still set on graph-worker.
+
+      # A source that cannot answer would otherwise make its series VANISH, which
+      # reads as healthy-and-quiet on every dashboard and satisfies most alert
+      # expressions. graph_metrics_source_up states that failure instead; this is
+      # the rule that reads it.
+      - alert: GraphMetricsSourceFailing
+        expr: max by (namespace, source) (min_over_time(graph_metrics_source_up{namespace="__NAMESPACE__"}[10m])) == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: metrics source {{ $labels.source }} has been failing for 30m"
+          description: >-
+            The {{ $labels.source }} scrape source's last refresh produced no reading
+            (query error, or cancellation by the 8s scrape budget). Its gauges are
+            frozen at their last good values — see graph_metrics_source_age_seconds —
+            so alerts reading them are stale, not silent.
+
+  - name: graph-graph-integrity
+    rules:
+      # The label-promotion defect class: a producer emits an edge whose endpoint
+      # type has been promoted off the node label its rel table declares, the typed
+      # lookup finds nothing, and the row is dropped with no error and no warning.
+      # It is an easy mistake to repeat on any schema change, a partial drop can
+      # hide behind a shared rel table that still looks healthy, and without this
+      # rule the only symptom is a human noticing a query returning nothing.
+      # outcome="endpoint_absent" is deliberately NOT included:
+      # that is permanent irreducible attrition (cross-account root principals that
+      # are not assets and never will be), and summing the two together would make
+      # the alarm fire on every build and therefore mean nothing.
+      # 30m, not the file's 10m default: graph_ladybug_edge_type_rows is one of the
+      # gauges internal/obs/metrics.go only emits once the worker's first Ladybug
+      # build completes after a restart (gated on a non-empty
+      # GraphStats.EdgeTypeParity) — until then the series is wholly ABSENT, not
+      # zero, and on a cold start under ClickHouse pressure that gap can approach
+      # the 30m window (see GraphCorrelateFullSweepStale's comment below). A 10m window
+      # does not bridge that; it just moves the restart-gap bug the max_over_time
+      # wrapper exists to fix from "pending clock resets" to "window closes
+      # empty" — same failure, one hop later.
+      - alert: GraphLadybugEdgeLabelMismatch
+        expr: max by (namespace, edge_type) (max_over_time(graph_ladybug_edge_type_rows{namespace="__NAMESPACE__", component="worker", outcome="label_mismatch"}[30m])) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: {{ $value }} {{ $labels.edge_type }} relationships silently dropped (type mismatch)"
+          description: >-
+            {{ $value }} relationships of type {{ $labels.edge_type }} were dropped while
+            rebuilding the in-memory graph, because the resource on the other end of the
+            relationship is now categorized under a different type than this relationship
+            expects. This always indicates a bug — a resource type was reclassified in
+            code without updating the relationship mapping to match — and the practical
+            effect is that real connections between resources (including attack paths)
+            are missing from the graph with no error surfaced anywhere else. Check
+            internal/graphschema for the {{ $labels.edge_type }} mapping and bump
+            SchemaVersion once it's fixed.
+
+      # The other half of the same defect class, and the half that was unalarmable
+      # until the endpoint-absent split. An endpoint that is not in the inventory AT
+      # ALL looks identical whether it is an AWS cross-account principal (permanent
+      # reality) or an asset type the platform wrongly excluded from the graph —
+      # excluding a target type (e.g. elastic_ip) silently drops most rows of the
+      # edge types pointing at it. So the budget is declared PER EDGE TYPE in internal/graphschema (default
+      # 5% of fetched, floor 100 rows) and the worker publishes its own verdict; this
+      # rule just reads it, so the alarm can never drift from the declaration.
+      #
+      # Ephemeral corpse edges are excluded upstream: on a busy cluster most absent
+      # rows are edges to pods dead past the 72h liveness cut, which would put
+      # several edge types at a permanent, substantial "missing" share — a noise
+      # floor a real regression could hide under. Those are outcome="endpoint_expired" now.
+      # 30m: graph_ladybug_edge_dangling_over_budget is gated the same way as
+      # graph_ladybug_edge_type_rows above — absent, not zero, until the first
+      # post-restart Ladybug build completes (minutes normally, longer on a cold
+      # start). See GraphLadybugEdgeLabelMismatch's comment for the mechanism.
+      - alert: GraphLadybugEdgeDanglingOverBudget
+        expr: max by (namespace, edge_type) (max_over_time(graph_ladybug_edge_dangling_over_budget{namespace="__NAMESPACE__", component="worker"}[30m])) > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: {{ $labels.edge_type }} relationships point at unknown resources more than allowed"
+          description: >-
+            More {{ $labels.edge_type }} relationships than expected point at a resource
+            id the platform has no record of at all — not "known but wrong type" (that's
+            the separate label-mismatch alert), but genuinely unknown. This is usually
+            one of two things: something is producing relationships with malformed or
+            uncorrelated ids, or a resource type is being deliberately excluded from the
+            graph that should not be. Compare how many of this edge type's rows point at
+            unknown ids versus how many were fetched in total, then fix the producer or
+            the exclusion rule in internal/graphschema — do not just raise the allowed
+            rate without confirming which of the two this is.
+
+      # endpoint_expired has no LEVEL budget on purpose — it sits near 100% of an
+      # edge type's drops by design (most absent rows on a busy cluster are
+      # departed pods inside the 48h freshness window past their 72h liveness
+      # cut), so a ceiling on the share would either never fire or fire
+      # permanently, like a combined absent/expired alarm would. This fires on the STEP instead: the worker compares each
+      # build's expired share against the immediately preceding build's own
+      # (graphschema.EdgeType.ExpiredShareStepBudget, default 15 points, floor
+      # 100 fetched rows on both sides) and publishes its own verdict, exactly
+      # as GraphLadybugEdgeDanglingOverBudget reads a worker-computed gauge rather
+      # than reimplementing the arithmetic in PromQL. A step this size is the
+      # shape a load-set regression, a verification-query defect, or a collector
+      # losing its high-water mark would all produce, though a legitimate mass
+      # pod churn (a rolling deploy, a node pool upgrade) can produce the same
+      # shape — this alert says "a human should look", not "this is a bug".
+      # 30m: graph_ladybug_edge_expired_share_step_change is gated the same way as
+      # graph_ladybug_edge_type_rows above (see GraphLadybugEdgeLabelMismatch's comment).
+      - alert: GraphLadybugEdgeExpiredShareStepChange
+        expr: max by (namespace, edge_type) (max_over_time(graph_ladybug_edge_expired_share_step_change{namespace="__NAMESPACE__", component="worker"}[30m])) > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: {{ $labels.edge_type }}'s share of relationships pointing at expired resources jumped"
+          description: >-
+            The proportion of {{ $labels.edge_type }} relationships pointing at resources
+            that have expired (e.g. pods deleted a while ago) changed sharply compared to
+            the previous graph rebuild. Some edge types are expected to sit near 100%
+            expired by design, so what matters here is the SIZE of the jump
+            (graph_ladybug_edge_expired_share_step_delta shows the signed change), not the
+            absolute number. Check three things: whether this build's check for expired
+            resources actually ran (a check that silently did not run looks identical to
+            "nothing is expired"), whether there was a real mass churn event (a deploy,
+            an autoscale event, a node pool upgrade), or whether a config change stopped
+            a resource type from loading into the graph at all. Do not raise the allowed
+            jump size without confirming which of these it is.
+
+      # Fetch-tier starvation and total mismatch, in one expression. An edge type
+      # can receive zero rows when an ordered, shared fetch budget is exhausted
+      # before it reaches that type; a starved type produces NO parity
+      # series at all rather than a zero, so `== 0` alone would never have caught it.
+      # `unless` covers both shapes: the series went to zero, or the series vanished.
+      # The `unless` side's window is 30m, not 10m: that gauge is gated the same
+      # way as GraphLadybugEdgeLabelMismatch's metric above — absent, not zero,
+      # until the first post-restart Ladybug build completes.
+      - alert: GraphLadybugEdgeTypeStoppedLoading
+        expr: |-
+          max by (namespace, edge_type) (max_over_time(graph_ladybug_edge_type_rows{namespace="__NAMESPACE__", component="worker", outcome="loaded"}[7d] offset 6h)) > 0
+          unless
+          max by (namespace, edge_type) (max_over_time(graph_ladybug_edge_type_rows{namespace="__NAMESPACE__", component="worker", outcome="loaded"}[30m])) > 0
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: {{ $labels.edge_type }} relationships stopped loading into the graph entirely"
+          description: >-
+            {{ $labels.edge_type }} relationships were loading into the graph at some
+            point in the last 7 days and now none are — either the per-sweep fetch
+            budget for relationships is being used up before this type is reached, or
+            every one of its rows is now being dropped for some other reason. In
+            practice, any attack path that depended on this kind of relationship has
+            quietly disappeared from the graph.
+
+      # Fail-open reachability: when the attacker-movement edge fetch truncates,
+      # internet_hops degrades to ReachUnknown and must-fix DEMOTIONS ARE PAUSED.
+      # The platform keeps scoring and looks entirely healthy while doing it.
+      #
+      # Scope of this series: it only sees a Reach/Inherit type
+      # hitting a fetch CAP, and a registry guard pins all of those to the uncapped
+      # tier, so it stays 1 even when the fetch as a whole fails. It stays because
+      # it is the tier-misconfiguration detector — it does not see Inherit types
+      # being starved by some other cause — so the completeness rule is the next one down.
+      # 30m: graph_ladybug_reach_edges_untruncated is gated the same way as
+      # graph_ladybug_edge_type_rows above (see GraphLadybugEdgeLabelMismatch's comment) —
+      # absent, not 1, until the first post-restart Ladybug build completes.
+      - alert: GraphLadybugReachEdgesTruncated
+        expr: min by (namespace) (min_over_time(graph_ladybug_reach_edges_untruncated{namespace="__NAMESPACE__", component="worker"}[30m])) == 0
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: an attacker-movement relationship type hit its fetch limit — unreachable findings not being deprioritized"
+          description: >-
+            The most recent graph rebuild could not fetch all of the relationships used
+            to calculate how reachable a resource is from the internet. When that
+            happens, the platform defaults to treating reachability as unknown rather
+            than guessing, which means findings that would normally be deprioritized
+            for being unreachable are NOT being deprioritized right now — prioritization
+            quietly gets worse without anything else looking broken. This particular
+            relationship type should never be capped by design; check internal/graphschema
+            to see why its fetch tier allowed a cap.
+
+      # If the bulk edge query fails (e.g. a ClickHouse total-memory error, code
+      # 241) and the loader degrades to a partial result, a rebuild could publish a
+      # graph missing a large share of edges and nodes while every gauge stays
+      # green. The fidelity gate refuses such a build, so this fires on the
+      # REFUSAL: the graph is stale rather than wrong, and it needs a human before
+      # it goes stale enough to matter.
+      #
+      # 15m, not hours. Correlate runs every 30m, so this is "the very next sweep did
+      # not repair it". GraphLadybugEdgeTypeStoppedLoading, the closest existing rule,
+      # sits at 2h — far too slow for a whole-graph regression.
+      - alert: GraphLadybugPublishRefused
+        expr: max by (namespace) (increase(graph_ladybug_publish_refused_total{namespace="__NAMESPACE__", component="worker"}[30m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: a graph rebuild was rejected as incomplete and thrown away"
+          description: >-
+            The most recent attempt to rebuild the in-memory graph looked suspiciously
+            incomplete (e.g. far fewer nodes/relationships than before), so a safety
+            check refused to publish it — the platform keeps serving the previous, older
+            graph instead of a corrupted one. Answers may be STALE but should still be
+            correct. Search worker logs for "REBUILD ABANDONED" to see the exact counts
+            that tripped the check, and check graph_ladybug_edge_fetch_complete to see if
+            the underlying data fetch itself failed. If this is actually a legitimate
+            change (an account was removed, a bulk cleanup happened), the next rebuild
+            should publish successfully and this clears on its own.
+
+      # The completeness signal graph_ladybug_reach_complete was mistaken for. It is 0
+      # whenever a synced edge tier did not come back whole, which is upstream of every
+      # other graph gauge: edges that were never fetched are never "dropped", never
+      # "mismatched", and never visible in any aggregate.
+      # 30m: graph_ladybug_edge_fetch_complete is gated the same way as
+      # graph_ladybug_edge_type_rows above (see GraphLadybugEdgeLabelMismatch's comment).
+      - alert: GraphLadybugEdgeFetchIncomplete
+        expr: min by (namespace) (min_over_time(graph_ladybug_edge_fetch_complete{namespace="__NAMESPACE__", component="worker"}[30m])) == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: fetching relationships for the graph rebuild is coming back incomplete"
+          description: >-
+            The database query that pulls in every relationship needed to rebuild the
+            graph either failed partway through or hit a row limit, so the resulting
+            graph would be incomplete and cannot be published. A common cause is the
+            database running out of memory on this query; check the
+            database's memory/error logs and the row limits in internal/app/asset/repo.go.
+
+      # The asset half of the same signal: the asset load hit the sync row cap, so
+      # the rebuild is refused like a partial edge fetch. Gated (and windowed) like
+      # graph_ladybug_edge_fetch_complete above.
+      - alert: GraphLadybugAssetFetchIncomplete
+        expr: min by (namespace) (min_over_time(graph_ladybug_asset_fetch_complete{namespace="__NAMESPACE__", component="worker"}[30m])) == 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: loading assets for the graph rebuild is hitting the row limit"
+          description: >-
+            The asset load for the graph rebuild hit the sync row limit
+            (syncAssetLimit in internal/app/asset/repo.go), so the rebuilt graph may
+            be missing assets. The rebuild is refused unless accept-on-repeat
+            publishes it anyway; check graph_ladybug_publish_refused_total and
+            graph_ladybug_publish_degraded_accepted_total to see which happened.
+
+      # accept-on-repeat published a shape that failed the check, because it arrived
+      # twice and refusing forever would freeze the graph on an ever-staler copy. An
+      # intended purge and a permanently broken producer are indistinguishable here by
+      # construction, so this rule exists to force the human answer.
+      # by (namespace, reason), not just (namespace): graph_ladybug_publish_degraded_
+      # accepted_total carries a reason label (step/cold_start/monotonic) and the
+      # description below treats the three as operationally distinct — aggregating
+      # it away would make $labels.reason unavailable to the annotations.
+      - alert: GraphLadybugDegradedGraphAccepted
+        expr: max by (namespace, reason) (increase(graph_ladybug_publish_degraded_accepted_total{namespace="__NAMESPACE__", component="worker"}[1h])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: a graph that failed its safety check was published anyway, twice in a row ({{ $labels.reason }})"
+          description: >-
+            A rebuilt graph looked incomplete enough to normally be rejected, but the
+            SAME incomplete shape showed up on two rebuilds in a row, so the platform
+            assumed it must be real and published it rather than serving an
+            ever-more-stale copy forever. Work out which it actually was: an intentional
+            change to the environment (an account was removed, a connector deleted, a
+            data source turned off — note it and move on), or an ongoing problem (a
+            database issue, a producer that stopped sending data) — in which case the
+            graph currently being served really is missing data.
+
+      # Defence in depth, on aggregates only, so it survives the in-process gate being
+      # bypassed entirely — an old binary, a rollback, the serve pod's own sync loop.
+      # Legitimate hour-over-hour change in edge volume is small (on the order of
+      # 1%), so a drop below 0.85 is a broken build, not churn. The window is one
+      # hour (`offset 1h`), matching the description below.
+      - alert: GraphLadybugEdgeVolumeCollapse
+        expr: |-
+          max by (namespace) (graph_ladybug_edges_loaded{namespace="__NAMESPACE__", component="worker"})
+          / max by (namespace) (graph_ladybug_edges_loaded{namespace="__NAMESPACE__", component="worker"} offset 1h)
+          < 0.85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: relationships in the live graph dropped to {{ $value }} of their value an hour ago"
+          description: >-
+            The live graph lost more than 15% of all its relationships within an hour.
+            Normal hour-to-hour change is under 1%, so this is a real regression, not
+            noise — most likely a failed data fetch or a background rebuild that only
+            partially completed (an incomplete rebuild here actively deletes existing
+            relationships rather than just failing to add new ones). This should
+            normally be caught and rejected automatically before publishing (see
+            GraphLadybugPublishRefused) — if it was not, either the running binary predates
+            that safety check or something is bypassing it.
+
+      # Without a memory alert, worker OOMKills are only visible in restart counts.
+      # This watches the PEAK rather than the current value, because the peak is
+      # the only sample that matters and it lasts only a few minutes out of every
+      # rebuild cycle: working set is lower between rebuilds and spikes during
+      # them. A `> 0.85` on the instantaneous value would be true for a tiny fraction of
+      # scrapes and would be missed; max_over_time makes the tail visible for the
+      # whole window after it happens.
+      #
+      # 0.85 is not arbitrary: with the limit set too tight the peak (cgroup
+      # memory.peak) crosses it, so this fires, and it stops firing once
+      # worker.resources.limits.memory leaves real headroom — which is the point. It
+      # is also the signal that says whether the corpus has grown back into the
+      # margin, since node count is a weak proxy for the footprint.
+      #
+      # cAdvisor for both halves so the ratio comes from one scrape job with one set
+      # of labels; the `> 0` guards a container whose limit is unset from producing +Inf.
+      - alert: GraphWorkerMemoryPeakNearLimit
+        expr: |
+          max_over_time(
+            (
+              max by (namespace) (container_memory_working_set_bytes{namespace="__NAMESPACE__", container="worker"})
+                /
+              max by (namespace) (container_spec_memory_limit_bytes{namespace="__NAMESPACE__", container="worker"} > 0)
+            )[6h:1m]
+          ) > 0.85
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: worker memory usage is peaking within 15% of the limit that gets it killed"
+          description: >-
+            The graph-worker pod's memory usage peaked within 15% of the memory limit
+            that would get it killed by Kubernetes (OOMKilled), at some point in the
+            last 6 hours. This peak recurs with every graph rebuild, not as a one-off,
+            so treat this as a crash that has not happened yet, rather than a fluke.
+            Go's own memory-limit setting (GOMEMLIMIT) only bounds Go's part of the
+            process; the in-memory graph engine's non-Go memory (its own allocator)
+            has no such ceiling
+            and is the harder part to control. Do not just raise GOMEMLIMIT — Go will
+            simply use however much it is allowed, which will not reduce the non-Go
+            usage. Re-measure actual memory usage before changing any of these limits.
+
+      # A node budget that exists only as a comment is never compared against the
+      # real graph, so the graph can silently grow to many times its design size
+      # while memory settings tuned for a much smaller corpus stop being valid.
+      # This is the gauge that makes an overrun loud instead of discovered by
+      # OOMKill. The budget is derived from
+      # the non-Go peak and the memory limit (graphstore.NodeBudget carries the
+      # arithmetic), leaving a margin of warning before the limit is reached. It is deliberately NOT the primary memory signal —
+      # GraphWorkerMemoryPeakNearLimit above is.
+      - alert: GraphLadybugNodeBudgetExceeded
+        expr: |
+          max by (namespace) (max_over_time(graph_ladybug_node_count{namespace="__NAMESPACE__", component="worker"}[10m]))
+            > max by (namespace) (max_over_time(graph_ladybug_node_budget{namespace="__NAMESPACE__", component="worker"}[10m]))
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: the in-memory graph holds more resources than its configured memory budget allows"
+          description: >-
+            The number of resources (nodes) loaded into the in-memory graph has
+            exceeded the ceiling it was sized for — a leading indicator of a future
+            out-of-memory crash, not an immediate outage. Do not just raise the ceiling
+            in isolation: the buffer-pool size and Go's memory limit were sized together
+            against a measured graph size, so all three need to move together based on
+            a fresh measurement. The cheapest fix is usually to check first whether some
+            resource type in the graph is dead weight — carrying no useful relationships
+            (DNS-record nodes are a typical candidate).
+
+      # 30m: graph_ladybug_edge_cap_hit is gated the same way as
+      # graph_ladybug_edge_type_rows above (see GraphLadybugEdgeLabelMismatch's comment).
+      - alert: GraphLadybugEdgeCapHit
+        expr: max by (namespace, edge_type) (max_over_time(graph_ladybug_edge_cap_hit{namespace="__NAMESPACE__", component="worker"}[30m])) == 1
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: edge type {{ $labels.edge_type }} hit its row cap during sync"
+          description: >-
+            {{ $labels.edge_type }} relationships hit their fetch limit during the last
+            graph sync, so the graph only has a partial picture of this relationship
+            type (a capped type can be missing well over half of its real rows).
+            Raise the fetch limit, or promote this
+            relationship type's priority tier, in internal/graphschema.
+
+      # INV-1. A principal is never on the internet; an identity emitted as a direct
+      # internet node poisons internet_hops to 0 for everything downstream of it,
+      # which is the reach-poisoning bug class: a single bad edge can push many
+      # findings falsely high at once. Steady state is 0.
+      # 30m: graph_ladybug_identity_zero_hop is gated the same way as
+      # graph_ladybug_edge_type_rows above (see GraphLadybugEdgeLabelMismatch's comment).
+      - alert: GraphLadybugIdentityZeroHop
+        expr: max by (namespace) (max_over_time(graph_ladybug_identity_zero_hop{namespace="__NAMESPACE__", component="worker"}[30m])) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: {{ $value }} invalid internet-exposure relationships dropped (identity treated as internet-facing)"
+          description: >-
+            Something is emitting "exposed to the internet" relationships with a
+            user/service identity — not a resource — as the source, which does not make
+            sense: identities are never directly internet-facing. The graph loader
+            correctly drops these before they cause harm, so this specific data is not
+            corrupting the graph right now, but the fact it is being produced at all
+            means the upstream code generating it has a bug, and the same bad signal may
+            be reaching the scoring pipeline through a different path. This count should
+            always be 0.
+
+      # The other half of reach poisoning: not a dropped edge but a rate that steps.
+      # "Every resource suddenly internet-reachable" is the leading symptom, and a
+      # static threshold cannot express it because the healthy rate is a property of
+      # the estate. Compare against the same series a day earlier instead.
+      # Both windows are 30m, not 10m: graph_ladybug_reachability_rate is gated the
+      # same way as graph_ladybug_edge_type_rows above (see
+      # GraphLadybugEdgeLabelMismatch's comment) — absent, not a rate, until the
+      # first post-restart Ladybug build completes.
+      - alert: GraphLadybugReachabilityRateStep
+        expr: |-
+          max by (namespace) (max_over_time(graph_ladybug_reachability_rate{namespace="__NAMESPACE__", component="worker"}[30m]))
+          - max by (namespace) (max_over_time(graph_ladybug_reachability_rate{namespace="__NAMESPACE__", component="worker"}[30m] offset 1d))
+          > 0.2
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: internet-reachability rate jumped {{ $value }} in 24h"
+          description: >-
+            The fraction of resources calculated to be reachable from the internet
+            jumped suddenly rather than drifting gradually. A sudden step like this
+            usually means the reachability calculation itself is broken (a bad
+            relationship poisoning the calculation), not that the environment genuinely
+            became more exposed all at once.
+
+      # ladybug#1341: the pinned engine release can miss relationships in multi-hop
+      # and variable-length matches once a node table exceeds one node group
+      # (graphstore/node_group_guard.go). Steady state is 0; 1 lasts until the
+      # tables shrink or the pin moves to a release with the fix.
+      # 30m: absent, not 0, until the first post-restart Ladybug build publishes.
+      - alert: GraphLadybugMultiHopMayBeIncomplete
+        expr: max by (namespace) (max_over_time(graph_ladybug_multihop_may_be_incomplete{namespace="__NAMESPACE__", component="worker"}[30m])) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: a graph node table is above one engine node group; multi-hop results may be incomplete"
+          description: >-
+            A node table in the in-memory graph holds more rows than one LadybugDB node
+            group (graph_ladybug_node_table_rows against graph_ladybug_node_group_rows).
+            The pinned engine release can then miss relationships in multi-hop and
+            variable-length queries (ladybug#1341), so attack paths, blast_radius_deep,
+            saved queries, detections and raw Cypher can return fewer paths than exist.
+            The API flags those results multi_hop_may_be_incomplete and Explore shows a
+            banner. Single-hop reads and risk scores are not affected. It clears when the
+            tables shrink below the limit or Vulngraph moves to an engine release with
+            the fix.
+
+      # Correlate runs every 30m by default (jobs.defaultCorrelateInterval), so 4h is
+      # eight missed sweeps. A worker that stops rebuilding keeps serving the last
+      # graph and answering queries normally — nothing else notices.
+      - alert: GraphLadybugRebuildStalled
+        expr: time() - max by (namespace) (max_over_time(graph_ladybug_last_built_timestamp_seconds{namespace="__NAMESPACE__", component="worker"}[10m])) > 14400
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: the in-memory graph has not synced from ClickHouse in over 4 hours"
+          description: >-
+            The in-memory graph that powers queries and risk scoring has not completed
+            a sync from ClickHouse in over 4 hours. Every correlate sweep re-reads the
+            load set and stamps this time, whether or not the content changed and a
+            rebuild ran, so this is several missed sweeps. The platform keeps answering queries and scoring normally
+            the whole time — just against an increasingly out-of-date picture of the
+            environment — so nothing else will look broken while this is happening.
+
+  - name: graph-detection-coverage
+    rules:
+      # A source pinned at blank must_fix_class can never reach must_fix however
+      # severe its findings are, and it looks perfectly healthy from everywhere else:
+      # the findings still carry a score, a band and a UI page. Typical causes:
+      # identity privesc demoted by a network-reachability gate that is a category
+      # error for a principal, supply-chain findings whose repo lineage cannot
+      # resolve, and image/OS package findings with no image lineage — any of which
+      # leaves an entire source, criticals included, 100% blank.
+      #
+      # nuclei is excluded by design: its blank ratio is near 100% and it is
+      # deliberately not prioritised, so including it would fire
+      # permanently and drown every source that matters.
+      #
+      # Some blank is the legitimate fail-open (unknown reachability must not
+      # guess), which is why this is a sustained ratio near 1.0 over a source with
+      # real volume, not any nonzero count.
+      - alert: GraphMustFixClassAllBlank
+        expr: |-
+          (
+            sum by (namespace, source) (max_over_time(graph_findings_must_fix_class{namespace="__NAMESPACE__", component="worker", source!="nuclei", state="blank"}[10m]))
+            /
+            sum by (namespace, source) (max_over_time(graph_findings_must_fix_class{namespace="__NAMESPACE__", component="worker", source!="nuclei"}[10m]))
+            > 0.95
+          )
+          and
+          sum by (namespace, source) (min_over_time(graph_findings_must_fix_class{namespace="__NAMESPACE__", component="worker", source!="nuclei"}[10m])) >= 100
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: {{ $value }} of {{ $labels.source }} findings can never be flagged must-fix"
+          description: >-
+            Effectively every open finding from {{ $labels.source }} is missing the
+            classification the platform uses to flag something as urgently needing a
+            fix — meaning no matter how severe these findings are, none of them will
+            ever surface as must-fix. This is usually caused by a missing link in the
+            data (e.g. the platform cannot trace a vulnerability back to the code repo
+            or container image it belongs to) or a scoring rule that does not make
+            sense for this type of finding.
+
+      # Without graph_check_junk_rate, finding quality is unfalsifiable: every
+      # assessment is a human sampling findings by hand, the same junk keeps being
+      # rediscovered, and a check that is effectively all false-positive can stay
+      # registered and keep producing indefinitely.
+      #
+      # Gated on graph_check_quality_measurable so a brand-new check with two
+      # resolutions cannot page anyone: without it a check with no evidence and a
+      # perfect check are both 0.0.
+      #
+      # source!="aws_guardduty": GuardDuty findings have NO coded "fixed" path
+      # anywhere in this codebase (internal/jobs/dangling.go's danglingJoinSpecs
+      # is the only quality-bearing resolver, always via reason=resource_gone;
+      # internal/jobs/sync_provider.go closes archived ones as provider_closed,
+      # which the ratio excludes) — so every
+      # GuardDuty check_id is mathematically guaranteed to sit near 1.0 forever,
+      # independent of real detection quality. Same exclusion shape as
+      # GraphMustFixClassAllBlank's source!="nuclei" above, for the same reason: a
+      # source whose only closure path structurally forces the ratio is not
+      # measuring the thing this alert exists to catch.
+      #
+      # graph_check_junk_rate/graph_check_quality_measurable are gauges recomputed
+      # from a ClickHouse lifetime aggregate on every scrape (internal/app/finding/
+      # quality.go) — there is no in-process counter here for a worker restart to
+      # reset. But the worker is a replicas:1, maxSurge:0 deployment
+      # (deployment-worker.yaml: "kill old pod first, then start new"), so every
+      # routine restart is a genuine total scrape gap of the worker's
+      # component="worker" series. An instant-vector `for:` has no memory across a
+      # gap: the series vanishing for even one evaluation resets that instance's
+      # pending countdown to zero. With for: 24h, every check_id would need 24
+      # continuous hours with no scrape gap to ever reach firing. Fix: bridge the
+      # restart gap the same way GraphLadybugEdgeTypeStoppedLoading/
+      # GraphWorkerMemoryPeakNearLimit already do in this file — max_over_time on
+      # the junk-rate side (a real high value is never hidden by widening the
+      # window, only a momentary absence is bridged) and min_over_time on the
+      # measurable gate (both operands of `and on(...)` need a series at the same
+      # instant, so only one side going stale during the gap breaks the join). 10m
+      # is negligible against a 24h for:, comfortably covers a typical restart
+      # gap, and does not weaken the "sustained, not a blip" intent of the rule.
+      #
+      # Several more sources share aws_guardduty's structural gap: no coded
+      # "fixed" or manual resolution path exists for iac/nuclei/ci_access
+      # (checked dangling.go/dangling_ephemeral.go, sync_lifecycle.go's
+      # reconcileResolvedFindings source filter ("cspm"/"iac_terraform" only),
+      # osv.go's reconcileSupplyChain ("supply_chain" only), and each source's
+      # own collector for a bespoke resolver). gcp_scc closes only as
+      # provider_closed, which JunkRate leaves out. Their junk rate can only ever
+      # resolve via resource_gone, so it is guaranteed to hit this threshold once
+      # they accumulate enough volume. This exclusion is deliberately
+      # preventative. iac_terraform is NOT excluded: sync_lifecycle.go resolves
+      # it via ReasonFixed same as cspm, so it has a real path and stays
+      # measured. ghas_secrets and ghas_code_scanning are NOT excluded either:
+      # they close as fixed (alert fixed, secret revoked) or manual (dismissed on
+      # GitHub).
+      #
+      # No check_id is excluded. A check whose findings overwhelmingly close via
+      # the resource disappearing, with a large open backlog, is this alert
+      # working as designed: a real finding about remediation practice, not a
+      # metric defect. In a high-churn estate "most open findings are old" is
+      # exactly what a check with a real, live gap looks like too. Exclude a
+      # check only with evidence that its resource_gone count is an artifact
+      # rather than churn.
+      - alert: GraphCheckJunkRateHigh
+        expr: |-
+          max by (namespace, check_id, source) (max_over_time(graph_check_junk_rate{namespace="__NAMESPACE__", component="worker", source!="aws_guardduty", source!="gcp_scc", source!="iac", source!="nuclei", source!="ci_access"}[10m])) > 0.9
+          and on (namespace, check_id, source)
+          max by (namespace, check_id, source) (min_over_time(graph_check_quality_measurable{namespace="__NAMESPACE__", component="worker", source!="aws_guardduty", source!="gcp_scc", source!="iac", source!="nuclei", source!="ci_access"}[10m])) == 1
+        for: 24h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: {{ $value }} of check {{ $labels.check_id }}'s findings close only because the resource was deleted"
+          description: >-
+            Findings from {{ $labels.check_id }} ({{ $labels.source }}) close because the
+            resource disappeared, not because anyone acted. The check is narrating
+            infrastructure churn rather than reporting risk — retire or re-scope it.
+
+      # ZERO IS A FINDING. A source that produced nothing in N days is
+      # indistinguishable from a source with nothing to report — e.g. a scanner
+      # idle behind an empty scan_profiles table, or a secrets source returning a
+      # handful of findings across thousands of repos.
+      # graph_source_last_activity_timestamp_seconds exists for this rule.
+      #
+      # last_seen is re-stamped every sweep by a source that runs, so a frozen value
+      # means the source did not run — not that the estate got no worse. A source
+      # that has never produced anything reports 0 here and is caught by the same
+      # comparison as an infinitely stale timestamp.
+      - alert: GraphFindingSourceDark
+        expr: time() - max by (namespace, source) (max_over_time(graph_source_last_activity_timestamp_seconds{namespace="__NAMESPACE__", component="worker"}[10m])) > 604800
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: source {{ $labels.source }} has produced nothing for over 7 days"
+          description: >-
+            No finding from {{ $labels.source }} has been seen or re-stamped in a week, so
+            the source is not running — an empty scan profile, a starved rate limit, a
+            job stuck `available`, or a collector that lost its credentials. A silent
+            source is indistinguishable from a clean estate, which is the whole point
+            of this alert.
+
+      # And the alert that catches this file lying. graph_source_last_activity_
+      # timestamp_seconds is emitted only when Sources.SourceActivity is wired; an
+      # unwired source makes GraphFindingSourceDark evaluate against nothing forever,
+      # i.e. an alert that silently can never fire.
+      - alert: GraphSourceActivityMetricAbsent
+        expr: absent(graph_source_last_activity_timestamp_seconds{namespace="__NAMESPACE__", component="worker"})
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: the signal used to detect a silent finding source is not being emitted"
+          description: >-
+            The metric that tracks when each finding source last produced anything is
+            not being emitted at all, which means the alert that watches for a
+            silent/dead source (GraphFindingSourceDark) can never fire — a source going
+            dark right now would be invisible. This needs a code fix: wire per-source
+            activity tracking into the worker (cmd/graph/worker_metrics.go) covering
+            every expected source, including ones that currently have zero findings.
+
+      # seen > configured means a live account or cluster has no connector at all —
+      # invisible from graph_connector_stale, which only ever describes connectors
+      # that exist.
+      - alert: GraphConnectorCoverageGap
+        expr: |-
+          max by (namespace, provider, dimension) (max_over_time(graph_connector_coverage_seen{namespace="__NAMESPACE__", component="worker"}[10m]))
+          > max by (namespace, provider, dimension) (max_over_time(graph_connector_coverage_configured{namespace="__NAMESPACE__", component="worker"}[10m]))
+        for: 24h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: {{ $labels.provider }} has more live {{ $labels.dimension }}s than connectors"
+          description: >-
+            At least one {{ $labels.provider }} {{ $labels.dimension }} present in collected
+            assets has no connector configured, so it is never collected in its own
+            right. Not visible from connector staleness — that only sees connectors
+            that already exist.
+
+  - name: graph-pipeline-health
+    rules:
+      # Never-enriched findings carry no score and no band, so Summary excludes them
+      # from ByBand and every score-sorted view buries them: they are invisible to
+      # every other signal. A periodic enrich job with RunOnStart:false and a long
+      # interval can be re-armed by every restart and never fire at all, leaving a
+      # large share of findings unenriched.
+      #
+      # DEPTH, not throughput: the second clause requires the backlog to be no
+      # smaller than it was a day ago. A sweep that is draining a spike is healthy
+      # and must not page; a sweep that is not keeping up, or not running, is not.
+      - alert: GraphUnenrichedBacklogNotDraining
+        expr: |-
+          (
+            max by (namespace, severity) (max_over_time(graph_findings_unenriched{namespace="__NAMESPACE__", component="worker", severity=~"critical|high"}[10m])) > 50
+          )
+          and
+          (
+            max by (namespace, severity) (max_over_time(graph_findings_unenriched{namespace="__NAMESPACE__", component="worker", severity=~"critical|high"}[10m]))
+            >=
+            max by (namespace, severity) (max_over_time(graph_findings_unenriched{namespace="__NAMESPACE__", component="worker", severity=~"critical|high"}[10m] offset 24h))
+          )
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: {{ $value }} {{ $labels.severity }} findings have never been scored, and the backlog isn't shrinking"
+          description: >-
+            The backlog of {{ $labels.severity }}-severity findings that have never been
+            scored is not shrinking — it is the same size or bigger than it was 24 hours
+            ago. Un-scored findings have no risk score and do not get sorted into any
+            severity view, so they are effectively invisible: not shown as top
+            priorities, not appearing in any severity-band dashboard. They also will not
+            benefit from any scoring-logic improvements until they get scored.
+
+      # first_detected_at (the must-fix age input, internal/app/finding/age.go)
+      # defaults to detected_at at insert time, so graph_finding_age_missing —
+      # open findings with NO first observation recorded at all — is expected to
+      # be exactly 0 forever. Unlike graph_finding_age_preserved (contextOnly in
+      # internal/obs/alerts_test.go: it depends on ClickHouse merge timing with no
+      # measured cadence to size a threshold against), Missing has no such
+      # dependency — it is a plain "did every writer set this column" invariant,
+      # same shape as GraphLadybugIdentityZeroHop's "must be 0" below. A non-zero
+      # reading means some write path inserts finding rows without a first
+      # observation, which the min-over-nonzero read in scoring deliberately
+      # hides rather than misusing "unknown" as a demotion (age.go's own doc) —
+      # so this alert is the only signal it is happening at all.
+      - alert: GraphFindingAgeMissing
+        expr: max by (namespace) (max_over_time(graph_finding_age_missing{namespace="__NAMESPACE__", component="worker"}[10m])) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: {{ $value }} open findings have no recorded first-observation timestamp"
+          description: >-
+            {{ $value }} open findings have no record of when they were first observed.
+            This should always be 0 — every write path is supposed to default this to
+            the finding's detection time — so a sustained non-zero value means some code
+            path is inserting findings without it. The platform partly decides whether
+            to flag a finding as must-fix based on how long it has been open, and these
+            findings can never be counted as "old" no matter how long they actually sit
+            open, because there is no starting point to measure from.
+
+      - alert: GraphConnectorStale
+        expr: max by (namespace, connector) (graph_connector_stale{namespace="__NAMESPACE__"}) == 1
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: connector {{ $labels.connector }} has not synced inside its staleness window"
+          description: >-
+            {{ $labels.connector }}'s last successful sync is older than its staleness
+            window. Without this alert a connector can stay frozen for weeks with
+            nothing reporting it.
+
+      # A connector can return collect.Result.Partial true on EVERY sweep for
+      # an unbounded run of consecutive syncs and nobody notices, because
+      # graph_connector_stale cannot see it:
+      # Stale() reads LastSuccessAt, which keeps advancing on a Partial-but-
+      # runErr-nil sync, sync_status stays "ok", and sync_error stays empty the
+      # whole time. A sustained Partial streak gates off deletion detection AND
+      # finding auto-resolution (internal/jobs/sync.go), so this alone can leave
+      # findings on assets that no longer exist open indefinitely. The connector
+      # domain's own PartiallyStale (internal/app/connector/domain.go) flags at
+      # DefaultPartialStreakThreshold=3, but 3 is tuned to tolerate an
+      # occasional transient skip (one throttled zone, one bad region) without
+      # ever flagging — alerting at that exact line would fire on noise and get
+      # muted. Healthy connectors stay near 0; broken
+      # connectors climb without bound. 10 is more than 3x the domain's own
+      # transient-tolerance line (so an isolated skip cannot trip it) and is
+      # reached within a few hours by a genuinely broken connector. `for: 6h` matches GraphConnectorStale's window so a
+      # connector that recovers mid-sweep doesn't flap the page.
+      - alert: GraphConnectorPartialStreak
+        expr: max by (namespace, connector) (graph_connector_partial_streak{namespace="__NAMESPACE__"}) >= 10
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: connector {{ $labels.connector }} has been partially collecting for {{ $value }} syncs in a row"
+          description: >-
+            {{ $labels.connector }}'s last {{ $value }} consecutive syncs each skipped
+            at least one best-effort collection step. While this holds, deletion
+            detection and finding auto-resolution are both disabled for this
+            connector: assets that no longer exist will not be deleted and their
+            findings will not auto-resolve.
+
+      # Collection staleness undermines every detection-logic change, because
+      # fixes only apply to re-collected assets: if a large share of a provider's
+      # assets stop being re-collected, nothing downstream improves for them.
+      # Anchored to each provider's OWN high-water mark, so
+      # a dead collector shows as a rising stale fraction instead of mass deletion.
+      - alert: GraphAssetCollectionStalled
+        expr: |-
+          max by (namespace, provider) (max_over_time(graph_asset_stale{namespace="__NAMESPACE__", component="worker"}[10m]))
+          / max by (namespace, provider) (max_over_time(graph_asset_total{namespace="__NAMESPACE__", component="worker"}[10m]))
+          > 0.5
+        for: 12h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: {{ $value }} of {{ $labels.provider }} assets are not being re-collected"
+          description: >-
+            More than half of {{ $labels.provider }}'s assets have fallen behind that
+            provider's own collection high-water mark. Detection logic cannot reach
+            them: every fix applies only to assets that are still being re-collected.
+
+      # Job failures are otherwise invisible: sync_connector jobs discarded on a
+      # ClickHouse write timeout (not an auth failure) can leave a whole provider
+      # almost entirely stale with nothing reporting it.
+      # worker!="domain_monitor" on both sides: crt.sh (a third-party CT-log
+      # service) can return 502 for days at a time (internal/app/intel/ct.go),
+      # and domain_monitor is BUILT to fail loud on every attempt during that
+      # window rather than hide it (so a long outage cannot pass silently,
+      # pinned by ct_blackout_test.go) — so a multi-day crt.sh outage would make
+      # this rule page continuously for a condition with no operator action
+      # available, exactly the shape the neighboring severity comment calls out. graph_job_runs_total
+      # still records domain_monitor's failures — dashboardable on demand —
+      # this only stops it from paging on a known, already-correctly-handled,
+      # third-party dependency being down.
+      - alert: GraphJobErrorRateHigh
+        expr: |-
+          sum by (namespace, worker) (rate(graph_job_runs_total{namespace="__NAMESPACE__", status="error", worker!="domain_monitor"}[30m]))
+          / sum by (namespace, worker) (rate(graph_job_runs_total{namespace="__NAMESPACE__", worker!="domain_monitor"}[30m]))
+          > 0.5
+        for: 1h
+        labels:
+          # warning, not critical: this rule is generic over EVERY job kind
+          # (worker is a label, not a fixed value), so it belongs on the
+          # lower-noise channel rather than the on-call one.
+          severity: warning
+        annotations:
+          summary: "graph: over half of {{ $labels.worker }} job runs are failing"
+          description: >-
+            {{ $labels.worker }} is erroring on most executions. One cause to rule out
+            is a database write timeout during data ingestion, which reads as a
+            connector problem from every other angle.
+
+      - alert: GraphJobQueueBacklog
+        expr: max by (namespace, queue) (graph_river_queue_depth{namespace="__NAMESPACE__", state="available", queue!="enrich"}) > 5000
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: {{ $value }} jobs waiting on the {{ $labels.queue }} queue"
+          description: >-
+            The {{ $labels.queue }} queue has a large sustained backlog of available jobs —
+            workers are not keeping up, or a job class is wedged and being re-enqueued.
+
+      # GraphJobQueueBacklog catches DEPTH; it cannot catch a single job wedged on
+      # an otherwise-idle queue, which never crosses depth>5000. This is the
+      # per-job age counterpart: how long has the OLDEST available (not yet
+      # started) job on this queue been waiting.
+      #
+      # Threshold, derived from internal/jobs/client.go's own documented
+      # periodic cadences: the tightest normal interval anywhere in this system is
+      # enqueueCheckInterval/defaultEnrichInterval at 15 minutes, and
+      # workerSoftStopTimeout's own comment states "most job kinds finish in low
+      # tens of seconds". An `available` job — queued but not yet picked up by
+      # any worker — has nothing to do with how often a periodic RE-ENQUEUES;
+      # a healthy worker fleet should pick up any available job within seconds
+      # regardless of whether its queue's own producer runs every 15 minutes or
+      # once a day (kev/osv/imageVuln/epss/scc are all 24h-cadence queues, but
+      # that governs how often NEW jobs appear, not how long an EXISTING one sits
+      # unstarted). 45 minutes is triple the tightest legitimate cadence in the
+      # system and two orders of magnitude past a normal job's own runtime, so it
+      # cannot be explained by cadence — only by workers not fetching from this
+      # queue at all (crashed, wedged on a prior job via workerSoftStopTimeout's
+      # 20s/100s grace not being enough, or a unique-constraint collision
+      # leaving a phantom row available forever).
+      - alert: GraphJobQueueWedged
+        expr: max by (namespace, queue) (graph_river_queue_oldest_available_seconds{namespace="__NAMESPACE__"}) > 2700
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: oldest available job on the {{ $labels.queue }} queue has waited {{ $value }}s"
+          description: >-
+            The oldest job still in the `available` state on the {{ $labels.queue }}
+            queue has been waiting {{ $value }}s to be picked up — far longer than any
+            legitimate periodic cadence in internal/jobs/client.go explains. Workers
+            are not fetching from this queue: check graph-worker/graph-scanner
+            readiness (GraphWorkerOrScannerNotReady) first, then whether this specific
+            job is stuck retrying or unique-constraint-blocked
+            (`SELECT * FROM river_job WHERE queue = '{{ $labels.queue }}' AND state =
+            'available' ORDER BY scheduled_at LIMIT 5`).
+
+      # enrich carries its own, higher threshold — same "shared threshold doesn't
+      # fit this one's designed operating range" shape as GraphDomainMonitorNeverRefreshed
+      # above. EnrichSweepWorker's backfill (backfillQueueCeiling=5000) and
+      # ReenrichWorker's full-corpus convergence (reenrichQueueCeiling=8000,
+      # internal/jobs/reenrich.go) both deliberately let this queue ride up to
+      # 5000-8000 routinely: every enrichcache.LogicVersion bump re-enriches the whole open corpus at a paced rate
+      # (TestReenrichPacingDrainsEachRoundAndFinishesWithinADay) that can hold depth
+      # elevated for hours by design. The shared 5000/6h threshold would fire on
+      # every routine convergence: a depth just above 5000 sits between the two
+      # designed self-throttle ceilings, tied to a LogicVersion bump. The enrich
+      # workers drain such backlogs once new enqueueing stops (enrich.go). 12000 sits
+      # above BOTH documented ceilings, so it only fires once depth has grown
+      # past what the system's own backpressure is supposed to cap it at.
+      - alert: GraphEnrichQueueBacklog
+        expr: max by (namespace, queue) (graph_river_queue_depth{namespace="__NAMESPACE__", state="available", queue="enrich"}) > 12000
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: {{ $value }} jobs waiting on the enrich queue"
+          description: >-
+            The queue of findings waiting to be scored (enriched) has grown past every
+            level the platform is designed to intentionally reach during a routine bulk
+            re-scoring pass, and stayed there for 6 hours — meaning the scoring workers
+            genuinely cannot keep up with new work, not just a normal bulk catch-up in
+            progress. Before treating this as a regression, check whether a full
+            re-scoring pass is currently running (a recent scoring-logic version bump)
+            — that alone can push this queue up for hours by design
+            (internal/jobs/reenrich.go).
+
+      # RunOnStart:false plus a long interval means a periodic job NEVER fires,
+      # because every spot preemption and deploy re-arms the timer, and any of the
+      # daily feeds (EPSS, KEV, OSV, SCC) can go dark for weeks that way. This is
+      # the direct "is it still updating?" signal for the feeds.
+      - alert: GraphIntelFeedStale
+        expr: time() - max by (namespace, feed) (max_over_time(graph_feed_last_success_timestamp_seconds{namespace="__NAMESPACE__", component="worker"}[10m])) > 172800
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: intel feed {{ $labels.feed }} has not refreshed in 48h"
+          description: >-
+            The {{ $labels.feed }} threat-intel feed (e.g. KEV = CISA's Known Exploited
+            Vulnerabilities list, EPSS = a vulnerability's predicted likelihood of
+            exploitation) has not refreshed in over 48 hours — more than twice its
+            normal daily update cadence. A stale feed silently degrades every
+            severity/priority decision that depends on it, without anything else
+            looking wrong.
+
+      # The gauge is only ever set by a refresh that succeeded in THIS process, so a
+      # feed that has never run has no series at all and the staleness rule above
+      # cannot see it — which is exactly the RunOnStart:false shape. Enumerated
+      # explicitly, because absent() needs to be told what should be there.
+      #
+      # domain_monitor deliberately excluded, split into its own
+      # GraphDomainMonitorNeverRefreshed below with a much longer for: — see that
+      # alert's comment. The other three feeds here (kev/osv/epss) are on by
+      # default and share a 24h cadence and no known-flaky upstream, so 26h is
+      # the right shared threshold for them. scc has the same cadence but is off
+      # by default, so it has its own rule in the graph-intel-scc group.
+      - alert: GraphIntelFeedNeverRefreshed
+        expr: |-
+          absent(graph_feed_last_success_timestamp_seconds{namespace="__NAMESPACE__", component="worker", feed="kev"})
+          or absent(graph_feed_last_success_timestamp_seconds{namespace="__NAMESPACE__", component="worker", feed="osv"})
+          or absent(graph_feed_last_success_timestamp_seconds{namespace="__NAMESPACE__", component="worker", feed="epss"})
+        for: 26h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: intel feed {{ $labels.feed }} has never refreshed in this worker"
+          description: >-
+            The {{ $labels.feed }} threat-intel feed has never successfully refreshed
+            since this worker pod started, despite being well past its expected daily
+            update. This is a known failure shape for a scheduled background job: if it
+            is not configured to run immediately on startup, and the process restarts
+            often enough, the job's timer keeps getting reset and it can go a very long
+            time without ever actually running. If this is the "kev" feed, also check
+            for repeated errors on the refresh_kev job and worker logs for related
+            errors — it can sit stuck retrying without success.
+
+      # Split from GraphIntelFeedNeverRefreshed: crt.sh (domain_monitor's
+      # sole upstream, internal/app/intel/ct.go) is documented to return 502 "for
+      # days at a time," and domain_monitor is deliberately built to fail loud
+      # during that window (ct_blackout_test.go) rather than fake a success. A 26h
+      # `for` — sized for the 24h-cadence feeds above — fires on every ordinary,
+      # already-diagnosed crt.sh outage, the same non-actionable-noise reasoning
+      # GraphJobErrorRateHigh's worker!="domain_monitor" exclusion already accepted
+      # a few sections up. Widened so it only pages when the blackout outlasts
+      # crt.sh's known bad streaks — e.g. a genuine regression, not a known
+      # third-party outage — while still closing the multi-week silent-blackout
+      # gap ct_blackout_test.go exists to prevent: do NOT fold domain_monitor back
+      # into GraphJobErrorRateHigh's exclusion or drop it silently — with that rule
+      # already excluding it, this is the only remaining watchdog for the feed.
+      - alert: GraphDomainMonitorNeverRefreshed
+        expr: absent(graph_feed_last_success_timestamp_seconds{namespace="__NAMESPACE__", component="worker", feed="domain_monitor"})
+        for: 96h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: domain/subdomain monitoring has never refreshed in this worker"
+          description: >-
+            The domain-monitoring feed (which checks Certificate Transparency logs, via
+            the third-party service crt.sh, for newly-registered subdomains) has not
+            successfully refreshed in 96 hours. Before treating this as a code bug,
+            check for repeated errors on the domain_monitor job — crt.sh is a
+            known-flaky external dependency that can return errors for days at a time
+            with no fallback, and this alert's long wait period already accounts for
+            that (internal/app/intel/ct.go).
+
+      # osv_malfeed runs hourly, not daily like the feeds above — its whole point is
+      # catching a newly-published MAL-* advisory fast, so a dark feed here needs a
+      # much tighter window than GraphIntelFeedStale's 48h or it defeats its own
+      # purpose. Kept as its own alert rather than folded into the two above.
+      - alert: GraphOSVMalFeedStale
+        expr: time() - max by (namespace) (max_over_time(graph_feed_last_success_timestamp_seconds{namespace="__NAMESPACE__", component="worker", feed="osv_malfeed"}[10m])) > 10800
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: OSV malicious-packages feed has not refreshed in 3h"
+          description: >-
+            The hourly check for newly-published malicious-package advisories (which
+            can flag an already-scanned open-source package as malicious after the
+            fact) has not run in over 3 hours. Without it, detecting a newly-flagged
+            malicious package falls back to the much slower daily vulnerability scan,
+            which only re-checks each package once every 7 days.
+
+      # graph_feed_last_success_timestamp_seconds{feed="osv"} only proves the daily
+      # refresh_osv job RAN — it stamps even on a 0-new-packages run (everything
+      # within osvRescanAfter's 7-day skip window). This is the actual coverage
+      # signal: the oldest scan in the corpus falling behind means the sweep is not
+      # cycling the full inventory within its own rescan window, which is the gap
+      # through which a MAL-* advisory on an already-scanned package can sit
+      # undetected with no visible symptom anywhere else.
+      - alert: GraphOSVScanCoverageStale
+        expr: time() - max by (namespace) (max_over_time(graph_osv_scan_oldest_scanned_timestamp_seconds{namespace="__NAMESPACE__", component="worker"}[10m])) > 691200
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: OSV package-scan coverage is stale — oldest scanned package is over 8 days old"
+          description: >-
+            Open-source packages are supposed to be re-scanned for vulnerabilities at
+            least every 7 days, but the oldest scanned package in the inventory is now
+            over 8 days old — meaning the daily scan job is not managing to cycle
+            through the full package inventory in time. Check for a stuck or erroring
+            scan run; do not just check whether the job's "last successful run"
+            timestamp looks recent, since that can look fine while coverage is still
+            incomplete.
+
+      # No GraphOSVNeverScannedGap rule here, deliberately, not an oversight. Its
+      # numerator/denominator (graph_osv_scan_never_scanned = total packages
+      # minus scanned packages) has a real, structural, non-zero floor: OSVWorker
+      # permanently skips any package with a blank ecosystem/name/version or
+      # GitHub's "0.0.0" indirect-dependency placeholder (internal/jobs/osv.go) —
+      # such packages can NEVER get a row in osv_scanned_packages no matter how
+      # many sweeps run, but graph_osv_scan_total_packages counts them anyway. A
+      # bare `> 0` threshold on a metric with an unmeasured permanent floor is
+      # exactly the shape declined for the identical image-scan metric (see
+      # graph_image_scan_never_scanned in internal/obs/alerts_test.go's
+      # contextOnly map) — same call, same reasoning. GraphOSVScanCoverageStale above already covers the
+      # real underlying health question ("is the sweep cycling the estate") via
+      # a signal with no such floor.
+
+      # A container-image sweep pass truncated by its time budget chains a
+      # continuation and reports ok rather than erroring (otherwise a sweep that
+      # scans most digests every day would report ERROR on every run). That
+      # creates the opposite blind spot: a sweep that scans NOTHING also reports
+      # ok. These two alerts cover it by reading the sweep's own cursor, so neither
+      # can be satisfied by a job that merely ran.
+      #
+      # Both wrapped in max by (namespace), like every staleness-style rule here.
+      # vmagent attaches pod-identity labels (pod/instance) to every worker-pod
+      # sample; without max by, a routine single-replica redeploy gives these
+      # metrics a brand-new label set on every restart, which resets their `for:`
+      # pending clock to zero no matter how long the underlying condition already
+      # held. A longer for: gives zero protection against a reset that happens at
+      # t=0 on every deploy.
+      - alert: GraphImageScanDark
+        expr: max by (namespace) (min_over_time(graph_image_scan_covered_recent{namespace="__NAMESPACE__", component="worker"}[10m])) == 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: no container image has been vulnerability-scanned in ~2 days"
+          description: >-
+            Not a single container image has completed a vulnerability scan in roughly
+            the last 2 days (images are normally expected to be re-scanned within about
+            20 hours, plus about a day of grace). Because scan results are also used to
+            link vulnerabilities to the containers running them, this means newly
+            discovered container vulnerabilities have silently stopped being able to
+            surface as must-fix findings at all — a real blind spot, not just delayed
+            data. Check the image-vulnerability scan job for a stuck or unscheduled run,
+            and check the worker's container-registry credentials; the job's own
+            status/health check alone will not reveal this.
+
+      - alert: GraphImageScanCoverageStale
+        expr: time() - max by (namespace) (max_over_time(graph_image_scan_oldest_scanned_timestamp_seconds{namespace="__NAMESPACE__", component="worker"}[10m])) > 259200
+        for: 2h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: image-scan coverage is stale — worst-covered image is over 3 days old"
+          description: >-
+            Container images are supposed to be re-scanned roughly every 20 hours, but
+            the least-recently-scanned image now has not been scanned in over 3 days.
+            This is partial, drifting coverage rather than a total outage (a total stop
+            is covered by GraphImageScanDark) — likely causes are a scan batch erroring
+            out before finishing, the scan hitting its per-run batch limit every time,
+            or shared scanning capacity being monopolized by something else.
+
+      # Scanned-high/resolved-zero: a sweep can run against a very large finding
+      # backlog, examining findings and resolving none, and without this rule
+      # nothing tells the difference from a healthy sweep with nothing to do.
+      - alert: GraphSweepScansButNeverResolves
+        # `unless`, not `and ... == 0`: a phase that has NEVER resolved anything has
+        # no resolved counter child and therefore no series, so an equality test
+        # against it matches nothing and the alert could never fire for the very
+        # worst case. `unless` treats an absent series and a zero one alike.
+        expr: |-
+          sum by (namespace, phase) (increase(graph_sweep_outcomes_total{namespace="__NAMESPACE__", component="worker", outcome="scanned"}[24h])) > 1000
+          unless
+          sum by (namespace, phase) (increase(graph_sweep_outcomes_total{namespace="__NAMESPACE__", component="worker", outcome="resolved"}[24h])) > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: sweep phase {{ $labels.phase }} scans thousands of findings and resolves none"
+          description: >-
+            The {{ $labels.phase }} phase examined over a thousand findings in 24h and
+            resolved not one. Either its resolution predicate is broken or its write
+            path is. Indistinguishable from a healthy idle sweep without this pair.
+
+      # The enrich consistency gate is the safety net, not the fix: it repairs a bad
+      # reach signal per finding at scoring time. Steady state for INV-1 is 0, so
+      # a nonzero rate means poisoned reach data is still arriving and the fix
+      # upstream has regressed.
+      #
+      # Scoped to inv1_identity_zero_hop only — that "steady state is 0" claim is
+      # true for INV-1 (fixed at the source) and NOT for INV-2/3/4.
+      # internal/app/enrich/consistency.go's own doc comment documents each of
+      # those three as an ongoing, expected-nonzero backstop with a standing
+      # population (INV-2: sizeable; INV-3: "not a large
+      # standing population... most likely to spike without warning"; INV-4: sizeable,
+      # "this is the backstop for the rest") — alerting on
+      # them here would perma-fire on new findings hitting the same known
+      # structural gaps, the same alert-formula pitfall avoided in
+      # GraphAssetCollectionStalled/GraphConnectorCoverageGap/GraphCheckJunkRateHigh.
+      # They remain visible as the raw graph_enrich_consistency_violations_total
+      # metric for anyone who wants to dashboard them; just not paged on a
+      # threshold known wrong for them.
+      - alert: GraphEnrichConsistencyViolations
+        expr: sum by (namespace, invariant) (increase(graph_enrich_consistency_violations_total{namespace="__NAMESPACE__", component="worker", invariant="inv1_identity_zero_hop"}[6h])) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: the scoring pipeline auto-corrected {{ $value }} findings with an impossible reachability signal ({{ $labels.invariant }})"
+          description: >-
+            Findings are arriving at the scoring stage with a data-integrity violation
+            labeled {{ $labels.invariant }} — in practice, a signal claiming a resource is
+            directly reachable from the internet when it structurally cannot be. A
+            safety check catches and repairs it before scoring, so the resulting scores
+            are still correct, but something upstream is producing bad data, and that
+            is what actually needs fixing — not this repair step.
+
+      # outcome=~"sample_error" only, not "sample_error|deferred": deferred means
+      # the per-sweep cost cap (belief.DefaultSweepConfig) is throttling
+      # adjudication, which is routinely binding at any real finding volume, so
+      # deferred > 0 over any 6h window is structurally near-permanent, not a
+      # fault. sample_error is the real signal: the sampler itself is broken (bad
+      # model id, ungrounded verdict) and the deterministic severity stands
+      # unchallenged. graph_adjudicator_outcomes_total{outcome="deferred"} stays
+      # available to dashboard/raise the cap against; it just isn't page-worthy.
+      - alert: GraphAdjudicatorDegraded
+        expr: sum by (namespace, outcome) (increase(graph_adjudicator_outcomes_total{namespace="__NAMESPACE__", component="worker", outcome=~"sample_error"}[6h])) > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: adjudicator {{ $labels.outcome }} {{ $value }} times in 6h"
+          description: >-
+            sample_error means the sampler itself is broken (bad model id, ungrounded
+            verdict) and the deterministic severity stands unchallenged — findings are
+            left un-adjudicated while the pipeline reports success.
+
+      # The full whole-graph sweep is the ground truth every derived edge depends on.
+      # Full sweeps can fail most attempts for many hours without anything else
+      # noticing: graph_job_runs_total is keyed by WORKER, so failing full sweeps
+      # average away behind a healthy partial rate, and a duration histogram only
+      # samples the runs that finish. This gauge is the one shape that catches
+      # "sweeps stopped completing".
+      # for: 40m, not 15m: a shorter window fires on a routine deploy restart
+      # even though the sweep is healthy and actively working —
+      # correlate.go's own periodic registration delays the first post-restart
+      # attempt 5 minutes on purpose (avoid hammering ClickHouse during the sync/
+      # enrich/Ladybug boot storm), and that same boot-storm contention can stretch a
+      # full sweep well past its steady-state time. 40m leaves real
+      # margin above the cold-start cost while staying a small fraction of both
+      # the 90-minute staleness condition above and the 48h topology-deletion
+      # deadline this alert exists to protect against.
+      - alert: GraphCorrelateFullSweepStale
+        expr: |-
+          (time() - max by (namespace) (max_over_time(graph_correlate_last_full_success_timestamp_seconds{namespace="__NAMESPACE__", component="worker"}[10m]))) > 5400
+          or absent(graph_correlate_last_full_success_timestamp_seconds{namespace="__NAMESPACE__", component="worker"})
+        for: 40m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: no full graph-linking pass has completed in over 90 minutes"
+          description: >-
+            The background job that scans the whole environment and re-derives every
+            relationship in the graph (normally runs every 30 minutes) has not
+            completed successfully in over 90 minutes — three missed cycles. This
+            matters more than a typical staleness alert: relationships this job does
+            not re-confirm within 48 hours get actively removed from the graph, so a
+            stalled job does not just leave things stale, it will eventually start
+            silently deleting real connections between resources.
+
+      # The view limit is a fail-closed circuit breaker (correlate.ErrViewTruncated),
+      # so the useful signal is the headroom trend, not the trip. This may fire on
+      # first deploy on a large estate — that is correct and means a metadata-key
+      # projection is due, not that the threshold needs tuning.
+      - alert: GraphCorrelateViewNearLimit
+        expr: |-
+          max by (namespace) (max_over_time(graph_correlate_view_rows{namespace="__NAMESPACE__", component="worker"}[10m]))
+            /
+          max by (namespace) (max_over_time(graph_correlate_view_limit{namespace="__NAMESPACE__", component="worker"}[10m]))
+            > 0.8
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: the data view used for graph-linking is at {{ $value | humanizePercentage }} of its row limit"
+          description: >-
+            The dataset used to re-link resources into the graph is approaching a hard
+            row-count limit. Crossing that limit makes every graph-relinking pass fail
+            outright (a deliberate safety mechanism, not a bug) until the limit is
+            raised. The limit itself is sized against the worker's available memory, so
+            simply raising it risks trading a clean failure for an out-of-memory crash
+            instead — better to shrink what is being fetched (two metadata fields,
+            permissions and policies, account for a large share of this dataset's size).
+
+      # Degradation before staleness. GraphCorrelateFullSweepStale catches "no sweep
+      # completed in 90m", but a sweep failing 2 attempts in 3 still lands a success
+      # roughly every 90 minutes — right on that threshold, so a sustained
+      # two-thirds failure rate can sit there indefinitely. The rate is the
+      # earlier and more honest signal. Keyed by mode because a failing full
+      # sweep and a failing partial mean different things.
+      - alert: GraphCorrelateSweepsFailing
+        expr: |-
+          sum by (namespace, mode) (rate(graph_correlate_sweeps_total{namespace="__NAMESPACE__", component="worker", status="error"}[1h]))
+            /
+          sum by (namespace, mode) (rate(graph_correlate_sweeps_total{namespace="__NAMESPACE__", component="worker"}[1h]))
+            > 0.25
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: {{ $labels.mode }} correlation sweeps failing {{ $value | humanizePercentage }} of the time"
+          description: >-
+            This graph-linking job's retries are capped at 2 (running the whole pass
+            again on the next schedule is the real retry), so a sustained error rate
+            means the failure is structural, not transient. Check whether the
+            underlying data view is timing out or tripping its row limit — both surface
+            as a sweep error.
+
+      # A Ladybug rebuild gate that never matches (e.g. one keyed on a value that
+      # changes every sweep regardless of content) turns every sync into a full,
+      # multi-minute rebuild that consumes a large share of the graph queue. No
+      # other metric can express it: the rebuild histogram only samples runs that
+      # happen, so "every sync is a full sync" has no other shape. This does.
+      - alert: GraphLadybugSyncAlwaysFullRebuild
+        expr: |-
+          sum by (namespace) (rate(graph_ladybug_sync_total{namespace="__NAMESPACE__", path=~"noop|signals"}[6h])) == 0
+            and
+          sum by (namespace) (rate(graph_ladybug_sync_total{namespace="__NAMESPACE__", path="full"}[6h])) > 0
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: every graph sync is doing a full, expensive rebuild instead of a fast incremental update"
+          description: >-
+            Every graph sync is doing the expensive full rebuild rather than a cheap
+            incremental update, because the environment genuinely has enough continuous
+            churn (new/changed resources) that no two syncs ever see an identical
+            snapshot to shortcut against (common on large, busy deployments). This is
+            a known, expected state at that scale, not something to fix
+            by changing the shortcut logic — the shortcut is working correctly, it just
+            can never trigger given how much the environment changes. The actionable
+            lever is making the full rebuild itself cheaper (use
+            graph_ladybug_rebuild_phase_seconds to see which phase is slowest). Only treat
+            this as an actual bug if the resource count in the graph is completely flat
+            and it is still doing a full rebuild every time.
+
+      # notify.Service.Dispatch/SendTest post to Slack/webhook channels, and a
+      # failed send is otherwise only a log line plus a per-channel DB column —
+      # with no aggregate signal, outbound alerting could die silently while
+      # every OTHER graph_* series stayed green (the exact failure mode this whole
+      # file exists to close for every other subsystem).
+      #
+      # Deliberately a RATIO, aggregated across ALL channels (no channel_id in the
+      # `by`), not a per-channel or bare-count alert: a single channel with a
+      # revoked Slack token or a stale webhook URL is a config problem an operator
+      # fixes on their own schedule, and alerting per-channel on it would page
+      # forever for as long as that one channel stays misconfigured — noise, not
+      # signal. What must page is "outbound alerting itself is broken" — nearly
+      # every attempt, across every configured channel, failing at once, which
+      # means the notify code path (not one channel's credentials) is down.
+      # status="no_recipient" (no channel accepted the alert) is a routing gap,
+      # not a delivery attempt, so it stays out of the denominator.
+      # 0.9 at 30m/1h is a coarse first threshold (there is no baseline failure
+      # rate to calibrate against) chosen to require near-total failure, not a
+      # bad-but-partial stretch, before paging; revisit once it has run long
+      # enough to calibrate against real noise.
+      - alert: GraphNotifyDeliveryFailing
+        expr: |-
+          sum(rate(graph_notify_delivery_total{namespace="__NAMESPACE__", status="error"}[30m]))
+            /
+          sum(rate(graph_notify_delivery_total{namespace="__NAMESPACE__", status!="no_recipient"}[30m])) > 0.9
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: over 90% of outbound alert-channel deliveries have failed for over an hour"
+          description: >-
+            graph_notify_delivery_total{status="error"} is dominating the outbound
+            delivery rate across every configured channel, not just one — this reads
+            as the notify dispatch path itself being broken (bad Slack app config,
+            outbound network egress blocked, a code regression in Dispatch/SendTest)
+            rather than a single channel's stale credentials, which this
+            deliberately does not page on per-channel. Check individual channels'
+            last_status/last_error (notify.Channel) for which ones are failing and
+            whether it is really all of them.
+
+      # A finding alert that no channel accepted reached nobody — a routing gap
+      # (every channel scoped away from its owner/environment/severity), not a
+      # delivery failure. The enrich worker retries it, so a sustained rate means
+      # a real page is going unheard. 15m keeps one transient config edit quiet.
+      - alert: GraphFindingAlertsReachNoChannel
+        expr: |-
+          sum(increase(graph_notify_delivery_total{namespace="__NAMESPACE__", event_type="finding", status="no_recipient"}[30m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: finding alerts are reaching no alert channel"
+          description: >-
+            graph_notify_delivery_total{status="no_recipient", event_type="finding"}
+            is rising: finding alerts are being produced but every enabled channel's
+            routing rules reject them. Add a route_unowned channel, or widen the
+            environment/severity scope of an existing one. The worker log line
+            "no channel accepted the notification" names the owner and environment.
+            An install with no channel configured at all also counts here (and its
+            alerts are not retried) — configure a channel or silence this rule.
+
+      # General class, not a per-feed one: a job can sit retryable for days
+      # (e.g. on a flaky upstream returning 502) with nothing alerting on it —
+      # GraphJobQueueBacklog only reads state="available", so a
+      # queue that is fully wedged in retryable (workers keep picking jobs up,
+      # failing, and rescheduling them) shows a SMALL available count and never
+      # trips it. graph_river_queue_depth already carries state="retryable" per
+      # queue (QueueDepths, internal/jobs/obs.go) — no new metric needed, just
+      # this rule. A bare > 0 rather than a count threshold, because unlike a
+      # backlog of NEW work, a single job wedged in retryable for 6h straight is
+      # already the anomaly: every job kind's retry schedule in internal/jobs
+      # clears state within minutes at worst under normal operation
+      # (MaxAttempts 1-3 almost everywhere, River's default attempt^4 backoff or
+      # a bounded custom NextRetry — dangling.go's is the widest at 45s). This
+      # complements domain_monitor's own MaxAttempts:2 (domain_monitor.go): if
+      # crt.sh outlives that one retry, the job discards fast instead of sitting
+      # retryable, so this rule stays quiet for the known-flaky-upstream case and
+      # reserves itself for a genuinely wedged queue — the same
+      # non-actionable-noise split GraphJobErrorRateHigh's
+      # worker!="domain_monitor" exclusion and GraphDomainMonitorNeverRefreshed's
+      # 96h make for that specific feed.
+      - alert: GraphQueueStuckRetryable
+        expr: max by (namespace, queue) (graph_river_queue_depth{namespace="__NAMESPACE__", state="retryable"}) > 0
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: {{ $labels.queue }} queue has jobs stuck retryable for 6h+"
+          description: >-
+            The {{ $labels.queue }} queue has had at least one job sitting in retryable
+            state continuously for 6 hours. Every job kind either discards fast
+            (MaxAttempts 1-3) or clears retryable within minutes under normal retry
+            schedules, so this means a job is failing identically on every attempt
+            with nothing resolving it — check graph_job_runs_total{queue="{{ $labels.queue
+            }}",status="error"} and worker logs for "job errored" to find which kind and
+            why before assuming River itself is stuck.
+
+  # GCP Security Command Center. The refresh_scc job exists only when SCC_ORG_ID
+  # is set, so templates/vmrule.yaml renders this group only when
+  # config.sccOrgId is: without SCC its absent() would fire forever.
+  - name: graph-intel-scc
+    rules:
+      # Same shape and 26h threshold as GraphIntelFeedNeverRefreshed, whose
+      # comment explains both.
+      - alert: GraphSCCFeedNeverRefreshed
+        expr: absent(graph_feed_last_success_timestamp_seconds{namespace="__NAMESPACE__", component="worker", feed="scc"})
+        for: 26h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: the SCC feed has never refreshed in this worker"
+          description: >-
+            The GCP Security Command Center feed (config.sccOrgId) has never
+            successfully refreshed since this worker pod started, despite being well
+            past its expected daily update. Check for repeated errors on the
+            refresh_scc job, and the worker logs for the reason.
+
+  # Cost Explorer collection. If cost collection fails silently (e.g. the
+  # connector role lacks a Cost Explorer IAM permission), cost_snapshots stays
+  # empty and the Cost page renders "No cost anomalies" — a clean bill of health
+  # produced by missing data. SaveSnapshots returns nil for an empty batch, so
+  # without dedicated metrics there is nothing anywhere to alert on. These rules
+  # close that.
+  - name: graph-cost-collection
+    rules:
+      # No GraphCostExplorerDenied rule here, deliberately, not an oversight
+      # (re-enable recipe in docs/iam/cost-explorer-permission.md). A connector
+      # role missing ce:GetCostAndUsage has no code-side fix — the fix is an IAM
+      # grant outside this platform — so a per-denial alert could only ever page
+      # with zero new information until that grant lands, exactly the kind of
+      # noise that erodes trust in every OTHER alert in this file.
+      # graph_cost_collect_total keeps recording throughout (still visible on
+      # demand, and the metric NAME stays covered by
+      # TestEveryEmittedMetricIsAlertedOnOrConsciouslyNot via the two sibling
+      # alerts below that still reference it).
+
+      # Attempts happening, none succeeding — the shape a silent-continue loop
+      # produces. Read graph_cost_last_success_timestamp_seconds next to
+      # this to see whether it EVER worked per connector.
+      - alert: GraphCostCollectionDark
+        expr: |-
+          sum by (namespace) (increase(graph_cost_collect_total{namespace="__NAMESPACE__", outcome="ok"}[12h])) == 0
+            and
+          sum by (namespace) (increase(graph_cost_collect_total{namespace="__NAMESPACE__"}[12h])) > 0
+        for: 12h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: cost collection is attempting and never succeeding"
+          description: >-
+            The loop runs on startup and every 6h, so two intervals with zero ok
+            outcomes means every AWS connector is failing. Read the outcome label to
+            see which class (permission_denied, config_error, api_error, store_error)
+            and graph_cost_last_success_timestamp_seconds to see whether any connector
+            ever stored a snapshot in this process's lifetime.
+
+      # Success that stores nothing: SaveSnapshots returns nil on an empty batch, so
+      # "ok" alone cannot distinguish a healthy collection from an empty answer.
+      - alert: GraphCostCollectStoresNothing
+        expr: |-
+          sum by (namespace) (increase(graph_cost_snapshot_rows_written_total{namespace="__NAMESPACE__"}[24h])) == 0
+            and
+          sum by (namespace) (increase(graph_cost_collect_total{namespace="__NAMESPACE__", outcome="ok"}[24h])) > 0
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: cost collection reports success but writes no snapshot rows"
+          description: >-
+            Cost Explorer is answering with an empty result set (or the batch is being
+            dropped): outcome="ok" is climbing while no rows land in cost_snapshots.
+            Anomaly detection needs 8 days of daily points, so this state means the
+            Cost page stays permanently empty while reporting healthy collection.
+
+      # Deletion authority. A tombstone is a recorded belief, never a
+      # deletion — but it is the only thing in this platform that comes with an
+      # intent to forget, so the invariant "shadow mode writes none" is alerted
+      # rather than trusted. If this fires, enforcement is running on a
+      # deployment that did not ask for it: set FORGET_MODE=shadow (or unset it)
+      # and read forget_tombstones for what was recorded.
+      - alert: GraphForgetTombstonesInShadowMode
+        expr: |-
+          sum by (namespace) (increase(graph_forget_tombstones_written_total{namespace="__NAMESPACE__"}[1h])) > 0
+            and
+          max by (namespace) (graph_forget_enforcing{namespace="__NAMESPACE__"}) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: resources marked for deletion while deletion enforcement is turned off"
+          description: >-
+            The platform recorded resources as believed-to-be-deleted (a "tombstone"
+            record) on a pod that is reporting deletion enforcement as OFF. This
+            combination should be impossible — only enforcement mode is supposed to be
+            able to write these records — so it means a safety gate has been bypassed
+            somewhere in the running code. Nothing has been deleted, from the cloud or
+            from the graph, and no feature reads forget_tombstones, so the rows are
+            only a record. Treat it as a code defect all the same: the mode gate that
+            should have stopped the write was bypassed.
+
+      # The companion tripwire for the OTHER direction: enforcement deliberately
+      # enabled and behaving out of family. A single sweep's would-forget total
+      # is expected to sit well under MaxForgetPerSweep=500 PER (scope, type) — so a
+      # cross-scope sum in the thousands within an hour is not a busy sweep, it
+      # is every audited scope's cap being hit simultaneously or a decision
+      # (RelativeRefusalFraction, EnumerationShrinkFraction — both flagged
+      # uncalibrated for anything but ec2_instance/gce_instance in forget/domain.go)
+      # failing to separate churn from a broken enumeration. 2,000 is a coarse
+      # tripwire, not a calibrated threshold — there is no enforce-mode baseline
+      # to calibrate against, the same reason graph_sync_deletion_candidates
+      # has no alert. Revisit once enforce mode has run long enough to have one.
+      - alert: GraphForgetTombstonesRunawayVolume
+        expr: |-
+          max by (namespace) (graph_forget_enforcing{namespace="__NAMESPACE__"}) == 1
+            and
+          sum by (namespace) (increase(graph_forget_tombstones_written_total{namespace="__NAMESPACE__"}[1h])) > 2000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: deletion enforcement is marking resources deleted far faster than ever seen in test mode"
+          description: >-
+            With deletion enforcement turned on, the platform recorded more than
+            2,000 resources as deleted within a single hour — a normal sweep marks
+            tens of resources this way, not thousands. This is either a genuinely
+            massive, real deletion event in the cloud account (verify independently
+            before trusting it — do not just assume the data) or a bug where a safety
+            check failed to catch a broken resource-listing pass that made it look
+            like far more was deleted than actually was. Check which
+            connector/account and resource type this affected, and spot-check a
+            sample of the affected resource ids directly against the cloud provider.
+            Nothing has actually been deleted BY this record-keeping itself, but
+            anything downstream that acts on "this resource no longer exists" without
+            double-checking would now act on whatever caused this spike.

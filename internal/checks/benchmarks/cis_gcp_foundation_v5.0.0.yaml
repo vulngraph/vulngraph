@@ -1,0 +1,652 @@
+benchmark: cis-gcp-foundation
+name: CIS Google Cloud Platform Foundation Benchmark
+version: "5.0.0"
+family: cis
+providers: [gcp, google]
+source: https://www.cisecurity.org/benchmark/google_cloud_computing_platform
+controls:
+  # ── 1 Identity and Access Management ──────────────────────────────────────
+  - id: "1.1.1"
+    title: Super admin address should not belong to one person
+    service: workspace
+    status: manual
+    reason: Ownership of the super-admin mailbox is an organisational fact, not an API-readable setting.
+    severity: medium
+  - id: "1.1.2"
+    title: Do not use super admin for cloud administration
+    service: workspace
+    status: manual
+    reason: Needs review of how admins operate; usage intent is not exposed by any API.
+    severity: medium
+  - id: "1.1.3"
+    title: Organise folders by environment and data sensitivity
+    service: resourcemanager
+    status: manual
+    reason: Whether a folder hierarchy matches environments/sensitivity is a design judgement.
+    severity: low
+  - id: "1.1.4"
+    title: Centralise guardrails with organization policy constraints
+    service: orgpolicy
+    status: manual
+    reason: Which constraints are "appropriate" is a judgement; orgpolicy.policies.list could inventory them but cannot grade adequacy.
+    severity: medium
+  - id: "1.2"
+    title: Grant access only to corporate identities
+    service: iam
+    status: covered
+    check_ids: [gcp-iam-consumer-account-member]
+    reason: "Fires on any user member on a consumer Google domain (gmail.com, googlemail.com), graded Medium, and on any user, group or domain member whose domain is neither the organization's domain (organizations.get displayName) nor a subdomain of it, graded Low — the comparison the CIS audit makes — across the project and every inherited policy. Unknown when the organization domain or an ancestor policy is unreadable; a project outside any organization is graded on consumer accounts only."
+    severity: medium
+  - id: "1.3"
+    title: Require MFA for every human account
+    service: workspace
+    status: covered
+    check_ids: [google-user-no-2sv]
+    reason: Active (unsuspended) Workspace users whose Directory users.list isEnrolledIn2Sv is false, from the Google Workspace connector; admins graded High. A user returned without the field is not graded.
+    severity: high
+  - id: "1.4"
+    title: Enforce hardware security keys for admins
+    service: workspace
+    status: manual
+    reason: The security-key-only 2SV enforcement policy is an Admin console setting with no stable read API; Directory API reports 2SV enrolment, not the factor type.
+    severity: high
+  - id: "1.5"
+    title: Service accounts use only Google-managed keys
+    service: iam
+    status: covered
+    check_ids: [gcp-sa-user-managed-key, gcp-sa-admin-dormant]
+    reason: Fires on any active USER_MANAGED key (iam.serviceAccounts.keys.list keyTypes=USER_MANAGED); disabled keys are not counted. A dormant admin-equivalent account is reported by gcp-sa-admin-dormant instead, whose remediation deletes its keys.
+    severity: medium
+  - id: "1.6"
+    title: Service accounts hold no admin roles
+    service: iam
+    status: covered
+    check_ids: [gcp-sa-admin-privileges, gcp-sa-admin-dormant]
+    reason: Enabled service accounts holding Owner, Editor or any *admin role, project-granted or inherited from a folder or the organization. A dormant admin-equivalent account is reported by gcp-sa-admin-dormant instead.
+    severity: high
+  - id: "1.7"
+    title: No user gets SA User or Token Creator project-wide
+    service: iam
+    status: covered
+    check_ids: [gcp-iam-sa-impersonation-project-wide]
+    reason: User, group, domain and workforce principals bound to roles/iam.serviceAccountUser or roles/iam.serviceAccountTokenCreator on the project policy itself; service-account members are left to the CIEM escalation paths, and inherited grants are not the project-level grant the control names.
+    severity: high
+  - id: "1.8"
+    title: Rotate user-managed service account keys within 90 days
+    service: iam
+    status: covered
+    check_ids: [gcp-sa-user-managed-key, gcp-sa-admin-dormant]
+    reason: "The user-managed-key finding carries the 90-day pass/fail for the oldest active key: its title says \"older than 90 days\" and evidence key_rotation_overdue is true exactly when key_age_days exceeds 90. A key under 90 days still fires for 1.5, with key_rotation_overdue=false. Dormant admin-equivalent accounts are reported by gcp-sa-admin-dormant instead."
+    severity: medium
+  - id: "1.9"
+    title: Separate service account admin and user duties
+    service: iam
+    status: covered
+    check_ids: [gcp-iam-sa-separation-of-duties]
+    reason: Any principal whose live grants (project, folder or organization) include both roles/iam.serviceAccountAdmin and roles/iam.serviceAccountUser.
+    severity: medium
+  - id: "1.10"
+    title: KMS keys are not publicly accessible
+    service: kms
+    status: covered
+    check_ids: [gcp-kms-key-public]
+    reason: Keys whose own IAM policy, or their key ring's (inherited by every key in it), binds allUsers or allAuthenticatedUsers, across every KMS location. An unreadable policy leaves the key ungraded.
+    severity: high
+  - id: "1.11"
+    title: KMS keys rotate at least every 90 days
+    service: kms
+    status: covered
+    check_ids: [gcp-kms-key-rotation]
+    reason: ENCRYPT_DECRYPT keys with no rotationPeriod, one over 90 days, or no nextRotationTime. Asymmetric and import-only keys (which cannot rotate automatically) and keys whose primary version is destroyed are not graded.
+    severity: medium
+  - id: "1.12"
+    title: Separate KMS admin and crypto user duties
+    service: kms
+    status: covered
+    check_ids: [gcp-iam-kms-separation-of-duties]
+    reason: Any principal whose project, folder or organization grants include roles/cloudkms.admin together with a CryptoKey Encrypter/Decrypter role. Key-ring and key-level bindings are read only for public members (1.10), not for this pairing.
+    severity: medium
+  - id: "1.13"
+    title: Delete API keys for unused services
+    service: apikeys
+    status: covered
+    check_ids: [gcp-apikey-exists, gcp-apikey-no-app-restriction, gcp-apikey-no-api-restriction, gcp-apikey-not-rotated]
+    reason: Every live API key is reported (CIS wants none); the Info existence finding steps aside when the key also fails 1.14-1.16, whose findings then carry it. Whether a key's service is still in use is the reviewer's call.
+    severity: low
+  - id: "1.14"
+    title: Restrict API keys to specific hosts and apps
+    service: apikeys
+    status: covered
+    check_ids: [gcp-apikey-no-app-restriction]
+    reason: No browser, server, Android or iOS restriction, or one that admits everything (referrer "*", "*.tld", "*.tld/*"; server 0.0.0.0/0 or ::/0), from apikeys keys.list.
+    severity: medium
+  - id: "1.15"
+    title: Restrict API keys to required APIs only
+    service: apikeys
+    status: covered
+    check_ids: [gcp-apikey-no-api-restriction]
+    reason: No restrictions.apiTargets, or a target of cloudapis.googleapis.com (every API).
+    severity: medium
+  - id: "1.16"
+    title: Rotate API keys every 90 days
+    service: apikeys
+    status: covered
+    check_ids: [gcp-apikey-not-rotated]
+    reason: Key createTime more than 90 days ago (a regenerated key is a new key with a new createTime).
+    severity: medium
+  - id: "1.17"
+    title: Configure Essential Contacts for the organisation
+    service: essentialcontacts
+    status: covered
+    check_ids: [gcp-essential-contacts-missing]
+    reason: "Fires when no valid contact subscribes to LEGAL, SECURITY, SUSPENSION, TECHNICAL or TECHNICAL_INCIDENTS (ALL covers all). With the organization readable, its contacts (organizations contacts:compute) are graded once on the gcp_organization settings asset; otherwise each project's effective contacts (projects contacts:compute, which resolves inheritance) are graded on its cloud_account. A denied organization read is unknown, not a partial sweep; the Essential Contacts API disabled in a project leaves that project ungraded."
+    severity: low
+  - id: "1.18"
+    title: Keep secrets out of Cloud Function environment variables
+    service: cloudfunctions
+    status: covered
+    check_ids: [gcp-function-env-plaintext-secret, gcp-cloudrun-env-plaintext-secret]
+    reason: "Runtime and build environment variables with a secret-suggesting name (password, secret, token, API key, credential) holding a literal value, not a Secret Manager reference or placeholder; only names are stored. 1st-gen functions are read from cloudfunctions.functions.list, 2nd-gen ones from the Cloud Run service that runs them (cloud_function_gen2=true). Whether an arbitrary value is a secret is a heuristic, as in the CIS audit."
+    severity: high
+  # ── 2 Logging and Monitoring ──────────────────────────────────────────────
+  - id: "2.1"
+    title: Audit logging configured for all services
+    service: logging
+    status: covered
+    check_ids: [gcp-audit-logging-not-configured]
+    reason: "Evaluated on the effective allServices audit config, the union of the project, folder and organization policies already read by the IAM collector: ADMIN_READ, DATA_READ and DATA_WRITE with no exempted members. Unknown (silent) when an ancestor policy is unreadable, since it may supply or exempt."
+    severity: medium
+  - id: "2.2"
+    title: Share Workspace audit data with Google Cloud
+    service: workspace
+    status: manual
+    reason: The Workspace-to-Cloud data-sharing toggle is an Admin console setting with no read API.
+    severity: low
+  - id: "2.3"
+    title: Export all log entries through a sink
+    service: logging
+    status: covered
+    check_ids: [gcp-logging-no-catch-all-sink]
+    reason: "An enabled sink with an empty filter and no active exclusion. With the organization's sinks readable, the organization is graded once (gcp_organization) on an includeChildren catch-all sink, and a project covered by its own, a folder's or the organization's sink records the pass; a project outside any organization is graded on its own sinks. Folder/organization sinks that cannot be read (a project-scoped grant) leave the answer unknown without flagging the sweep partial."
+    severity: medium
+  - id: "2.4"
+    title: Lock retention on log export buckets
+    service: logging
+    status: covered
+    check_ids: [gcp-logging-sink-bucket-not-locked]
+    reason: Every Cloud Storage destination of the project's enabled sinks must have retentionPolicy.isLocked (storage.buckets.get). A destination bucket that cannot be read (often in another project) leaves the answer unknown. Organization-level sinks are not graded per project.
+    severity: medium
+  - id: "2.5"
+    title: Alert on project ownership changes
+    service: monitoring
+    status: covered
+    check_ids: [gcp-logging-change-alerts-missing]
+    reason: "One project-wide finding lists the missing CIS change alerts (evidence missing_alerts); this control passes when its alert is not listed. In place means an enabled alert policy with at least one notification channel and a threshold, absence, MQL or PromQL condition on a user log metric — or a log-match condition — whose filter, parsed as a Cloud Logging query (NOT, OR, AND, parentheses; OR binds tighter than AND), matches every representative audit entry of the change (each method CIS names). NOT clauses, AND-ed alternatives and extra narrowing clauses therefore fail; an unparsable filter does not cover. Unknown when log metrics or alert policies are unreadable; Monitoring never enabled reads as no policies."
+    severity: medium
+  - id: "2.6"
+    title: Alert on audit configuration changes
+    service: monitoring
+    status: covered
+    check_ids: [gcp-logging-change-alerts-missing]
+    reason: "One project-wide finding lists the missing CIS change alerts (evidence missing_alerts); this control passes when its alert is not listed. In place means an enabled alert policy with at least one notification channel and a threshold, absence, MQL or PromQL condition on a user log metric — or a log-match condition — whose filter, parsed as a Cloud Logging query (NOT, OR, AND, parentheses; OR binds tighter than AND), matches every representative audit entry of the change (each method CIS names). NOT clauses, AND-ed alternatives and extra narrowing clauses therefore fail; an unparsable filter does not cover. Unknown when log metrics or alert policies are unreadable; Monitoring never enabled reads as no policies."
+    severity: medium
+  - id: "2.7"
+    title: Alert on custom IAM role changes
+    service: monitoring
+    status: covered
+    check_ids: [gcp-logging-change-alerts-missing]
+    reason: "One project-wide finding lists the missing CIS change alerts (evidence missing_alerts); this control passes when its alert is not listed. In place means an enabled alert policy with at least one notification channel and a threshold, absence, MQL or PromQL condition on a user log metric — or a log-match condition — whose filter, parsed as a Cloud Logging query (NOT, OR, AND, parentheses; OR binds tighter than AND), matches every representative audit entry of the change (each method CIS names). NOT clauses, AND-ed alternatives and extra narrowing clauses therefore fail; an unparsable filter does not cover. Unknown when log metrics or alert policies are unreadable; Monitoring never enabled reads as no policies."
+    severity: medium
+  - id: "2.8"
+    title: Alert on VPC firewall rule changes
+    service: monitoring
+    status: covered
+    check_ids: [gcp-logging-change-alerts-missing]
+    reason: "One project-wide finding lists the missing CIS change alerts (evidence missing_alerts); this control passes when its alert is not listed. In place means an enabled alert policy with at least one notification channel and a threshold, absence, MQL or PromQL condition on a user log metric — or a log-match condition — whose filter, parsed as a Cloud Logging query (NOT, OR, AND, parentheses; OR binds tighter than AND), matches every representative audit entry of the change (each method CIS names). NOT clauses, AND-ed alternatives and extra narrowing clauses therefore fail; an unparsable filter does not cover. Unknown when log metrics or alert policies are unreadable; Monitoring never enabled reads as no policies."
+    severity: medium
+  - id: "2.9"
+    title: Alert on VPC route changes
+    service: monitoring
+    status: covered
+    check_ids: [gcp-logging-change-alerts-missing]
+    reason: "One project-wide finding lists the missing CIS change alerts (evidence missing_alerts); this control passes when its alert is not listed. In place means an enabled alert policy with at least one notification channel and a threshold, absence, MQL or PromQL condition on a user log metric — or a log-match condition — whose filter, parsed as a Cloud Logging query (NOT, OR, AND, parentheses; OR binds tighter than AND), matches every representative audit entry of the change (each method CIS names). NOT clauses, AND-ed alternatives and extra narrowing clauses therefore fail; an unparsable filter does not cover. Unknown when log metrics or alert policies are unreadable; Monitoring never enabled reads as no policies."
+    severity: medium
+  - id: "2.10"
+    title: Alert on VPC network changes
+    service: monitoring
+    status: covered
+    check_ids: [gcp-logging-change-alerts-missing]
+    reason: "One project-wide finding lists the missing CIS change alerts (evidence missing_alerts); this control passes when its alert is not listed. In place means an enabled alert policy with at least one notification channel and a threshold, absence, MQL or PromQL condition on a user log metric — or a log-match condition — whose filter, parsed as a Cloud Logging query (NOT, OR, AND, parentheses; OR binds tighter than AND), matches every representative audit entry of the change (each method CIS names). NOT clauses, AND-ed alternatives and extra narrowing clauses therefore fail; an unparsable filter does not cover. Unknown when log metrics or alert policies are unreadable; Monitoring never enabled reads as no policies."
+    severity: medium
+  - id: "2.11"
+    title: Alert on Cloud Storage IAM changes
+    service: monitoring
+    status: covered
+    check_ids: [gcp-logging-change-alerts-missing]
+    reason: "One project-wide finding lists the missing CIS change alerts (evidence missing_alerts); this control passes when its alert is not listed. In place means an enabled alert policy with at least one notification channel and a threshold, absence, MQL or PromQL condition on a user log metric — or a log-match condition — whose filter, parsed as a Cloud Logging query (NOT, OR, AND, parentheses; OR binds tighter than AND), matches every representative audit entry of the change (each method CIS names). NOT clauses, AND-ed alternatives and extra narrowing clauses therefore fail; an unparsable filter does not cover. Unknown when log metrics or alert policies are unreadable; Monitoring never enabled reads as no policies."
+    severity: medium
+  - id: "2.12"
+    title: Alert on Cloud SQL configuration changes
+    service: monitoring
+    status: covered
+    check_ids: [gcp-logging-change-alerts-missing]
+    reason: "One project-wide finding lists the missing CIS change alerts (evidence missing_alerts); this control passes when its alert is not listed. In place means an enabled alert policy with at least one notification channel and a threshold, absence, MQL or PromQL condition on a user log metric — or a log-match condition — whose filter, parsed as a Cloud Logging query (NOT, OR, AND, parentheses; OR binds tighter than AND), matches every representative audit entry of the change (each method CIS names). NOT clauses, AND-ed alternatives and extra narrowing clauses therefore fail; an unparsable filter does not cover. Unknown when log metrics or alert policies are unreadable; Monitoring never enabled reads as no policies."
+    severity: medium
+  - id: "2.13"
+    title: Enable Cloud DNS logging on every VPC
+    service: dns
+    status: covered
+    check_ids: [gcp-dns-vpc-logging-disabled]
+    reason: Each network from compute.networks.list that no DNS server policy (dns.policies.list) with enableLogging binds. A project that never enabled Cloud DNS has no policy and fires; an unreadable policy list leaves networks ungraded.
+    severity: low
+  - id: "2.14"
+    title: Enable Cloud Asset Inventory
+    service: cloudasset
+    status: covered
+    check_ids: [gcp-cloud-asset-inventory-disabled]
+    reason: serviceusage.services.get for cloudasset.googleapis.com reports a state other than ENABLED.
+    severity: low
+  - id: "2.15"
+    title: Enable Access Transparency
+    service: logging
+    status: manual
+    reason: Access Transparency enablement is an org-level console setting without a supported read API.
+    severity: low
+  - id: "2.16"
+    title: Enable Access Approval
+    service: accessapproval
+    status: covered
+    check_ids: [gcp-access-approval-disabled]
+    reason: "With the organization readable, its Access Approval settings (no enrolledServices, or no settings at all, is not enrolled) are graded once on the gcp_organization settings asset, and a project enrolled on its own records the pass. Otherwise each project is graded on its effective settings (enrolledServices or enrolledAncestor); the Access Approval API disabled in the project is an explicit off. A denied organization read is unknown, not partial."
+    severity: low
+  - id: "2.17"
+    title: Enable logging on HTTP(S) load balancers
+    service: loadbalancing
+    status: covered
+    check_ids: [gcp-lb-logging-disabled]
+    reason: Backend services (global and regional, compute.backendServices.aggregatedList) with an HTTP, HTTPS, HTTP2 or H2C protocol and logConfig.enable off; TCP/SSL/UDP backends are not HTTP(S) load balancers.
+    severity: low
+  # ── 3 Networking ──────────────────────────────────────────────────────────
+  - id: "3.1"
+    title: Remove the default VPC network
+    service: vpc
+    status: covered
+    check_ids: [gcp-vpc-default-network]
+    reason: A network named default in compute.networks.list. Networks inferred only from instance NICs carry no default_network key and are not graded.
+    severity: medium
+  - id: "3.2"
+    title: No legacy networks remain
+    service: vpc
+    status: covered
+    check_ids: [gcp-vpc-legacy-network]
+    reason: Networks from compute.networks.list with a network-wide IPv4Range (legacy mode).
+    severity: medium
+  - id: "3.3"
+    title: Enable DNSSEC on Cloud DNS zones
+    service: dns
+    status: covered
+    check_ids: [gcp-dns-dnssec-disabled]
+    reason: Public managed zones whose dnssecConfig.state is off; a public zone returned without a dnssecConfig is at the default, off. A zone mid-transfer is not flagged.
+    severity: medium
+  - id: "3.4"
+    title: No RSASHA1 for DNSSEC key-signing keys
+    service: dns
+    status: covered
+    check_ids: [gcp-dns-dnssec-ksk-rsasha1]
+    reason: Reads dnssecConfig.defaultKeySpecs (keySigning) from managedZones.list on zones with DNSSEC on.
+    severity: medium
+  - id: "3.5"
+    title: No RSASHA1 for DNSSEC zone-signing keys
+    service: dns
+    status: covered
+    check_ids: [gcp-dns-dnssec-zsk-rsasha1]
+    reason: Reads dnssecConfig.defaultKeySpecs (zoneSigning) from managedZones.list on zones with DNSSEC on.
+    severity: medium
+  - id: "3.6"
+    title: Block SSH from the internet
+    service: vpc
+    status: covered
+    check_ids: [gcp-firewall-ssh-open-internet, gcp-firewall-all-ports-open-internet]
+    reason: Enabled ingress allow rule admitting 0.0.0.0/0 or ::/0 to tcp:22, unless a higher- (or equal-) priority world-sourced deny on the same network covers port 22 for every IP family, every instance and every destination range the allow covers. A rule leaving every TCP port open is reported once by gcp-firewall-all-ports-open-internet. Hierarchical and network firewall policies are not read.
+    severity: high
+  - id: "3.7"
+    title: Block RDP from the internet
+    service: vpc
+    status: covered
+    check_ids: [gcp-firewall-rdp-open-internet, gcp-firewall-all-ports-open-internet]
+    reason: Same resolution as 3.6 for tcp:3389.
+    severity: high
+  - id: "3.8"
+    title: Protect supported services with VPC Service Controls
+    service: vpcsc
+    status: covered
+    check_ids: [gcp-vpcsc-project-not-in-perimeter]
+    reason: "The project number is in the enforced (status) resources of no regular service perimeter that restricts at least one service, across the organization's access policies; bridge perimeters and dry-run specs do not count. Membership differs per project, so it is graded per project. Needs an organization-level Access Context Manager reader grant (docs/iam/gcp-cspm-permissions.md); without it the key is absent and the sweep is not marked partial. Projects outside an organization are not graded."
+    severity: medium
+  - id: "3.9"
+    title: Reach Google APIs through Private Service Connect
+    service: vpc
+    status: manual
+    reason: Whether PSC endpoints are warranted is an architecture decision; the presence of PRIVATE_SERVICE_CONNECT global addresses alone does not prove compliance.
+    severity: low
+  - id: "3.10"
+    title: Enable VPC flow logs on every subnet
+    service: vpc
+    status: covered
+    check_ids: [gcp-subnet-flow-logs-disabled]
+    reason: "Subnets (compute.subnetworks.aggregatedList) with flow logs off, or on with aggregation other than INTERVAL_5_SEC, sampling below 1, metadata other than INCLUDE_ALL_METADATA, or a filter. Proxy-only and Private Service Connect subnets carry no VM traffic and are not graded; a subnet returning only the legacy enableFlowLogs flag is graded on enablement alone."
+    severity: medium
+  - id: "3.11"
+    title: SSL policies must not allow weak ciphers
+    service: loadbalancing
+    status: covered
+    check_ids: [gcp-lb-weak-ssl-policy]
+    reason: "Target HTTPS proxies (global and regional) and target SSL proxies whose SSL policy is absent (the COMPATIBLE / TLS 1.0 default), COMPATIBLE, MODERN with a minimum below TLS 1.2, or CUSTOM enabling any of the five RSA-key-exchange/3DES suites CIS lists. A policy reference that cannot be resolved is not graded."
+    severity: medium
+  - id: "3.12"
+    title: Admit only Google proxy ranges via IAP
+    service: vpc
+    status: covered
+    check_ids: [gcp-iap-backend-bypass]
+    reason: "For each IAP-enabled backend service, its instance-group members (instanceGroups.listInstances) are matched against the project's enabled ingress allow rules (network, target tags or service accounts); a rule admitting a range outside 35.191.0.0/16, 130.211.0.0/22 and 35.235.240.0/20, a source tag or a source service account fires. Network-endpoint-group backends, an unreadable group, an instance missing from the sweep or an unread firewall list leave the backend ungraded. Hierarchical firewall policies are not read."
+    severity: medium
+  # ── 4 Virtual Machines ────────────────────────────────────────────────────
+  - id: "4.1"
+    title: VMs do not run as the default service account
+    service: compute
+    status: covered
+    check_ids: [gcp-gce-default-sa, gcp-gce-default-sa-full-scope]
+    reason: Instances on the default Compute Engine service account. GKE node VMs, which the benchmark exempts, are excluded when their cluster was read whole and its node-pool service accounts graded — the node pools are then reported once per cluster by gcp-gke-node-default-sa (CIS GKE 5.2.1); a node whose cluster listing failed or missed zones is graded like any VM. An instance that also holds the cloud-platform scope is reported by gcp-gce-default-sa-full-scope instead.
+    severity: medium
+  - id: "4.2"
+    title: No default service account with full API scope
+    service: compute
+    status: covered
+    check_ids: [gcp-gce-default-sa-full-scope]
+    reason: Default compute service account with the https://www.googleapis.com/auth/cloud-platform scope, read from serviceAccounts[].scopes. GKE node VMs (goog-gke-node label) are excluded as the benchmark directs.
+    severity: high
+  - id: "4.3"
+    title: Block project-wide SSH keys on VMs
+    service: compute
+    status: covered
+    check_ids: [gcp-gce-project-ssh-keys]
+    reason: Resolved instance-first then project commonInstanceMetadata, as GCP does.
+    severity: medium
+  - id: "4.4"
+    title: Enable OS Login for the project
+    service: compute
+    status: covered
+    check_ids: [gcp-gce-no-oslogin]
+    reason: Evaluated per instance on the effective (instance over project) enable-oslogin value, which is what the control requires.
+    severity: medium
+  - id: "4.5"
+    title: Disable interactive serial port access
+    service: compute
+    status: covered
+    check_ids: [gcp-gce-serial-port-enabled]
+    severity: medium
+  - id: "4.6"
+    title: Disable IP forwarding on VMs
+    service: compute
+    status: covered
+    check_ids: [gcp-gce-ip-forwarding]
+    reason: canIpForward from the instance listing; GKE nodes (goog-gke-node label) are excluded as the benchmark directs.
+    severity: medium
+  - id: "4.7"
+    title: Encrypt critical VM disks with customer-supplied keys
+    service: compute
+    status: covered
+    check_ids: [gcp-gce-disks-no-csek]
+    reason: "Attached disks without diskEncryptionKey.sha256 (a customer-supplied key; CMEK does not count), read from the instance listing. Which VMs are critical is the organisation's judgement, so this is one Info finding per project listing the non-GKE instances, not one per VM. Unknown when the instance listing was partial."
+    severity: low
+  - id: "4.8"
+    title: Launch VMs with Shielded VM enabled
+    service: compute
+    status: covered
+    check_ids: [gcp-gce-shielded-vm-disabled]
+    reason: Fires when shieldedInstanceConfig has vTPM or integrity monitoring off; an instance returned without a shieldedInstanceConfig is not graded.
+    severity: medium
+  - id: "4.9"
+    title: VMs have no public IP addresses
+    service: compute
+    status: covered
+    check_ids: [gcp-gce-public-ip]
+    reason: Any IPv4 or IPv6 access config on any network interface (external_ip_configured), including a stopped VM whose ephemeral address is released; running instances are Medium, stopped ones Low. GKE nodes are exempt as the benchmark directs when their cluster was read whole (gcp-gke-private-nodes-disabled then reports the node pool); otherwise they are graded like any VM.
+    severity: medium
+  - id: "4.10"
+    title: App Engine apps enforce HTTPS
+    service: appengine
+    status: covered
+    check_ids: [gcp-appengine-http-allowed]
+    reason: Standard-environment versions receiving traffic (service traffic split) with any handler whose securityLevel is not SECURE_ALWAYS (unset is SECURE_OPTIONAL), from versions.list view=FULL. Flexible-environment versions have no handler-level setting and are not graded.
+    severity: medium
+  - id: "4.11"
+    title: Enable Confidential Computing on VMs
+    service: compute
+    status: covered
+    check_ids: [gcp-gce-confidential-compute-disabled]
+    reason: "Info severity: fires on every non-confidential VM, including machine families that cannot run Confidential Computing."
+    severity: low
+  - id: "4.12"
+    title: Keep VM operating systems patched
+    service: compute
+    status: covered
+    check_ids: [gcp-gce-os-end-of-life, gcp-gce-os-updates-pending]
+    reason: "End-of-life distributions fire gcp-gce-os-end-of-life. Pending updates (AVAILABLE_PACKAGE items in a fresh OS Config inventory) fire gcp-gce-os-updates-pending on platforms graph cannot CVE-match (Windows, COS, or no enabled advisory feed); on CVE-matchable VMs each missing security patch is a vulnerability finding from the VM vulnerability pipeline, so the check steps aside. A VM without the OS Config agent has no inventory and is not graded."
+    severity: high
+  # ── 5 Storage ─────────────────────────────────────────────────────────────
+  - id: "5.1"
+    title: Buckets are not publicly or anonymously accessible
+    service: storage
+    status: covered
+    check_ids: [gcp-gcs-public-bucket]
+    reason: Bucket IAM policy granting allUsers/allAuthenticatedUsers.
+    severity: high
+  - id: "5.2"
+    title: Enable uniform bucket-level access
+    service: storage
+    status: covered
+    check_ids: [gcp-gcs-uniform-access-disabled]
+    severity: medium
+  # ── 6 Cloud SQL ───────────────────────────────────────────────────────────
+  - id: "6.1.1"
+    title: MySQL admin users cannot connect from anywhere
+    service: cloudsql
+    status: manual
+    reason: "The CIS control is that the MySQL administrative user (root) has a password set. No API exposes whether a Cloud SQL user has a password: sqladmin users.list returns names, hosts and password-policy settings, never password state — the benchmark itself audits it by attempting a passwordless connection."
+    severity: high
+  - id: "6.1.2"
+    title: MySQL skip_show_database flag is on
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-mysql-skip-show-database]
+    reason: Unset is the MySQL default (off) and fires.
+    severity: low
+  - id: "6.1.3"
+    title: MySQL local_infile flag is off
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-mysql-local-infile]
+    reason: Fires on local_infile=on, and on an unset flag for MySQL 5.x, whose default is on; unset on 8.0+ is the default, off.
+    severity: medium
+  - id: "6.2.1"
+    title: PostgreSQL log_error_verbosity at default or stricter
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-postgres-log-error-verbosity]
+    reason: Fires on verbose; unset is the default.
+    severity: low
+  - id: "6.2.2"
+    title: PostgreSQL log_connections flag is on
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-postgres-log-connections]
+    reason: Unset is the default (off) and fires.
+    severity: low
+  - id: "6.2.3"
+    title: PostgreSQL log_disconnections flag is on
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-postgres-log-disconnections]
+    reason: Unset is the default (off) and fires.
+    severity: low
+  - id: "6.2.4"
+    title: PostgreSQL log_statement set appropriately
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-postgres-log-statement]
+    reason: Fires on unset or none; ddl, mod and all pass.
+    severity: low
+  - id: "6.2.5"
+    title: PostgreSQL log_min_messages at least warning
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-postgres-log-min-messages]
+    reason: Fires on debug*, info and notice; unset is the default (warning).
+    severity: low
+  - id: "6.2.6"
+    title: PostgreSQL log_min_error_statement at error or stricter
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-postgres-log-min-error-statement]
+    reason: Fires on debug*, info, notice and warning; unset is the default (error).
+    severity: low
+  - id: "6.2.7"
+    title: PostgreSQL statement-duration logging disabled
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-postgres-log-min-duration]
+    reason: Fires on any value other than -1; unset is the default (-1).
+    severity: low
+  - id: "6.2.8"
+    title: PostgreSQL pgaudit enabled
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-postgres-pgaudit-disabled]
+    reason: Unset is the default (off) and fires.
+    severity: low
+  - id: "6.3.1"
+    title: SQL Server external scripts disabled
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-sqlserver-external-scripts]
+    reason: Fires on on; unset is the default (off).
+    severity: medium
+  - id: "6.3.2"
+    title: SQL Server cross-db ownership chaining off
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-sqlserver-cross-db-chaining]
+    reason: Fires on on; unset is the default (off).
+    severity: medium
+  - id: "6.3.3"
+    title: SQL Server user connections not limiting
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-sqlserver-user-connections]
+    reason: Fires on any value other than unset or 0.
+    severity: low
+  - id: "6.3.4"
+    title: SQL Server user options flag unset
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-sqlserver-user-options]
+    reason: Fires when the flag is set at all.
+    severity: low
+  - id: "6.3.5"
+    title: SQL Server remote access flag off
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-sqlserver-remote-access]
+    reason: Unset is the SQL Server default (on) and fires.
+    severity: medium
+  - id: "6.3.6"
+    title: SQL Server trace flag 3625 on
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-sqlserver-trace-3625]
+    reason: Unset is the default (off) and fires.
+    severity: low
+  - id: "6.3.7"
+    title: SQL Server contained database authentication off
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-sqlserver-contained-db-auth]
+    reason: Fires on on; unset is the default (off).
+    severity: medium
+  - id: "6.4"
+    title: Cloud SQL requires SSL for all connections
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-no-ssl]
+    reason: Reads ipConfiguration.sslMode first (ENCRYPTED_ONLY / TRUSTED_CLIENT_CERTIFICATE_REQUIRED pass, ALLOW_UNENCRYPTED_AND_ENCRYPTED fails) and the legacy requireSsl only when no mode is set.
+    severity: high
+  - id: "6.5"
+    title: No authorised network open to 0.0.0.0/0
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-open-authorized-network]
+    reason: Public-IP instance whose ipConfiguration.authorizedNetworks contains 0.0.0.0/0 or ::/0; gcp-cloudsql-public-ip steps aside for it.
+    severity: critical
+  - id: "6.6"
+    title: Enable IAM database authentication
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-iam-auth-disabled]
+    reason: cloudsql.iam_authentication (PostgreSQL) or cloudsql_iam_authentication (MySQL) not on; SQL Server is not graded.
+    severity: low
+  - id: "6.7"
+    title: Cloud SQL instances have no public IP
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-public-ip]
+    reason: Reads ipConfiguration.ipv4Enabled.
+    severity: medium
+  - id: "6.8"
+    title: Enable automated Cloud SQL backups
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-no-backup]
+    severity: medium
+  - id: "6.9"
+    title: Enable Cloud SQL deletion protection
+    service: cloudsql
+    status: covered
+    check_ids: [gcp-cloudsql-no-deletion-protection]
+    severity: medium
+  # ── 7 BigQuery ────────────────────────────────────────────────────────────
+  - id: "7.1"
+    title: BigQuery datasets are not public
+    service: bigquery
+    status: covered
+    check_ids: [gcp-bigquery-dataset-public]
+    reason: Dataset access entries (datasets.get) granting specialGroup allAuthenticatedUsers or iamMember allUsers / allAuthenticatedUsers. Table-level IAM policies are not read.
+    severity: critical
+  - id: "7.2"
+    title: BigQuery tables use customer-managed keys
+    service: bigquery
+    status: covered
+    check_ids: [gcp-bigquery-table-no-cmek]
+    reason: "Each TABLE / MATERIALIZED_VIEW carries its own key whatever the dataset default, so every one is read (tables.get encryptionConfiguration.kmsKeyName) and gcp-bigquery-table-no-cmek reports, once per dataset, the tables on Google-managed keys. Per-table reads are capped at 2000 per project per sweep, spent in dataset-ID order so the same datasets are graded each sweep; a dataset past the cap is ungraded (unknown, not partial)."
+    severity: low
+  - id: "7.3"
+    title: BigQuery datasets set a default CMEK
+    service: bigquery
+    status: covered
+    check_ids: [gcp-bigquery-dataset-no-cmek]
+    reason: datasets.get defaultEncryptionConfiguration.kmsKeyName unset.
+    severity: low
+  - id: "7.4"
+    title: Classify all BigQuery data
+    service: bigquery
+    status: manual
+    reason: Data classification completeness needs Sensitive Data Protection discovery results and human review of their scope.
+    severity: low
+  # ── 8 Dataproc ────────────────────────────────────────────────────────────
+  - id: "8.1"
+    title: Dataproc clusters use customer-managed keys
+    service: dataproc
+    status: covered
+    check_ids: [gcp-dataproc-no-cmek]
+    reason: Clusters in every region (dataproc regions.clusters.list) without config.encryptionConfig.gcePdKmsKeyName.
+    severity: low

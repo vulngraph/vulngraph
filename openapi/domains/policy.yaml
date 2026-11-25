@@ -1,0 +1,66 @@
+# Policy domain (internal/app/policy). The single approval-queue display policy:
+# per action class, whether the govern approval queue shows a proposal or hides
+# it as guidance only (unless urgent), and the confidence below which a queue
+# card is labelled escalated. It does not change the decision's outcome and does
+# not block execution. No mode executes anything (ADR 087). Admin-only writes.
+components:
+  pathItems:
+    policy:
+      get:
+        operationId: getPolicy
+        tags: [policy]
+        summary: Get the current remediation policy
+        responses:
+          '200':
+            description: The remediation policy.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/Policy' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+      put:
+        operationId: updatePolicy
+        tags: [policy]
+        summary: Replace the remediation policy (admin only)
+        description: >
+          Session-only: a request authenticated with an API key is refused
+          (403) before the body is read, and audited as auth.api_key_refused.
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpdatePolicyRequest' }
+        responses:
+          '204': { description: Policy updated. }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+  schemas:
+    ActionMode:
+      type: string
+      enum: [jit, disabled]
+      description: 'How the approval queue shows a class of action: jit = shown as waiting for approval, disabled = guidance only (hidden from the approval queue unless urgent; display only, does not block execution).'
+    Policy:
+      type: object
+      required: [id, suggest_threshold, action_rules, updated_at, updated_by]
+      properties:
+        id: { type: string }
+        suggest_threshold:
+          type: integer
+          description: Confidence (0-100) at or above which an approval-queue card is labelled parked for approval; below it, escalated. Display only.
+        action_rules:
+          type: object
+          description: Per-action-class mode; always present (empty object when no rules).
+          additionalProperties: { $ref: '#/components/schemas/ActionMode' }
+        updated_at: { type: string, format: date-time }
+        updated_by: { type: string }
+    UpdatePolicyRequest:
+      type: object
+      required: [suggest_threshold]
+      properties:
+        suggest_threshold: { type: integer, minimum: 0, maximum: 100 }
+        action_rules:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/ActionMode' }

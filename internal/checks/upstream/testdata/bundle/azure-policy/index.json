@@ -1,0 +1,22 @@
+[
+ {
+  "name": "CISv1_4_0.json",
+  "path": "built-in-policies/policySetDefinitions/Regulatory Compliance/CISv1_4_0.json",
+  "type": "file"
+ },
+ {
+  "name": "CISv2_0_0.json",
+  "path": "built-in-policies/policySetDefinitions/Regulatory Compliance/CISv2_0_0.json",
+  "type": "file"
+ },
+ {
+  "name": "CIS_Azure_Foundations_v3.0.0.json",
+  "path": "built-in-policies/policySetDefinitions/Regulatory Compliance/CIS_Azure_Foundations_v3.0.0.json",
+  "type": "file"
+ },
+ {
+  "name": "NIST_SP_800-53_R5.json",
+  "path": "built-in-policies/policySetDefinitions/Regulatory Compliance/NIST_SP_800-53_R5.json",
+  "type": "file"
+ }
+]

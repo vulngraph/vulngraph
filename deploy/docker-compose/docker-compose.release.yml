@@ -1,0 +1,24 @@
+# Runs a published release image instead of building this checkout:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.release.yml up -d
+#
+# (or set COMPOSE_FILE=docker-compose.yml:docker-compose.release.yml in .env so
+# every docker compose command uses it). GRAPH_VERSION is required and has no
+# default: set it in .env to a release tag CHANGELOG.md lists (v0.1.0),
+# optionally pinned to a digest (GRAPH_VERSION=v0.1.0@sha256:<digest>, see
+# README.md "Pinning and verifying the image"), or to edge, the rolling build
+# of main. The build is dropped, so a failed pull is an error, never a local
+# build under the release's name.
+x-graph-image: &graph-image ${GRAPH_IMAGE:-ghcr.io/vulngraph/vulngraph}:${GRAPH_VERSION:?set GRAPH_VERSION in .env to a release tag CHANGELOG.md lists (e.g. v0.1.0), or drop docker-compose.release.yml to build this checkout}
+
+services:
+  migrate:
+    image: *graph-image
+    build: !reset null
+    pull_policy: missing
+  serve:
+    image: *graph-image
+    pull_policy: missing
+  worker:
+    image: *graph-image
+    pull_policy: missing

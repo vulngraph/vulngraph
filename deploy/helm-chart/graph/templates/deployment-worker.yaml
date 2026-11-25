@@ -1,0 +1,157 @@
+{{/* Chart-set env for the worker container, merged with extraEnv by graph.env. */}}
+{{- define "graph.chartEnv.worker" -}}
+{{ include "graph.podEnv" . }}
+{{ include "graph.datastoreEnv" (dict "Values" .Values) }}
+{{ include "graph.appSecretEnv" . }}
+{{ include "graph.awsEnv" . }}
+{{- if .Values.ladybug.enabled }}
+{{- with .Values.ladybug.bufferPoolMB }}
+- name: LADYBUG_BUFFER_MB
+  value: {{ . | quote }}
+{{- end }}
+- name: LADYBUG_INTERNAL_PORT
+  value: "8090"
+{{- if .Values.ladybug.snapshotEnabled }}
+- name: LADYBUG_SNAPSHOT_PATH
+  value: {{ .Values.ladybug.snapshotPath | default "/data/ladybug/snapshot.gz" | quote }}
+{{- end }}
+{{- end }}
+{{- if .Values.config.smtpHost }}
+# The worker sends approval emails when it parks a decision.
+- name: SMTP_HOST
+  value: {{ .Values.config.smtpHost | quote }}
+{{- with .Values.config.smtpPort }}
+- name: SMTP_PORT
+  value: {{ . | quote }}
+{{- end }}
+- name: SMTP_FROM
+  value: {{ .Values.config.smtpFrom | quote }}
+- name: SMTP_TO
+  value: {{ .Values.config.smtpTo | quote }}
+- name: APPROVAL_BASE_URL
+  value: {{ .Values.config.approvalBaseUrl | quote }}
+{{- if .Values.config.smtpAllowPlaintext }}
+- name: SMTP_ALLOW_PLAINTEXT
+  value: "true"
+{{- end }}
+{{- end }}
+{{- if .Values.scanner.enabled }}
+- name: SCAN_WORKER_DISABLED
+  value: "true"
+{{- end }}
+{{- if .Values.worker.goMemLimit }}
+- name: GOMEMLIMIT
+  value: {{ .Values.worker.goMemLimit | quote }}
+{{- end }}
+{{- if .Values.worker.mallocArenaMax }}
+# Caps glibc's non-main malloc arenas. Sized from the NODE's core
+# count by default, not the container's CPU limit, so on a large node
+# this pod can end up with a hundred-plus 64MiB arena heaps. cgo
+# only — the Go allocator does not use malloc.
+- name: MALLOC_ARENA_MAX
+  value: {{ .Values.worker.mallocArenaMax | quote }}
+{{- end }}
+{{- if .Values.worker.pprofPort }}
+- name: PPROF_PORT
+  value: {{ .Values.worker.pprofPort | quote }}
+{{- end }}
+{{- end -}}
+{{- if .Values.worker.enabled }}
+{{- if and .Values.ladybug.enabled (gt (int .Values.worker.replicas) 1) }}
+{{- fail "worker.replicas must be 1 while ladybug.enabled: each worker holds its own Ladybug graph, each ladybug_rebuild job rebuilds only the graph of the one pod that picks it up, graph-ladybug-internal spreads serve's Cypher across all of them, and the graph-ladybug claim is ReadWriteOnce" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: graph-worker
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0        # kill old pod first, then start new — prevents double CH load
+      maxUnavailable: 1  # one pod unavailable during deploy is acceptable (Ladybug rebuild takes minutes)
+  selector:
+    matchLabels:
+      {{- include "graph.selectorLabels" (dict "component" "worker") | nindent 6 }}
+  template:
+    metadata:
+      {{- if .Values.metrics.enabled }}
+      annotations:
+        {{- include "graph.metricsAnnotations" . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "graph.labels" . | nindent 8 }}
+        {{- include "graph.componentLabels" (dict "component" "worker") | nindent 8 }}
+        {{- include "graph.metricsLabels" (dict "component" "worker" "Values" .Values) | nindent 8 }}
+        {{- include "graph.offSpotLabels" . | nindent 8 }}
+        {{- include "graph.azureWorkloadIdentityLabel" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      # fsGroup=65532 makes the PVC mount group-owned by nonroot so the Ladybug
+      # snapshot file (/data/ladybug/snapshot.gz) can be written by the worker pod.
+      # Without this the PVC is owned by root and the nonroot user gets EPERM.
+      {{- include "graph.podSecurityContext" (dict "fsGroup" 65532 "Values" .Values) | nindent 6 }}
+      {{- include "graph.offSpotAffinity" . | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # 50s covers the worker's whole shutdown (internal/jobs/client.go,
+      # WorkerStopTimeout): River's 20s soft stop + 10s hard-cancel drain, then
+      # the correlate coalescer's 10s final flush, then closing Ladybug and the DB
+      # pools. At 30s Kubernetes SIGKILLed the process mid-flush, losing
+      # buffered partial-correlate enqueues.
+      terminationGracePeriodSeconds: 50
+      volumes:
+        # The worker stages Ladybug COPY CSVs in os.TempDir() whenever /dev/shm has
+        # no headroom, so a read-only root without this mount breaks the graph
+        # rebuild rather than the pod start — a failure that would surface hours
+        # later. See graph.containerSecurityContext.
+        {{- include "graph.tmpVolume" . | nindent 8 }}
+        {{- include "graph.dbCAVolume" . | nindent 8 }}
+        {{- include "graph.awsVolume" . | nindent 8 }}
+        {{- if and .Values.ladybug.enabled .Values.ladybug.snapshotEnabled }}
+        - name: ladybug-data
+          persistentVolumeClaim:
+            claimName: graph-ladybug
+        {{- end }}
+      containers:
+        - name: worker
+          image: {{ include "graph.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["worker"]
+          env:
+            {{- include "graph.env" (dict "component" "worker" "Values" .Values "chart" (include "graph.chartEnv.worker" .)) | nindent 12 }}
+          {{- include "graph.envFrom" (dict "component" "worker" "Values" .Values) | nindent 10 }}
+          volumeMounts:
+            {{- include "graph.tmpVolumeMount" . | nindent 12 }}
+            {{- include "graph.dbCAVolumeMount" . | nindent 12 }}
+            {{- include "graph.awsVolumeMount" . | nindent 12 }}
+            {{- if and .Values.ladybug.enabled .Values.ladybug.snapshotEnabled }}
+            - name: ladybug-data
+              mountPath: /data/ladybug
+            {{- end }}
+          ports:
+            {{- if .Values.ladybug.enabled }}
+            - name: ladybug-rpc
+              containerPort: 8090
+              protocol: TCP
+            {{- end }}
+            {{- include "graph.metricsPort" . | nindent 12 }}
+          {{- if .Values.ladybug.enabled }}
+          # exec, not httpGet: a kubelet HTTP probe comes from the node address,
+          # and the NetworkPolicy would then have to admit nodes to the Ladybug RPC.
+          readinessProbe:
+            exec: { command: ["/graph", "healthcheck", "worker"] }
+            timeoutSeconds: 3
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 30
+          {{- end }}
+          {{- include "graph.containerSecurityContext" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+{{- end }}

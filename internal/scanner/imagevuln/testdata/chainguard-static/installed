@@ -1,0 +1,42 @@
+P:wolfi-baselayout
+V:20230201-r30
+A:x86_64
+L:MIT
+T:baselayout data for Wolfi
+o:wolfi-baselayout
+m:wolfi
+U:
+c:a4472f6292a5e48d6d611bf24c6e119b1a483e66
+t:1788982796
+S:13933
+I:137722
+C:Q1qyFV0NZAQAnaHoGFhRwUQlzoQC0=
+
+P:ca-certificates-bundle
+V:20260909-r2
+A:x86_64
+L:MPL-2.0 AND MIT
+T:
+o:ca-certificates
+m:wolfi
+U:
+c:f47c125470a19db0f450c2e4928a0db14f933d91
+t:1790867562
+S:118397
+I:232557
+C:Q1zbsxuUTyaGsjqjVdn2gTRDfZs68=
+
+P:tzdata
+V:2026e-r0
+A:x86_64
+L:CC-PDDC
+T:Timezone data provided by IANA
+o:tzdata
+m:wolfi
+U:
+c:c499c6b9b688160b1f545acfff0d99f73d668e1d
+t:1790729262
+S:565083
+I:1973055
+C:Q1MHM0+rPotBcMXgdP2Yoh/s2vpO8=
+

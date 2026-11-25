@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+
+# Local dev env (e.g. GRAPH_API_TARGET) — never commit; see .env.example
+.env.local
+.env*.local

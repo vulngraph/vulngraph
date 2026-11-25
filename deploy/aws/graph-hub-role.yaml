@@ -1,0 +1,215 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Vulngraph hub role (ADR 091): the identity graph itself runs as. Deploy it once,
+  in the account where graph runs. It can only assume the discovery role in
+  the management (or delegated-admin) account, the Vulngraph member roles and,
+  when ExecutionRoleName is set, the Approve & run execution role and, when
+  DiskScanRoleName is set, the VM disk scan role — it holds no
+  read or write permission on any resource itself.
+
+Parameters:
+  RoleName:
+    Type: String
+    Default: GraphHub
+    AllowedPattern: "^[\\w+=,.@-]{1,64}$"
+  TrustType:
+    Type: String
+    Default: eks-pod-identity
+    AllowedValues: [eks-pod-identity, irsa, principal]
+    Description: >-
+      How graph's pods get this role: EKS Pod Identity, IRSA (an EKS OIDC
+      provider), or an existing principal (an EC2 instance role, or the IAM
+      user whose access key an aws_org connector with hub_auth=access_key stores).
+      With principal, set the aws_org connector's hub_role_arn to the HubRoleArn
+      output: graph then calls sts:AssumeRole on this role from the principal's
+      credentials (every role in the chain trusts only this role).
+  OIDCProviderArn:
+    Type: String
+    Default: ""
+    Description: "irsa only: arn:aws:iam::<account>:oidc-provider/oidc.eks.<region>.amazonaws.com/id/<id>"
+  OIDCProviderHost:
+    Type: String
+    Default: ""
+    Description: "irsa only: the provider without https://, e.g. oidc.eks.eu-west-1.amazonaws.com/id/ABC123"
+  ServiceAccount:
+    Type: String
+    Default: system:serviceaccount:graph:graph
+    Description: "irsa only: the subject of graph's Kubernetes service account."
+  PodNamespace:
+    Type: String
+    Default: graph
+    Description: "eks-pod-identity only: the namespace graph runs in. Sessions from any other namespace are refused."
+    AllowedPattern: "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
+  PodServiceAccount:
+    Type: String
+    Default: graph
+    Description: "eks-pod-identity only: graph's ServiceAccount (chart serviceAccount.name). Sessions from any other ServiceAccount (the scanner's included) are refused."
+    AllowedPattern: "^[a-z0-9]([-.a-z0-9]{0,251}[a-z0-9])?$"
+  ExecutorServiceAccount:
+    Type: String
+    Default: ""
+    Description: >-
+      eks-pod-identity only: serve's own ServiceAccount (chart
+      serviceAccount.serveName, e.g. graph-serve). The hub then trusts it too
+      (set it whenever serveName is set, or serve has no cloud identity), and
+      with ExecutionRoleName only sessions from it may assume the execution
+      role; the worker keeps read access but no write path. Empty: serve shares
+      PodServiceAccount and every graph pod may assume the execution role.
+    AllowedPattern: "^([a-z0-9]([-.a-z0-9]{0,251}[a-z0-9])?)?$"
+  EKSClusterArn:
+    Type: String
+    Default: ""
+    Description: "eks-pod-identity only, optional: the cluster graph runs in. When set, associations in any other cluster of this account are refused."
+    AllowedPattern: "^(arn:aws[a-z-]*:eks:[a-z0-9-]+:\\d{12}:cluster/.+)?$"
+  TrustedPrincipalArn:
+    Type: String
+    Default: ""
+    Description: "principal only: the IAM role or user ARN allowed to assume the hub role."
+  ManagementRoleArn:
+    Type: String
+    Description: The discovery role graph-org-stackset.yaml creates (GraphOrgDiscovery) in the management or delegated-admin account.
+    AllowedPattern: "^arn:aws[a-z-]*:iam::\\d{12}:role/.+$"
+  MemberRoleName:
+    Type: String
+    Default: GraphReadOnly
+    Description: The member role name (graph-readonly-role.yaml RoleName).
+    AllowedPattern: "^[\\w+=,.@-]{1,64}$"
+  ExecutionRoleName:
+    Type: String
+    Default: ""
+    Description: Optional Approve & run role name (graph-execution-role.yaml). Empty grants no execution path.
+    AllowedPattern: "^([\\w+=,.@-]{1,64})?$"
+  DiskScanRoleName:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional VM disk scan role name (graph-diskscan-role.yaml RoleName). Empty
+      grants no path to it. The role itself trusts this hub only with the
+      connector's ExternalId, as the member role does, and can only create and
+      delete snapshots tagged vulngraph-disk-scan.
+    AllowedPattern: "^([\\w+=,.@-]{1,64})?$"
+  OrgId:
+    Type: String
+    Default: ""
+    Description: Optional organization id (o-…); when set, member roles outside it cannot be assumed (aws:ResourceOrgID).
+    AllowedPattern: "^(o-[a-z0-9]{10,32})?$"
+
+Conditions:
+  IsPodIdentity: !Equals [!Ref TrustType, eks-pod-identity]
+  IsIRSA: !Equals [!Ref TrustType, irsa]
+  HasExecutionRole: !Not [!Equals [!Ref ExecutionRoleName, ""]]
+  HasDiskScanRole: !Not [!Equals [!Ref DiskScanRoleName, ""]]
+  HasOrgId: !Not [!Equals [!Ref OrgId, ""]]
+  HasClusterArn: !Not [!Equals [!Ref EKSClusterArn, ""]]
+  HasExecutorServiceAccount: !Not [!Equals [!Ref ExecutorServiceAccount, ""]]
+  ServeTrusted: !And [!Condition IsPodIdentity, !Condition HasExecutorServiceAccount]
+  ExecutorPinned: !And [!Condition ServeTrusted, !Condition HasExecutionRole]
+  ExecutionHasCondition: !Or [!Condition HasOrgId, !Condition ExecutorPinned]
+
+Resources:
+  GraphHubRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: Vulngraph hub identity. Can only assume Vulngraph's discovery and member roles, and the execution role when ExecutionRoleName is set.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument: !If
+        - IsPodIdentity
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: pods.eks.amazonaws.com
+              Action: [sts:AssumeRole, sts:TagSession]
+              # Only pod identity associations of clusters in this account, and
+              # only for graph's own namespace and ServiceAccount(s): an
+              # association made for any other ServiceAccount (the scanner's,
+              # or a workload outside graph) cannot obtain the hub. EKS Pod
+              # Identity sets these session tags itself; a pod cannot choose them.
+              Condition:
+                StringEquals:
+                  aws:SourceAccount: !Ref AWS::AccountId
+                  aws:RequestTag/kubernetes-namespace: !Ref PodNamespace
+                  aws:RequestTag/kubernetes-service-account: !If
+                    - ServeTrusted
+                    - [!Ref PodServiceAccount, !Ref ExecutorServiceAccount]
+                    - !Ref PodServiceAccount
+                  aws:RequestTag/eks-cluster-arn: !If [HasClusterArn, !Ref EKSClusterArn, !Ref AWS::NoValue]
+        - !If
+          - IsIRSA
+          # The condition key embeds the provider host, so the IRSA document is
+          # built as a string.
+          - !Sub |
+            {
+              "Version": "2012-10-17",
+              "Statement": [{
+                "Effect": "Allow",
+                "Principal": {"Federated": "${OIDCProviderArn}"},
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {"StringEquals": {
+                  "${OIDCProviderHost}:sub": "${ServiceAccount}",
+                  "${OIDCProviderHost}:aud": "sts.amazonaws.com"
+                }}
+              }]
+            }
+          - Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Principal:
+                  AWS: !Ref TrustedPrincipalArn
+                Action: sts:AssumeRole
+      Policies:
+        - PolicyName: graph-hub-assume
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: GraphAssumeOrgDiscovery
+                Effect: Allow
+                Action: sts:AssumeRole
+                Resource: !Ref ManagementRoleArn
+              - Sid: GraphAssumeMemberRoles
+                Effect: Allow
+                Action: sts:AssumeRole
+                Resource: !Sub arn:${AWS::Partition}:iam::*:role/${MemberRoleName}
+                Condition: !If
+                  - HasOrgId
+                  - StringEquals:
+                      aws:ResourceOrgID: !Ref OrgId
+                  - !Ref AWS::NoValue
+              # The disk scan's snapshot role, in its own statement so it stays
+              # absent unless DiskScanRoleName is set. The role's trust holds the
+              # ExternalId, exactly as the member role's does.
+              - !If
+                - HasDiskScanRole
+                - Sid: GraphAssumeDiskScanRoles
+                  Effect: Allow
+                  Action: sts:AssumeRole
+                  Resource: !Sub arn:${AWS::Partition}:iam::*:role/${DiskScanRoleName}
+                  Condition: !If
+                    - HasOrgId
+                    - StringEquals:
+                        aws:ResourceOrgID: !Ref OrgId
+                    - !Ref AWS::NoValue
+                - !Ref AWS::NoValue
+              # The Approve & run path, in its own statement so it can be held
+              # to serve's ServiceAccount (ExecutorServiceAccount): the session
+              # tag is set by EKS Pod Identity, so the worker and the scanner
+              # cannot present it.
+              - !If
+                - HasExecutionRole
+                - Sid: GraphAssumeExecutionRoles
+                  Effect: Allow
+                  Action: sts:AssumeRole
+                  Resource: !Sub arn:${AWS::Partition}:iam::*:role/${ExecutionRoleName}
+                  Condition: !If
+                    - ExecutionHasCondition
+                    - StringEquals:
+                        aws:ResourceOrgID: !If [HasOrgId, !Ref OrgId, !Ref AWS::NoValue]
+                        aws:PrincipalTag/kubernetes-service-account: !If [ExecutorPinned, !Ref ExecutorServiceAccount, !Ref AWS::NoValue]
+                    - !Ref AWS::NoValue
+                - !Ref AWS::NoValue
+
+Outputs:
+  HubRoleArn:
+    Description: Pass as HubRoleArn to graph-org-stackset.yaml; run graph as this role. With TrustType=principal, also set it as the aws_org connector's hub_role_arn.
+    Value: !GetAtt GraphHubRole.Arn

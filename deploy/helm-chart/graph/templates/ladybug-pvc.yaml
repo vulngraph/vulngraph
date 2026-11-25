@@ -1,0 +1,65 @@
+{{- if .Values.ladybug.enabled }}
+# Ladybug graph engine data — PVC for the worker pod (single writer; the worker
+# rolls with maxSurge 0, so the old pod releases the RWO claim before the new one mounts).
+# The PVC is a disposable cache: deleting it causes the next correlate sweep to
+# rebuild the full Ladybug graph from ClickHouse (several minutes on a large
+# estate) — a pod restart instead warm-loads this PVC's snapshot.
+#
+# storageClassName is DELIBERATELY UNSET by default, and pinning it on an
+# existing release is a deploy-breaking mistake: `spec` is immutable on a bound
+# PVC, so pinning a class the live claim does not already have makes every
+# subsequent `helm diff` fail with
+#
+#   PersistentVolumeClaim "graph-ladybug" is invalid: spec: Forbidden: spec is
+#   immutable after creation
+#
+# which blocks every deploy of the release, not just this chart's.
+#
+# A cluster-default HDD-backed class (e.g. GKE's gce-pd-standard) gives only a
+# couple of MBps for a small claim, so warm-loading the snapshot is slow
+# (tens of seconds of pure disk read); an SSD-backed class (e.g. gce-pd-balanced)
+# is far faster for negligible extra cost.
+#
+# Moving to it is an OPERATIONAL step, not a chart change, because the class cannot
+# be patched: delete the PVC and let this template recreate it. That is safe
+# precisely because the PVC is a disposable cache — the next correlate sweep
+# rebuilds Ladybug from ClickHouse. Set ladybug.storageClass ONLY when creating fresh, or
+# after deleting the existing claim.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: graph-ladybug
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- with .Values.ladybug.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.ladybug.storage | default "10Gi" }}
+{{- end }}
+{{- if and .Values.serveLadybug.enabled .Values.serveLadybug.snapshotEnabled }}
+---
+# serve-ladybug snapshot cache — PVC for the serve pod's read-only Ladybug replica.
+# Lets serve warm-start Cypher after a deploy instead of a cold ClickHouse
+# rebuild. Disposable cache, same contract as the worker's graph-ladybug PVC. RWO is
+# safe with serve's Recreate strategy (old pod releases before the new one mounts).
+# storageClassName omitted for the same reason as above — immutable on a bound
+# claim, so pinning it here would break the deploy rather than migrate anything.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: graph-serve-ladybug
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- with .Values.serveLadybug.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.serveLadybug.storage | default "2Gi" }}
+{{- end }}

@@ -1,0 +1,584 @@
+# Finding domain (internal/app/finding). Findings sorted by enriched score.
+components:
+  pathItems:
+    listFindings:
+      get:
+        operationId: listFindings
+        tags: [findings]
+        summary: List findings, sorted by enriched score
+        parameters:
+          - name: source
+            in: query
+            schema: { type: string }
+          - name: severity
+            in: query
+            schema: { $ref: '#/components/schemas/Severity' }
+          - name: resource_id
+            in: query
+            description: only findings on this resource (asset id).
+            schema: { type: string }
+          - name: check_id
+            in: query
+            description: only findings from this check (drill-down from a cluster).
+            schema: { type: string }
+          - name: sort
+            in: query
+            description: '`detected` for newest-first; otherwise sorted by score.'
+            schema: { type: string, enum: [detected] }
+          - name: limit
+            in: query
+            schema: { type: integer, minimum: 0 }
+          - name: min_score
+            in: query
+            schema: { type: integer, minimum: 0, maximum: 100 }
+          - name: safe
+            in: query
+            description: '`true` returns only findings classed structurally safe to fix (the "start here" worklist).'
+            schema: { type: string, enum: ['true'] }
+          - name: must_fix
+            in: query
+            description: '`true` returns only evidence-backed must-fix findings (internet-reachable + exploitable + real blast on a present resource, or a non-test-mode credential leaked in a public repository that GitHub''s validity check reports active or has not checked) — the "must fix now" worklist.'
+            schema: { type: string, enum: ['true'] }
+          - name: include_resolved
+            in: query
+            description: '`true` includes auto-resolved findings (no longer observed by their emitting check, or resource deleted). Default excludes them.'
+            schema: { type: string, enum: ['true'] }
+          - name: owner
+            in: query
+            description: >-
+              Only findings owned by this team (normalised server-side, so
+              "@acme/Payments" and "payments" select the same team), or `unowned`
+              for findings whose owner resolved to nobody. A finding enrichment has
+              not reached yet matches no owner.
+            schema: { type: string }
+          - name: environment
+            in: query
+            description: Only findings whose asset classifies into this environment.
+            schema: { type: string, enum: [prod, staging, dev, unknown] }
+          - name: cursor
+            in: query
+            description: Opaque cursor from a prior response's `next_cursor`; pages forward.
+            schema: { type: string }
+        responses:
+          '200':
+            description: A page of findings.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/FindingPage' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    getFindingsSummary:
+      get:
+        operationId: getFindingsSummary
+        tags: [findings]
+        summary: Aggregate finding counts for the overview dashboard
+        parameters:
+          - name: source
+            in: query
+            schema: { type: string }
+        responses:
+          '200':
+            description: Counts of current findings.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/FindingSummary' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    getFindingClusters:
+      get:
+        operationId: getFindingClusters
+        tags: [findings]
+        summary: Findings grouped by check (the triage view), worst-score first
+        parameters:
+          - name: source
+            in: query
+            schema: { type: string }
+        responses:
+          '200':
+            description: Findings collapsed into one cluster per check.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/FindingClusters' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    getCostAtRisk:
+      get:
+        operationId: getCostAtRisk
+        tags: [findings]
+        summary: Cost-bearing resources carrying findings — the true count, its composition, and a ranked page
+        description: >
+          Findings rolled up per resource and inner-joined to the asset types that
+          carry a recurring cloud bill (compute, storage, managed databases, load
+          balancers, reserved addresses, fixed-fee secret/key stores). Packages,
+          identities, IaC declarations and free network scaffolding are excluded:
+          they carry risk but no spend, and the Cost surface's question is "which
+          BILLED resource is at risk". `total` is a server-side COUNT over the whole
+          population and is independent of `limit` — `items` is a bounded page of
+          the same set, and `returned` is its size. Reading `items.length` as the
+          population is the defect this endpoint exists to remove.
+        parameters:
+          - name: min_score
+            in: query
+            required: false
+            description: Minimum worst finding score per resource (default 60).
+            schema: { type: integer, minimum: 0, maximum: 100, default: 60 }
+          - name: limit
+            in: query
+            required: false
+            description: Maximum ranked rows to return (default 200). Does not affect `total`.
+            schema: { type: integer, minimum: 0, maximum: 1000, default: 200 }
+        responses:
+          '200':
+            description: The cost-bearing risk rollup.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/CostAtRisk' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    getFinding:
+      get:
+        operationId: getFinding
+        tags: [findings]
+        summary: Full context for one finding (reasoning, blast radius, provenance, score factors, peers)
+        parameters:
+          - name: id
+            in: path
+            required: true
+            schema: { type: string }
+        responses:
+          '200':
+            description: The finding's assembled context.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/FindingContext' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    resolveFinding:
+      post:
+        operationId: resolveFinding
+        tags: [findings]
+        summary: Manually resolve a finding (admin only)
+        description: >
+          The human-driven counterpart to sync-time auto-resolve —
+          use when a live check (e.g. "Verify live" against the cloud) refutes
+          a finding the emitting check hasn't re-synced yet. Audited as
+          finding.resolve with the reason. On an API key (which an agent may
+          hold) a finding that is critical, must-fix, in the page or high
+          band, or not yet scored is refused with 403 (audited as
+          finding.resolve_refused); resolve it from a signed-in session.
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResolveFindingRequest' }
+        responses:
+          '200':
+            description: Finding marked resolved.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ResolveFindingResult' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+  schemas:
+    CostAtRisk:
+      type: object
+      required: [min_score, total, returned, by_type, by_provider, cost_bearing_types, items]
+      properties:
+        min_score: { type: integer, description: 'The score threshold the population was selected at.' }
+        total:
+          type: integer
+          description: >
+            Server-side COUNT of cost-bearing resources at or above min_score. Never
+            equal to items.length by construction — items is capped by `limit`.
+        returned: { type: integer, description: 'Number of rows in items.' }
+        by_type:
+          type: object
+          additionalProperties: { type: integer }
+          description: 'Composition by asset type; sums to total.'
+        by_provider:
+          type: object
+          additionalProperties: { type: integer }
+          description: 'Composition by provider; sums to total.'
+        cost_bearing_types:
+          type: array
+          items: { type: string }
+          description: 'The asset types counted as cost-bearing, published so the number is auditable.'
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CostAtRiskResource' }
+    CostAtRiskResource:
+      type: object
+      required: [id, name, type, provider, max_score, finding_count]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        type: { type: string }
+        provider: { type: string }
+        region: { type: string }
+        max_score: { type: integer, description: 'Worst enriched finding score on the resource.' }
+        finding_count: { type: integer, description: 'Open findings on the resource.' }
+    ResolveFindingRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, description: 'Why this finding is being manually resolved, e.g. a live-verify verdict.' }
+    ResolveFindingResult:
+      type: object
+      required: [id, resolved_at]
+      properties:
+        id: { type: string }
+        resolved_at: { type: string, format: date-time }
+    FindingPage:
+      type: object
+      description: A page of findings. next_cursor is present only when more may follow.
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Finding' }
+        next_cursor: { type: string }
+    FindingSummary:
+      type: object
+      description: Aggregate counts of current findings (total, by severity, by score band, by owner, by environment).
+      required: [total, by_severity, by_band, by_owner, by_environment]
+      properties:
+        total: { type: integer }
+        by_severity:
+          type: object
+          additionalProperties: { type: integer }
+        by_band:
+          type: object
+          additionalProperties: { type: integer }
+        by_owner:
+          type: object
+          additionalProperties: { type: integer }
+          description: >-
+            Open findings per owner team — the owner facet. `unowned` counts findings
+            whose owner resolved to nobody; the empty-string key counts findings
+            whose owner has not been resolved yet (kept apart from unowned on purpose).
+        by_environment:
+          type: object
+          additionalProperties: { type: integer }
+          description: Open findings per classified environment (prod, staging, dev, unknown); the empty-string key counts findings not yet stamped.
+    FindingOwnerSource:
+      type: string
+      description: >-
+        Which tier named the finding's owner (ADR 089): `tag`, `codeowners`, `iac`
+        (the declaring repo), or `none` — resolved to nobody (unowned). The empty
+        string means enrichment has not stamped an owner yet, which routes like
+        unowned but is never counted as unowned.
+      enum: ['', tag, codeowners, iac, none]
+    FindingEnvironment:
+      type: string
+      description: The finding's asset environment as classified at enrich time. `unknown` is a real verdict; the empty string means not yet stamped.
+      enum: ['', prod, staging, dev, unknown]
+    FindingClusters:
+      type: object
+      description: Findings grouped by check — one row per check, worst-score first.
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/FindingCluster' }
+    FindingCluster:
+      type: object
+      description: All findings of one check collapsed into a single triage row.
+      required: [check_id, title, severity, max_score, instances, resources, known_exploited, last_detected]
+      properties:
+        check_id: { type: string }
+        title: { type: string }
+        severity: { $ref: '#/components/schemas/Severity' }
+        source: { type: string }
+        remediation: { type: string }
+        max_score: { type: integer, minimum: 0, maximum: 100, description: Highest enriched score across the cluster's instances. }
+        worst_band: { $ref: '#/components/schemas/ScoreBand' }
+        instances: { type: integer, description: Total findings in the cluster. }
+        resources: { type: integer, description: Distinct resources affected. }
+        known_exploited: { type: boolean }
+        last_detected: { type: string, format: date-time }
+    Severity:
+      type: string
+      enum: [critical, high, medium, low, info]
+    ScoreBand:
+      type: string
+      description: >
+        Urgency tier derived from the enriched score: page (critical), high,
+        pipeline (medium), monitor (low). The empty string is a
+        member: a finding that has never been enriched has no band, and the client
+        must be able to distinguish that from a real band rather than from an
+        absent key. Read it with enrichment_state.
+      enum: ['', page, high, pipeline, monitor]
+    EnrichmentState:
+      type: string
+      description: >
+        How far enrichment has got on this finding. Exists because every enrichment
+        output uses ""/0 for BOTH "the pipeline ran and the answer is genuinely
+        nothing" and "the pipeline never ran" — so a blank must_fix_class or
+        safety_class is only interpretable alongside this field. `never_enriched` =
+        no enrichment has run, every output is an uninformative zero value.
+        `stale` = enriched longer ago than twice the enrich freshness backstop (48h),
+        so the outputs may reflect an older graph or an older scoring version.
+        `enriched` = recent, and a blank output is a real verdict.
+      enum: [never_enriched, stale, enriched]
+    Finding:
+      type: object
+      required: [id, source, type, severity, score, title, detected_at, enrichment_state, score_band, safety_class, must_fix_class, owner_source, environment, suppression_known]
+      properties:
+        id: { type: string }
+        source: { type: string }
+        type: { type: string }
+        severity: { $ref: '#/components/schemas/Severity' }
+        score: { type: integer, minimum: 0, maximum: 100, description: Enriched contextual risk; the value the UI leads on. }
+        score_band: { $ref: '#/components/schemas/ScoreBand' }
+        known_exploited: { type: boolean }
+        suppression_known:
+          type: boolean
+          description: >-
+            False when the suppression standing could not be read. is_suppressed and
+            exception_expired are then unmeasured (absent), not "active".
+        is_suppressed: { type: boolean }
+        exception_expired:
+          type: boolean
+          description: The finding was suppressed and that suppression expired, so it is back in the pipeline. Absent otherwise.
+        title: { type: string }
+        resource_type: { type: string }
+        resource_id: { type: string }
+        region: { type: string }
+        check_id: { type: string }
+        detected_at: { type: string, format: date-time }
+        enrichment_state: { $ref: '#/components/schemas/EnrichmentState' }
+        enriched_at: { type: string, format: date-time, description: 'When enrichment last ran on this finding. Absent if it never has — which is why the field exists: the client previously had to guess "still enriching" from score === 0, indistinguishable from a genuinely zero-scored finding.' }
+        safety_class:
+          type: string
+          enum: ['', safe, caution, risky]
+          description: 'Advisory "safe to fix" band computed at enrich time from graph structure (no LLM). Always present; "" means no verdict — see enrichment_state for whether that is an answer or silence.'
+        dependents: { type: integer, minimum: 0, description: Distinct assets that depend on this resource and could break if a fix changed it. }
+        unused: { type: boolean, description: Resource looks decommissioned (stale/inactive/orphaned). }
+        fix_target: { type: string, description: 'Compact "where to fix" hint, e.g. "repo:org/name" or "console:acct:region".' }
+        must_fix_class:
+          type: string
+          enum: ['', must_fix, elevated, contained, controlled, routine]
+          description: >
+            Evidence-backed urgency, computed at enrich from reachability +
+            exploitability + blast + compensating controls (not the score). Always
+            present. `must_fix` = internet-reachable, exploitable (KEV, an active
+            threat, or a privilege-escalation path), blast radius of 5+ assets, on a
+            resource that still exists, and not gated by a compensating control (a
+            control makes a non-KEV, non-active-threat finding `controlled`); or a
+            non-test-mode credential leaked in a public repository whose GitHub
+            secret-scanning validity is `active` or unknown (the reason says which:
+            "live" only for `active`). The same credential in a private or
+            `internal` repository is `elevated`; a test-mode credential, or one
+            GitHub reports `inactive`, is `contained`. `routine` is the verdict
+            for "weighed, no urgency evidence" — not exploitable and not provably
+            contained — typically most findings; it is also the class of a
+            privilege-escalation path that is neither internet-reachable nor has a
+            measured blast radius of 5+ assets, and of a package
+            that runs only on inventoried VMs, whose urgency is carried by its
+            per-fleet vm_vuln finding. "" means enrichment has not run
+            (check enrichment_state) or the classifier failed open on missing evidence
+            (for example no resource, unknown repo visibility, a truncated supply-chain
+            walk, a package or code-scanning alert with no deployment lineage, or no
+            RBAC subject evidence).
+            `routine` is a deliberate scope boundary rather than a gap: outside the
+            leaked-secret, supply-chain, code-scanning and Kubernetes RBAC paths, must_fix and elevated
+            require KEV, an active threat or a privesc path, which a plain reachable
+            misconfiguration does not have. Distinguish a weighed `routine` from
+            "never looked" via enrichment_state.
+        must_fix_reason: { type: string, description: 'Compact "why you must fix this now" evidence, e.g. "internet-reachable (2 hops) · KEV · blast 42".' }
+        last_observed_at: { type: string, format: date-time, description: 'When the emitting check/collector last re-observed this finding. Absent until first stamped.' }
+        resolved_at: { type: string, format: date-time, description: 'When the finding stopped being observed (fixed, or resource deleted). Absent while open; resolved findings appear only with include_resolved=true.' }
+        resolution_reason:
+          type: string
+          enum: [fixed, resource_gone, manual, provider_closed]
+          description: >
+            Why the finding closed. `fixed` = the emitting check ran again against a live
+            resource and no longer reports it, or GitHub reported the remediation itself
+            (a code-scanning alert fixed, a leaked secret revoked). `resource_gone` =
+            the resource no longer exists, so it closed without anyone acting. `manual` = a
+            human resolved it explicitly, in Vulngraph or by dismissing the GHAS alert on
+            GitHub. `provider_closed` = a provider-native feed (GuardDuty, SCC) stopped
+            listing it as active (archived, suppressed, inactive or aged out), or GitHub
+            closed a secret alert for another reason (its custom pattern changed) — not
+            evidence of remediation. Absent while open.
+            The fixed-vs-resource_gone split is
+            what makes per-check usefulness measurable (graph_check_junk_rate).
+        owner_team: { type: string, description: 'Normalised owner team; absent when unowned or not yet resolved.' }
+        owner_source: { $ref: '#/components/schemas/FindingOwnerSource' }
+        owner_confidence: { type: string, enum: [high, medium, low] }
+        environment: { $ref: '#/components/schemas/FindingEnvironment' }
+    FindingContext:
+      type: object
+      description: Full assembled detail for one finding — the connected-graph context plus reasoning and score factors.
+      required: [id, source, type, severity, title, score, known_exploited, detected_at, exposure, blast, provenance, impact, enrichment_state, score_band, must_fix_class, safety_class, owner_source, environment, suppression_known, is_suppressed, exception_expired]
+      properties:
+        id: { type: string }
+        source: { type: string }
+        type: { type: string }
+        severity: { $ref: '#/components/schemas/Severity' }
+        title: { type: string }
+        description: { type: string }
+        resource_type: { type: string }
+        resource_id: { type: string }
+        resource_name: { type: string }
+        region: { type: string }
+        check_id: { type: string }
+        remediation: { type: string }
+        score: { type: integer, minimum: 0, maximum: 100 }
+        score_band: { $ref: '#/components/schemas/ScoreBand' }
+        known_exploited: { type: boolean }
+        detected_at: { type: string, format: date-time }
+        enrichment_state: { $ref: '#/components/schemas/EnrichmentState' }
+        enriched_at: { type: string, format: date-time, description: When enrichment last ran on this finding. Absent if it never has. }
+        must_fix_class:
+          type: string
+          enum: ['', must_fix, elevated, contained, controlled, routine]
+          description: >
+            Evidence-backed urgency, so the detail page can answer "why must I fix
+            this?". See the Finding schema for what "" means.
+        must_fix_reason: { type: string, description: 'Compact "why you must fix this now" evidence, e.g. "internet-reachable (2 hops) · KEV · blast 42".' }
+        safety_class:
+          type: string
+          enum: ['', safe, caution, risky]
+          description: Advisory "safe to fix" band. Always present; "" means no verdict.
+        owner_team: { type: string, description: 'Normalised owner team; absent when unowned or not yet resolved.' }
+        owner_source: { $ref: '#/components/schemas/FindingOwnerSource' }
+        owner_confidence: { type: string, enum: [high, medium, low] }
+        environment: { $ref: '#/components/schemas/FindingEnvironment' }
+        suppression_known:
+          type: boolean
+          description: >-
+            False when the suppression standing could not be read. is_suppressed and
+            exception_expired are then unmeasured — do not offer a Suppress/Unsuppress
+            toggle built on them.
+        is_suppressed: { type: boolean, description: "An unexpired suppression currently covers this finding." }
+        exception_expired: { type: boolean, description: "The finding was suppressed and that suppression has lapsed, so it is back in the pipeline." }
+        suppression_expires_at: { type: string, format: date-time, description: 'When the current (or lapsed) suppression expires/expired. Absent when the finding was never suppressed.' }
+        suppression_reason: { type: string }
+        suppressed_by: { type: string }
+        narrative: { type: string, description: "Deterministic plain-English risk story built from the graph signals (exposure, blast radius, identity chain, supply-chain path) — the readable 'why this matters (or doesn't)' framing." }
+        matched_url: { type: string, description: "Scanner-native: the exact URL/endpoint the check matched (e.g. nuclei)." }
+        evidence: { type: string, description: "Scanner-native: matched or extracted values that triggered the result." }
+        references: { type: string, description: "Scanner-native: newline-joined reference links for the check." }
+        reasoning:
+          type: object
+          description: >-
+            The 7-step layered decision trace — plan, confidence (decaying
+            memory), blast radius, and CoVe concerns. This is a SNAPSHOT
+            from decided_at, not recomputed on this request (except
+            safety_band, which is refreshed live) — it can disagree with the
+            live blast/must_fix data above if the graph has changed since.
+          properties:
+            action_class: { type: string }
+            summary: { type: string }
+            rationale: { type: string }
+            outcome: { type: string }
+            confidence_band: { type: string }
+            confidence_score: { type: number }
+            effective_n: { type: number }
+            sample_count: { type: integer }
+            blast_radius: { type: integer }
+            blast_radius_known:
+              type: boolean
+              description: >-
+                False means the decision's own blast-radius walk failed, so
+                blast_radius is left at its zero value — render as
+                "unmeasured", never as a measured "0 reachable assets".
+            cove_concerns: { type: array, items: { type: string } }
+            safety_band: { type: string, description: "How risky applying the plan is — safe | caution | risky." }
+            decided_at: { type: string, format: date-time }
+        exposure:
+          type: object
+          properties:
+            internet_facing: { type: boolean }
+            privileged: { type: boolean }
+        blast:
+          type: object
+          description: >-
+            Live blast-radius walk, recomputed on every request — distinct
+            from reasoning.blast_radius above, which is a decision-time
+            snapshot.
+          properties:
+            count: { type: integer }
+            known:
+              type: boolean
+              description: >-
+                False means this live walk failed, so count is left at its
+                zero value — render as "unmeasured", never as a measured
+                "0 reachable assets".
+            by_type: { type: object, additionalProperties: { type: integer } }
+            can_assume: { type: array, items: { type: string } }
+            truncated: { type: boolean }
+            graph_assets:
+              type: array
+              description: Raw BFS asset list for the blast-radius graph view — eliminates a second API call.
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  type: { type: string }
+                  max_score: { type: integer }
+            graph_edges:
+              type: array
+              description: Raw BFS edges for the blast-radius graph view.
+              items:
+                type: object
+                properties:
+                  src_id: { type: string }
+                  dst_id: { type: string }
+                  edge_type: { type: string }
+        provenance:
+          type: object
+          properties:
+            connector: { type: string }
+            account_id: { type: string }
+            region: { type: string }
+            owner: { type: string }
+            environment: { type: string }
+            age_bucket: { type: string }
+            source_repo: { type: string }
+            source_confidence: { type: string }
+        impact:
+          type: object
+          description: "Safe-to-fix context: what depends on the resource, whether it looks unused, evidence to check, and where a fix lands."
+          required: [dependents, dependents_known, unused]
+          properties:
+            dependents: { type: integer, description: "Assets that rely on this resource and could break if it changes. Unmeasured (0) when dependents_known is false." }
+            dependents_known: { type: boolean, description: "False when the dependents lookup failed or the collector could not read who relies on the resource — dependents is then unknown, not zero." }
+            unused: { type: boolean, description: "Heuristic: the resource looks unused (stale / orphaned / inactive)." }
+            signals: { type: array, items: { type: string }, description: "Evidence lines — what to look for before actioning." }
+            fix_location:
+              type: object
+              description: "Where the fix should be applied. Omitted when there is nothing to point at."
+              properties:
+                kind: { type: string, description: "source_repo | cloud_console" }
+                repo: { type: string }
+                confidence: { type: string }
+                account: { type: string }
+                region: { type: string }
+                hint: { type: string }
+        factors:
+          type: array
+          items:
+            type: object
+            properties:
+              source: { type: string }
+              points: { type: integer }
+              floor: { type: integer }
+              detail: { type: string }
+        peers:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { type: string }
+              check_id: { type: string }
+              score_band: { type: string }

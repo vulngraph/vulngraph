@@ -1,0 +1,39 @@
+{
+ "Framework": "CIS",
+ "Name": "CIS 7.0",
+ "Version": "7.0",
+ "Provider": "AWS",
+ "Description": "fixture",
+ "Requirements": [
+  {
+   "Id": "1.1",
+   "Description": "",
+   "Attributes": [
+    {
+     "Section": "s"
+    }
+   ],
+   "Checks": []
+  },
+  {
+   "Id": "1.2",
+   "Description": "",
+   "Attributes": [
+    {
+     "Section": "s"
+    }
+   ],
+   "Checks": []
+  },
+  {
+   "Id": "1.4",
+   "Description": "",
+   "Attributes": [
+    {
+     "Section": "s"
+    }
+   ],
+   "Checks": []
+  }
+ ]
+}

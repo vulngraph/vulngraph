@@ -1,0 +1,984 @@
+# Defaults for a self-contained, single-cluster deploy. See
+# deploy/helm-values/example.yaml for a starting point to override from, and
+# deploy/README.md for the full walkthrough.
+
+# Fail-closed production checks (templates/checks/hardened.yaml). With true the
+# render fails, listing every gap at once, until the install has a pinned image
+# digest, TLS to both datastores, an ingress with a host, serve's port limited
+# to the ingress controller, admin TOTP, the real client address, no dangerous
+# flag and no extraEnv / extraEnvFrom that could undo a check.
+# deploy/helm-values/hardened.yaml turns it on with the values that go with it;
+# docs/production-checklist.md is the rest of a production install. Off by
+# default: the checks change nothing else.
+hardened: false
+
+image:
+  # This project's own multi-arch image. .github/workflows/release.yaml
+  # publishes it to ghcr.io/vulngraph/vulngraph for every vX.Y.Z tag, as vX.Y.Z
+  # and X.Y.Z (and as the rolling "edge" on every main push). If you've forked
+  # this repo and publish your own, or you're building locally (the Dockerfile
+  # is self-contained — see deploy/README.md "Building the image yourself"),
+  # point this at that image instead.
+  repository: ghcr.io/vulngraph/vulngraph
+  # Empty by default: the deployment templates fall back to the chart's
+  # appVersion, and the release workflow refuses to publish a tag that differs
+  # from it, so the chart at a release tag pulls exactly that release's image
+  # and upgrading the chart moves the image with it. Set this explicitly to pin
+  # a version regardless of the chart, or to "edge" to track main (unversioned,
+  # no upgrade guarantees, and with pullPolicy IfNotPresent two nodes can run
+  # different builds of it).
+  tag: ""
+  # Pin the image by digest (sha256:<64 hex>): every graph container then runs
+  # repository@digest and tag is ignored. A tag can be moved to another image;
+  # a digest cannot. deploy/README.md "Verifying a release image" shows how to
+  # look one up and check its signature. Empty = pull by tag.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+# Only needed when image.repository (or postgres.image / clickhouse.image) is a
+# private registry. Applied to every pod the chart renders. Empty by default.
+imagePullSecrets: []
+
+# extraLabels are merged onto every resource this chart renders — use this for
+# your own org's label conventions (service catalogs, cost allocation, etc.).
+extraLabels: {}
+
+# Extra environment for serve, its migrate init container and the worker: any
+# setting in docs/configuration.md the chart has no first-class value for.
+# extraEnv entries are EnvVar objects (name + value or valueFrom); extraEnvFrom
+# entries are envFrom sources (configMapRef / secretRef). serve.*, worker.* and
+# scanner.* take the same two keys for one component only. The scanner never
+# gets these chart-wide lists, only scanner.extraEnv / scanner.extraEnvFrom, so
+# a secret added here (GRAPH_SECRET_KEY, an LLM key) stays off the pod that runs
+# nuclei; do not put one in the scanner's own lists either. Each name is
+# rendered once: a component entry wins over a chart-wide one, and either wins
+# over a variable the chart itself sets. hardened: true refuses an entry that
+# replaces a chart-set variable, and every extraEnvFrom list. HTTPS_PROXY here
+# also reaches nuclei in serve (template tests) and in a worker that scans
+# (scanner.enabled off), where it routes JavaScript templates past the
+# dial-time sandbox; the templates download uses NUCLEI_TEMPLATES_PROXY instead
+# (docs/configuration.md).
+#   extraEnv:
+#     - name: HTTPS_PROXY
+#       value: http://proxy.internal:3128
+#   extraEnvFrom:
+#     - secretRef: { name: graph-extra }
+extraEnv: []
+extraEnvFrom: []
+
+# avoidSpotNodes pins the worker, serve, and the Postgres/ClickHouse StatefulSets
+# off preemptible/spot nodes. The worker holds the in-memory Ladybug graph and the
+# datastores are stateful, so a spot preemption is an outage + reschedule storm,
+# not a cheap restart. Off by default; enable for a production deploy.
+avoidSpotNodes: false
+# The node label that marks spot capacity, and the values of it that do. The
+# pinned pods schedule only onto nodes without the label or with another
+# value (NotIn). The key defaults to GKE's. Leave avoidSpotNodeLabelValues
+# empty for one of these keys, and the chart uses that cloud's spot value:
+#   GKE:                     cloud.google.com/gke-spot, ["true"]
+#   EKS managed node groups: eks.amazonaws.com/capacityType, ["SPOT"]
+#   Karpenter:               karpenter.sh/capacity-type, ["spot"]
+#   AKS:                     kubernetes.azure.com/scalesetpriority, ["spot"]
+# Any other key needs avoidSpotNodeLabelValues, or the render fails. A key
+# your nodes do not carry excludes nothing, so spot nodes stay eligible: check
+# that `kubectl get nodes -L <key>` shows a listed value on exactly your spot
+# nodes.
+avoidSpotNodeLabelKey: "cloud.google.com/gke-spot"
+avoidSpotNodeLabelValues: []
+# Extra pod-template labels for the same pinned workloads, added only while
+# avoidSpotNodes is on: for a cluster whose admission webhook or scheduler
+# policy places pods by label (for example one that sends unlabelled pods to
+# spot capacity). Empty by default; most clusters need none.
+#   avoidSpotPodLabels: { example.com/capacity: on-demand }
+avoidSpotPodLabels: {}
+
+# Container hardening. Without it, the only thing standing between the pod and
+# root is the image's own USER line — a property of the image, not an enforced
+# property of the deployment.
+#
+# readOnlyRootFilesystem is split out because it is the one setting with a real
+# runtime failure mode: the binary writes to os.TempDir() (Ladybug COPY staging,
+# nuclei template validation). Every deployment mounts an emptyDir at /tmp for
+# exactly that, but if an unnoticed writer turns up at runtime this can be
+# turned off ALONE, keeping runAsNonRoot and the dropped capabilities.
+securityContext:
+  enabled: true
+  runAsUser: 65532            # matches the image's `USER nonroot` (Dockerfile)
+  readOnlyRootFilesystem: true
+  tmpSizeLimit: 2Gi           # /tmp emptyDir cap — Ladybug CSV staging is the big writer
+  # $HOME emptyDir cap. nuclei keeps its config in ~/.config/nuclei AND, unless
+  # NUCLEI_TEMPLATES_DIR is set, the worker and scanner download the pinned
+  # nuclei-templates release into ~/nuclei-templates-<version>-<sha256> (about 10 MiB of
+  # archive unpacking to about 80 MiB at v10.5.1; capped at 512 MiB). Going
+  # over the cap evicts the pod, so it sits well above the template set's size.
+  # A cap, not a reservation: an unused emptyDir costs nothing.
+  homeSizeLimit: 1Gi
+
+serve:
+  # serve scales horizontally, except with serveLadybug.snapshotEnabled (one
+  # ReadWriteOnce snapshot claim): the render fails on replicas > 1 there.
+  replicas: 1
+  resources:
+    requests: { cpu: "500m", memory: "512Mi" }
+    limits: { cpu: "1", memory: "1Gi" }
+  # The migrate initContainer's own resources — kept small since it's a
+  # short-lived schema apply, but a values key rather than hardcoded in the
+  # template in case your namespace ResourceQuota has a minimum-request floor
+  # above this, or first-install migrations run slow on your hardware.
+  migrateResources:
+    requests: { cpu: "50m", memory: "64Mi" }
+    limits: { cpu: "500m", memory: "256Mi" }
+  # GOMEMLIMIT (Go's soft memory ceiling). Unset by default — the binary
+  # derives one from the cgroup limit at startup (see cmd/graph's memory-budget
+  # log line). The tighter of the two applies, so this can only lower a derived
+  # limit. At the default 1Gi serve limit with the 1024 MiB MEM_RESERVE_MIB the
+  # derivation falls under its 512 MiB floor and is skipped, so serve runs on
+  # this value or the Go runtime default.
+  goMemLimit: ""
+  extraEnv: []
+  extraEnvFrom: []
+
+worker:
+  enabled: true
+  # Must stay 1 while ladybug.enabled (the render fails otherwise): the worker
+  # is the graph's single writer and owns the ReadWriteOnce graph-ladybug claim.
+  replicas: 1
+  resources:
+    requests: { cpu: "500m", memory: "2Gi" }   # includes 1280Mi for the Ladybug buffer pool (ladybug.bufferPoolMB)
+    limits: { cpu: "1", memory: "4Gi" }
+  # See serve.goMemLimit above — same knob, worker pod.
+  goMemLimit: ""
+  # Caps glibc's non-main malloc arenas (cgo only; the Go allocator doesn't use
+  # malloc). Unset by default. glibc derives the arena count from the NODE's
+  # core count, not the container's CPU limit, so on a large or oversubscribed
+  # node the default can create a hundred-plus 64MiB arena heaps; set this
+  # explicitly to bound that.
+  mallocArenaMax: ""
+  # Enables Go's net/http/pprof on this port when set. Unset (disabled) by
+  # default — only turn this on for a debugging session, not standing config.
+  pprofPort: ""
+  extraEnv: []
+  extraEnvFrom: []
+
+# Dedicated nuclei scanner pod. Runs only the scan worker (queueScan), isolating
+# nuclei's CPU/memory spike from connector syncs and enrichment. Enabling it also
+# sets SCAN_WORKER_DISABLED=true on the worker (the chart does this; nothing to
+# set by hand), so a scan job is never processed twice.
+#
+# It is also the credential boundary for the one component that parses responses
+# from hosts you scan: the scanner pod gets no GRAPH_SECRET_KEY, no LLM key and
+# no signing secrets, and runs as its own ServiceAccount with no cloud identity
+# annotations and no API token mounted. On by default. Turning it off saves one
+# pod (the requests below) but runs nuclei in the worker, which holds all of
+# those (docs/security-hardening.md).
+scanner:
+  enabled: true
+  replicas: 1
+  # Its own ServiceAccount. Bind no cloud identity to it (Pod Identity
+  # association, IRSA or Workload Identity annotation): the scanner calls no
+  # cloud API. Chart-wide extraEnv / extraEnvFrom do not reach it; only the
+  # two lists below do, so keep secrets out of them.
+  serviceAccountName: graph-scanner
+  # Periodic estate scan, e.g. 168h = weekly; unset = no periodic scan. Rendered
+  # into every pod (worker and scanner alike), whether or not scanner.enabled is
+  # set, because whichever pod holds River leadership enqueues it.
+  scanInterval: ""
+  resources:
+    requests: { cpu: "500m", memory: "1Gi" }
+    limits: { cpu: "2", memory: "3Gi" }  # nuclei is CPU/mem-hungry
+  extraEnv: []
+  extraEnvFrom: []
+
+# Ladybug embedded graph engine — the in-memory security graph.
+# Worker owns the DB (single writer); serve queries via internal RPC (:8090).
+ladybug:
+  enabled: true
+  bufferPoolMB: 1280   # too small risks SIGSEGV; too large OOMs a 4Gi worker at peak load; 1280MB leaves headroom
+  storage: 10Gi        # PVC for the data directory (disposable cache)
+  # Pick an SSD-backed storageClass rather than trusting the cluster default.
+  # Some clouds default to HDD-backed classes (e.g. GCE pd-standard) where
+  # throughput scales with provisioned GiB, so a small claim gets only a couple
+  # of MBps and reading the snapshot takes tens of seconds. A balanced/SSD class
+  # makes the read sub-second for a small price difference.
+  #
+  # storageClassName is IMMUTABLE. Changing this value does NOT migrate an
+  # existing PVC: the claim must be deleted and recreated, which destroys the
+  # snapshot. That is acceptable here and only here — the snapshot is a cache the
+  # next correlate sweep rebuilds from ClickHouse — but it is a delete, not an
+  # edit, and the pod cold-starts once in between.
+  # Unset by default: storageClassName is IMMUTABLE on a bound PVC, so shipping a
+  # value here makes `helm diff`/upgrade fail against any existing claim that
+  # bound to a different class, blocking every deploy until it is resolved.
+  # Set it ONLY when creating a fresh claim, or after deleting the existing one.
+  storageClass: ""
+  # snapshotEnabled mounts the graph-ladybug PVC at /data/ladybug and enables snapshot
+  # writes after each full rebuild. Without this the PVC exists but is never mounted —
+  # the binary defaults to /data/ladybug/snapshot.gz and logs "mkdir /data: permission
+  # denied" every restart, forcing a cold rebuild from ClickHouse each time.
+  snapshotEnabled: true
+  snapshotPath: /data/ladybug/snapshot.gz
+
+# serveLadybug: independent Ladybug replica in the serve pod.
+# Eliminates the multi-minute Cypher gap while the worker restarts.
+# When enabled, the serve pod maintains its own Ladybug synced from ClickHouse
+# every 30 min — no network hop, no worker dependency for Graph queries.
+# Requires ~512 MB extra memory on the serve pod (raise limits before enabling).
+serveLadybug:
+  enabled: false    # opt-in; enable in helm-values after raising serve pod memory
+  bufferMB: 512     # much smaller than worker's 1280 MB — no BFS, read-only
+  # snapshotEnabled mounts a small PVC at /data/serve-ladybug so the serve replica
+  # warm-starts its Ladybug from disk (seconds) on a deploy instead of a full
+  # ClickHouse read (minutes on a large graph). Under the serve pod's Recreate strategy the old pod releases
+  # the RWO PVC before the new one mounts it, so the snapshot survives the deploy —
+  # this is what keeps Cypher available within seconds of a serve restart.
+  snapshotEnabled: false
+  snapshotPath: /data/serve-ladybug/snapshot.gz
+  storage: 2Gi      # tens of thousands of nodes gzipped is a few MB; 2Gi is generous headroom
+  # Same reasoning as ladybug.storageClass above, and it matters more at this size:
+  # on a per-GiB-throughput HDD class a 2Gi claim gets well under 1 MBps.
+  # Immutable — switching means deleting and recreating the claim.
+  # Unset by default: storageClassName is IMMUTABLE on a bound PVC, so shipping a
+  # value here makes `helm diff`/upgrade fail against any existing claim that
+  # bound to a different class, blocking every deploy until it is resolved.
+  # Set it ONLY when creating a fresh claim, or after deleting the existing one.
+  storageClass: ""
+
+service:
+  port: 8080
+
+# Prometheus /metrics collection. The binary serves /metrics on METRICS_PORT;
+# this block wires up the scrape so the observability layer has a consumer.
+#
+# Collection here is annotation-based, not a ServiceMonitor: it targets the
+# common kubernetes-pods scrape job (Prometheus or a VictoriaMetrics agent) that
+# keeps any pod carrying prometheus.io/scrape=true and rewrites the target to
+# prometheus.io/port. Such jobs commonly also DROP any target whose container
+# port number is empty, which is why each scraped pod declares a named metrics
+# containerPort as well as the annotation — the annotation alone is not enough.
+metrics:
+  enabled: false
+  port: 9090
+  path: /metrics
+
+# vmalert rules (deploy/helm-chart/graph/alerts/rules.yaml). Off by default: it
+# needs a VictoriaMetrics operator (the VMRule CRD), or the CR fails to apply.
+alerts:
+  enabled: false
+  # Namespace the VMRule CR is created in. vmalert's ruleNamespaceSelector
+  # decides which namespaces it reads rules from, often not the release
+  # namespace; set this to one it selects.
+  namespace: monitoring
+  # Labels on the VMRule CR itself. vmalert evaluates only the CRs its
+  # ruleSelector matches; an unmatched CR is stored and never evaluated. Empty
+  # adds none beyond the chart's own labels (an empty ruleSelector matches
+  # every CR). e.g. { alerts: "true" }
+  ruleLabels: {}
+  # Labels added to every alert the rules fire, for Alertmanager routing (the
+  # CR's own labels never reach the alerts). Each rule already sets severity
+  # (warning, or critical for the two outage rules); a rule's own label wins
+  # over one here. Empty routes by severity alone. e.g. { team: platform }
+  labels: {}
+
+# Off by default — enable and set host + annotations for your ingress
+# controller and auth proxy of choice (see deploy/README.md).
+ingress:
+  enabled: false
+  host: ""
+  # IngressClass to use (e.g. nginx, traefik). Empty = the cluster's default class.
+  className: ""
+  # Terminate TLS at the ingress with the certificate in tlsSecret (created by
+  # you or by cert-manager via an annotation). Set false only when TLS ends in
+  # front of the ingress (a cloud load balancer): session cookies are Secure.
+  tls: true
+  tlsSecret: graph-tls
+  annotations: {}
+  # e.g. an external-dns --label-filter label, if you run one.
+  extraLabels: {}
+
+serviceAccount:
+  # The worker's ServiceAccount, and serve's unless serveName is set. The
+  # chart's Kubernetes RBAC (kubernetesRBAC.*, nodePosture's log read) is bound
+  # to it alone: the worker is the only pod that calls the Kubernetes API. serve
+  # runs with automountServiceAccountToken: false, so sharing this account
+  # gives it none of those grants.
+  name: graph
+  # Optional: run serve as its own ServiceAccount (e.g. graph-serve). serve is
+  # where Approve & run executes, so a distinct SA lets the cloud side grant the
+  # execution path to serve alone: graph-hub-role.yaml's ExecutorServiceAccount
+  # (EKS Pod Identity) allows assuming the execution role only from this SA.
+  # It gets the same annotations as `name` but none of its Kubernetes RBAC;
+  # give it the same Pod Identity association / Workload Identity binding too.
+  # The cloud trust must accept it as well, or serve silently loses its cloud identity
+  # (connector Test, Approve & run): with graph-hub-role.yaml set
+  # ExecutorServiceAccount to this name (EKS Pod Identity only); under IRSA or
+  # aws.enabled the role trusts one subject (system:serviceaccount:graph:graph
+  # by default), so leave this empty or add serve's subject to the trust
+  # yourself. Empty = serve shares `name`.
+  serveName: ""
+  # When set, annotated for GCP Workload Identity (keyless connector creds).
+  gcpServiceAccount: ""
+  # Any other ServiceAccount annotations, e.g. EKS IRSA or Azure Workload
+  # Identity:
+  #   eks.amazonaws.com/role-arn: arn:aws:iam::<acct>:role/graph-collector
+  #   azure.workload.identity/client-id: <client-id>
+  annotations: {}
+  # Azure Workload Identity: adds the pod label azure.workload.identity/use:
+  # "true" to the serve and worker pods only (the two that call cloud APIs), so
+  # the webhook injects a token there and nowhere else. Pair it with the
+  # azure.workload.identity/client-id annotation above. Do not put that label in
+  # extraLabels: those reach every pod, datastores and node-posture included.
+  azureWorkloadIdentity: false
+
+# AWS auth via OIDC web-identity federation. When enabled, the worker and serve
+# pods project a service-account token and the AWS SDK exchanges it (STS
+# AssumeRoleWithWebIdentity) for the base role; per-connector role_arns are then
+# assumed from that identity — no static keys. The AWS IAM OIDC provider + role
+# trust policy are provisioned out of band (see deploy/README.md). The worker
+# runs the collectors; serve needs it too for the connector "Test" button.
+aws:
+  enabled: false
+  # The base role the pod federates into (arn:aws:iam::<acct>:role/<name>).
+  roleArn: ""
+  # Default region for the AWS SDK; set it to your own.
+  region: us-east-1
+  # Audience the projected token carries; must equal the audience configured on
+  # the AWS IAM OIDC identity provider.
+  audience: sts.amazonaws.com
+  tokenExpirationSeconds: 3600
+
+# Non-secret settings, rendered as environment variables on the graph pods.
+config:
+  # GCP Security Command Center integration. Both empty by default (feature
+  # off); set sccOrgId to your GCP organization id to enable, sccQuotaProject
+  # if the SCC API calls should bill/quota against a project other than the
+  # one implied by your service account. The SCC feed alert (alerts.enabled)
+  # renders only when sccOrgId is set, so enable SCC here rather than through
+  # extraEnv.
+  sccOrgId: ""
+  sccQuotaProject: ""
+  # Identity-Aware Proxy audience — set this if you're fronting graph with GCP
+  # IAP instead of the cluster oauth2-proxy or Okta OIDC. Empty disables IAP
+  # token verification. Behind IAP (or oauth2Proxy) password login is off
+  # unless PASSWORD_LOGIN_BREAK_GLASS=true.
+  iapAudience: ""
+  # REQUIRED with iapAudience: comma-separated email domains whose IAP
+  # identities may sign in. Empty refuses every IAP sign-in unless
+  # iapAllowAnyDomain is set.
+  iapAllowedDomains: ""
+  # Explicit opt-out: accept any identity IAP admits (provisioned as viewer).
+  iapAllowAnyDomain: false
+  # First SSO sign-in roles (Google, Okta, IAP, oauth2-proxy). Everyone starts
+  # as viewer unless named here; existing users keep their role. Comma-separated.
+  # With adminEmails and both group lists empty, the first allowlisted sign-in
+  # on an install with no users at all becomes admin (bootstrap).
+  adminEmails: ""
+  # IdP group names (Okta `groups` claim; oauth2-proxy ID-token `groups`
+  # claim, or X-Auth-Request-Groups with oauth2ProxyTrustGroups). Setting any
+  # group mapping turns off the first-user bootstrap.
+  oidcAdminGroups: ""
+  oidcAnalystGroups: ""
+  # Sign-in gate (OIDC_REQUIRED_GROUPS), not a role: when set, every SSO
+  # sign-in must carry one of these groups (comma-separated), new and existing
+  # users alike; it is checked when a session starts. Google and IAP send no
+  # groups, so with this set they admit nobody. Password login is not gated.
+  oidcRequiredGroups: ""
+  # REQUIRE_ADMIN_TOTP on serve: an admin with no TOTP enrolled cannot sign in
+  # with a password, and promoting a user to admin ends their sessions. SSO
+  # sign-ins are unaffected (their second factor is the IdP's). See
+  # docs/security-hardening.md#admin-mfa.
+  requireAdminTotp: false
+  # Header the ingress sets with the real client address (CLIENT_IP_HEADER),
+  # e.g. "X-Forwarded-For" for ingress-nginx. Empty uses the TCP peer, which
+  # behind the ingress is the controller for every request: all clients then
+  # share one login rate-limit bucket and the executor's same-address audit
+  # flag is meaningless.
+  clientIpHeader: ""
+  # REQUIRED with clientIpHeader: comma-separated CIDRs of the proxy that sets
+  # it (TRUSTED_PROXY_CIDRS), e.g. the ingress controller's pod range. The
+  # header is honoured only when the TCP peer is in one of them.
+  trustedProxyCidrs: ""
+  # TLS_PROXY on serve: TLS ends at the ingress or a load balancer in front of
+  # it, so serve sends Strict-Transport-Security on the plain-HTTP hop too.
+  # Without it serve sends HSTS only on requests that reached it over TLS,
+  # which behind an ingress is none.
+  tlsProxy: false
+  # Sign in users an oauth2-proxy in front of the ingress authenticated (nginx
+  # auth-url/auth-signin). Requires networkPolicy.enabled with
+  # networkPolicy.ingressNamespace (the render fails otherwise) and at least
+  # one of oauth2ProxyOidcIssuer (preferred) or
+  # secret.oauth2ProxySharedSecret (the render checks this only when
+  # secret.create=true; with an external Secret, serve refuses to start without
+  # one). See docs/security-hardening.md#oauth2-proxy.
+  oauth2Proxy: false
+  # Verify the IdP-signed ID token oauth2-proxy forwards (oauth2-proxy
+  # --set-authorization-header, nginx auth-response-headers: Authorization).
+  # Identity and groups then come only from the verified token. Issuer is the
+  # IdP's OIDC issuer URL; audience is oauth2-proxy's client id.
+  # Run oauth2-proxy with --cookie-samesite=strict so a cross-site page cannot
+  # ride its cookie (and the token it injects) into a forged request.
+  oauth2ProxyOidcIssuer: ""
+  oauth2ProxyOidcAudience: ""
+  # Accept ID tokens with NO email_verified claim (IdPs that never send it).
+  # Risky: the first token sign-in binds an existing account by email, so only
+  # for IdPs that do not let users choose their address.
+  oauth2ProxyOidcAllowUnverifiedEmail: false
+  # Shared-secret mode only: map X-Auth-Request-Groups to roles. Set it only if
+  # that header is listed in nginx auth-response-headers — otherwise the client
+  # supplies it and can name an admin group.
+  oauth2ProxyTrustGroups: false
+  # Comma-separated email domains the header path accepts and auto-provisions
+  # (e.g. "example.com,example.org"). With oauth2Proxy on and this empty, the
+  # header path is DISABLED unless oauth2ProxyAllowAnyDomain is set.
+  oauth2ProxyAllowedDomains: ""
+  # Explicit opt-out: accept any email domain on the header path. Leave false
+  # unless a NetworkPolicy restricts ingress to the ingress controller.
+  oauth2ProxyAllowAnyDomain: false
+  # Periodic sweep intervals (Go duration strings, e.g. "30m", "2h"). Empty
+  # uses the binary's own compiled-in default for each — see cmd/graph/worker.go.
+  syncInterval: ""
+  correlateInterval: ""
+  enrichInterval: ""
+  # DECISION_WEBHOOK_URL: POST on every non-observe agent decision (alert channel).
+  # APPROVAL_WEBHOOK_URL: POST when a human approves a decision (Jira/Linear/Slack).
+  # Both are optional. The approval payload is snake_case JSON
+  # (govern.ApprovalPayload, internal/app/govern/notifier.go) and includes
+  # approved_by, approved_at, note, cluster_key, title, action_class, summary,
+  # finding_ids, worst_score, worst_band, blast_radius and blast_radius_known.
+  # blast_radius_known=false means at least one walk failed: blast_radius is
+  # then unmeasured, never "small".
+  # Decision webhooks are HMAC-signed with secret.decisionWebhookSecret; without
+  # it the worker does not send them unless decisionWebhookAllowUnsigned is true.
+  # Approval webhooks are signed with secret.approvalWebhookSecret (same
+  # scheme, own key); serve refuses to start without it unless
+  # approvalWebhookAllowUnsigned is true.
+  decisionWebhookUrl: ""
+  decisionWebhookAllowUnsigned: false
+  approvalWebhookUrl: ""
+  approvalWebhookAllowUnsigned: false
+  # Just-in-time email approvals: the WORKER emails single-use approve/deny
+  # links when a decision is parked, and serve verifies them. smtpHost empty =
+  # off. Needs secret.approvalTokenSecret (at least 32 bytes; both pods read
+  # the same value). approvalBaseUrl is Vulngraph's public URL, for the links.
+  smtpHost: ""
+  smtpPort: ""
+  smtpFrom: ""
+  smtpTo: ""
+  approvalBaseUrl: ""
+  # DANGEROUS: true lets the worker send approval emails unencrypted when the
+  # SMTP server offers no STARTTLS (SMTP_ALLOW_PLAINTEXT). The approve/deny
+  # links are bearer credentials, so anyone on the path can use them first.
+  # Only for a relay on the same node or a trusted private link.
+  smtpAllowPlaintext: false
+  # LLM severity adjudicator. Off by default — it introduces
+  # recurring LLM cost. When true, the worker runs the cost-bounded adjudication
+  # sweep. adjudicatorModel overrides the sampling model (empty = llm.model);
+  # pick whichever model you've confirmed is reliably available to you.
+  adjudicatorEnabled: false
+  adjudicatorModel: ""
+  # Advisory LLM drift analysis: reads each connector's new inventory changes
+  # and says whether a scan is worth running. Off by default (recurring LLM
+  # cost). It never starts a scan. driftAnalysisModel overrides the model
+  # (empty = llm.model).
+  driftAnalysisEnabled: false
+  driftAnalysisModel: ""
+  # Agentless VM disk scanning (plan and sweep on the worker, disk reads on the
+  # scanner). Off by default; every connector must also opt in.
+  diskScanEnabled: false
+  # Scaling knobs past the shipped defaults — all empty/unset by default,
+  # meaning "use the binary's own compiled-in default" (see docs/configuration.md
+  # for what each one bounds and why). Raise
+  # these if you've sized clickhouse.resources/postgres.resources up from the
+  # single-box defaults, run more serve/scanner replicas than this
+  # chart's tuning assumed, or your org has more GitHub repos / Okta or
+  # Workspace users than the shipped pagination ceilings (5,000 / 10,000).
+  chMaxConcurrent: ""
+  pgMaxConnsWorker: ""
+  pgMaxConnsServe: ""
+  pgMaxConnsScanner: ""
+  githubMaxPages: ""
+  oktaMaxPages: ""
+  googleMaxPages: ""
+
+# Built-in SSO sign-in, served by the serve pod. Each provider is on when its
+# clientId is set; its client secret goes in secret.googleClientSecret /
+# secret.oktaClientSecret. allowedDomains (comma-separated email domains; for
+# Google, every Workspace domain the accounts' hd claim may carry as well) is
+# required — empty would refuse every sign-in — unless allowAnyDomain is set
+# deliberately. redirectUrl (https://<your host>/api/auth/<google|okta>/callback)
+# is required with clientId and must be an absolute http(s) URL with a host:
+# the chart refuses to render otherwise, because serve refuses to start.
+# First sign-in roles: config.adminEmails, config.oidcAdminGroups,
+# config.oidcAnalystGroups.
+sso:
+  google:
+    clientId: ""
+    redirectUrl: ""
+    allowedDomains: ""
+    allowAnyDomain: false
+  okta:
+    clientId: ""
+    # Your Okta org domain, e.g. example.okta.com. Required with clientId.
+    domain: ""
+    redirectUrl: ""
+    allowedDomains: ""
+    allowAnyDomain: false
+
+# Deletion authority. Only the worker builds forget.Service; serve and
+# scanner never read either variable. shadow ONLY evaluates and records — it
+# never writes a tombstone, whatever enforceTypes holds, which is what makes
+# enforceTypes purely additive and safe to leave set (or unset) across a mode
+# change either direction.
+forget:
+  # shadow (default) or enforce. Matches forget.ParseMode's own zero-value
+  # default, named explicitly so this file is the one place that says which
+  # mode is live rather than relying on an absent key meaning the same thing.
+  mode: shadow
+  # Comma-separated asset types FORGET_MODE=enforce may tombstone (e.g.
+  # "security_group,vpc"). Every audited type NOT listed here stays shadow-only
+  # even under enforce mode. Unset enforces NOTHING under enforce mode — a
+  # deliberate fail-closed default (the safe value is the ZERO value) —
+  # so a bare mode flip can never re-arm a type whose refusal thresholds are not
+  # yet trusted (ec2_instance/gce_instance: EnumerationShrinkFraction is an
+  # explicitly uncalibrated placeholder, see forget/domain.go). Only
+  # security_group and vpc are accepted (forget.TombstoneEligibleTypes); any
+  # other name stops the worker at startup with an error.
+  enforceTypes: ""
+
+# In-cluster datastores (self-contained OSS deploy). When enabled, the
+# graph-secrets DSNs should point at the headless Services graph-postgres:5432
+# and graph-clickhouse:9000. Disable to use external/managed datastores.
+postgres:
+  enabled: true
+  image: postgres:16-alpine@sha256:f2f98726820d0342055351c6e9d36e705f5bfffb3dd53ff556325114b08afb6d
+  storage: 20Gi
+  # Unset by default (cluster default storage class). Set this if your
+  # cluster's default is HDD-backed (or there is no default class) — the same
+  # IOPS/throughput gap ladybug.storageClass's comment describes applies here,
+  # more so: this PVC holds the actual source of record, not a disposable
+  # cache. storageClassName is IMMUTABLE on a bound PVC, so pin it before
+  # first install, not after.
+  storageClass: ""
+  resources:
+    requests: { cpu: "250m", memory: "512Mi" }
+    limits: { cpu: "1", memory: "1Gi" }
+  # Runs Postgres as its image's own non-root user (uid 70 in postgres:*-alpine;
+  # 999 in the Debian images) so the pod passes the PodSecurity "restricted"
+  # level. fsGroup makes the data volume writable by that user;
+  # OnRootMismatch skips the recursive ownership walk once it is right. Change
+  # the ids with the image; set both to {} to run the image's root entrypoint.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 70
+    runAsGroup: 70
+    fsGroup: 70
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile: { type: RuntimeDefault }
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities: { drop: ["ALL"] }
+  # TLS between the graph pods and this Postgres. Without tlsSecret the server
+  # has no certificate, so the connection is plaintext on the pod network
+  # whatever sslMode says (prefer falls back to it). tlsSecret names a
+  # kubernetes.io/tls Secret (tls.crt, tls.key; cert-manager writes one) whose
+  # certificate covers graph-postgres; the server then turns ssl on.
+  tlsSecret: ""
+  # sslmode in the DSN the chart builds: disable, prefer, require, verify-ca or
+  # verify-full. require and the verify modes need tlsSecret (the render fails
+  # without it). require encrypts without checking the certificate. The verify
+  # modes check it against the Secret's ca.crt (cert-manager writes one for a
+  # CA issuer), which the chart mounts into the graph pods for the DSN's
+  # sslrootcert; verify-full also checks the name graph-postgres. External
+  # Postgres: put sslmode in secret.databaseUrl instead.
+  sslMode: prefer
+
+clickhouse:
+  enabled: true
+  image: clickhouse/clickhouse-server:26.8-alpine@sha256:31d60795ca6ac748a20712b5d8d047e415c44d370a86e89a63cd251b0eaed9e9
+  # Data volume. 50Gi fits a small estate; see deploy/README.md "Sizing" before
+  # first install. Growing it later needs a storage class with
+  # allowVolumeExpansion (the system-log TTLs in clickhouse-config.yaml keep
+  # ClickHouse's own logs from filling it). A StatefulSet's volume claim is
+  # immutable: keep this value the same on every later `helm upgrade`, or the
+  # upgrade is rejected.
+  storage: 50Gi
+  # See postgres.storageClass above — same reasoning, same immutability caveat.
+  storageClass: ""
+  resources:
+    requests: { cpu: "500m", memory: "1Gi" }
+    limits: { cpu: "2", memory: "4Gi" }
+  # Same as postgres.podSecurityContext: the clickhouse/clickhouse-server image's
+  # own clickhouse user (uid 101), so the pod passes PodSecurity "restricted".
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 101
+    runAsGroup: 101
+    fsGroup: 101
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile: { type: RuntimeDefault }
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities: { drop: ["ALL"] }
+  # CH sizes its thread pools to the host's core count, not the cgroup CPU limit,
+  # so it over-threads and pegs its CPU limit (sustained throttling). These cap its concurrency to the allocation above — KEEP IN SYNC with
+  # resources.limits (maxThreads ≈ limits.cpu; memory bytes ≈ 75%/50% of mem limit).
+  tuning:
+    maxThreads: 2                       # per-query threads (≈ limits.cpu)
+    backgroundPoolSize: 16              # concurrent merge threads. MUST be >= 10: ClickHouse refuses to start (BAD_ARGUMENTS) unless backgroundPoolSize * concurrency_ratio(2) >= number_of_free_entries_in_pool_to_execute_mutation (default 20)
+    # Server-wide cap on concurrent queries. Empty = derived: every serve,
+    # worker and scanner replica can hold config.chMaxConcurrent (default 8)
+    # queries at once, plus 8 for migrate, CLI runs and an operator's
+    # clickhouse-client — 32 with the defaults and the scanner on. Below that
+    # sum, a busy sweep gets TOO_MANY_SIMULTANEOUS_QUERIES instead of waiting in
+    # the client-side semaphore. Raising pods or chMaxConcurrent raises it too;
+    # size maxServerMemoryBytes for it, since every slot can hold an aggregation.
+    maxConcurrentQueries: ""
+    maxServerMemoryBytes: "3221225472"  # ~75% of 4Gi (quoted: avoid float/sci-notation render)
+    maxMemoryBytes: "2147483648"        # per-query, ~50% of 4Gi
+    # Cache ceilings. These count against maxServerMemoryBytes and their upstream
+    # defaults (5Gi/5Gi/8Gi) do not, so left alone they claim more than the whole
+    # server budget and starve queries. Keep the three well under
+    # maxServerMemoryBytes — see the rationale in clickhouse-config.yaml.
+    markCacheBytes: "536870912"         # 512Mi — primary marks; highest-value cache
+    indexMarkCacheBytes: "268435456"    # 256Mi — secondary-index marks
+    uncompressedCacheBytes: "134217728" # 128Mi — never populated (use_uncompressed_cache=0)
+    # Server-wide max_execution_time, a backstop only: each query's own Go
+    # context timeout is the real bound. Must be >= the longest of those
+    # (db.defaultSelectTimeout, 600s), or long bulk reads are killed mid-sweep.
+    maxExecutionSeconds: 600
+  # TLS between the graph pods and this ClickHouse. tlsSecret names a
+  # kubernetes.io/tls Secret (tls.crt, tls.key) whose certificate covers
+  # graph-clickhouse; the server then also listens on the secure native port
+  # 9440. secure: true points the chart's DSN at 9440 with secure=true (the
+  # render fails without tlsSecret). It encrypts but does not check the
+  # certificate (skip_verify=true, like Postgres sslmode=require): the
+  # ClickHouse client checks only against the system CA bundle, which a
+  # certificate for graph-clickhouse does not chain to. Off: the native
+  # protocol on 9000 is plaintext on the pod network. External ClickHouse: put
+  # :9440 and secure=true in secret.clickhouseUrl instead.
+  tlsSecret: ""
+  secure: false
+
+# Name of the Secret holding credentials. Never commit real values.
+secretName: graph-secrets
+
+# The chart renders graph-secrets from these values. Supply them at install
+# time rather than committing them — e.g. `--set-string secret.secretKey=...`,
+# a values file kept outside git, or your secret manager / CD tool's templating.
+# For in-cluster datastores you only supply the passwords + keys; the DSNs are
+# built from them. Set create=false to manage the Secret out of band (e.g. an
+# existing kubectl-created secret, External Secrets, Sealed Secrets).
+secret:
+  create: true
+  # In-cluster datastore passwords, each required while its datastore is
+  # enabled and each a value of its own (the render fails on a reused one).
+  # The user names are fixed: the graph pods never connect as an admin.
+  #   postgresPassword           graph, the Postgres app role migrate, serve
+  #                              and the worker connect as. Not a superuser;
+  #                              it owns the graph database.
+  #   postgresScannerPassword    graph_scanner, the scanner's role: River's job
+  #                              tables and the scan tables, nothing else.
+  #   postgresSuperuserPassword  postgres, the image's bootstrap superuser.
+  #                              Only the Postgres StatefulSet reads it.
+  #   clickhousePassword         graph, the ClickHouse user serve and the
+  #                              worker connect as: rows only, no DDL, no
+  #                              rewriting audit_events.
+  #   clickhouseScannerPassword  graph_scanner, the scanner's ClickHouse user:
+  #                              reads assets and findings, inserts findings.
+  #   clickhouseMigratePassword  graph_migrate, the user the migrate init
+  #                              container applies the schema as.
+  # Postgres creates its users on the first start of an empty volume, so
+  # changing a Postgres password later also needs ALTER ROLE; ClickHouse reads
+  # its three from the Secret on every start. External datastores: see
+  # databaseUrl below.
+  postgresPassword: ""
+  postgresScannerPassword: ""
+  postgresSuperuserPassword: ""
+  clickhousePassword: ""
+  clickhouseScannerPassword: ""
+  clickhouseMigratePassword: ""
+  # app secrets
+  # Base64 of exactly 32 bytes (`openssl rand -base64 32`); the render fails on
+  # anything else, as serve and the worker would.
+  secretKey: ""
+  # Comma-separated previous secretKey values, trusted for decryption only.
+  # Set during a rotation, run `graph keys rewrap`, then clear it (see
+  # deploy/README.md, "Rotating GRAPH_SECRET_KEY").
+  retiredSecretKeys: ""
+  # API key for the provider selected in llm.* (optional — LLM features are off
+  # without one; a keyless local server needs only llm.baseURL).
+  llmApiKey: ""
+  # Deprecated alias for llmApiKey (Anthropic only); used when llmApiKey is empty.
+  anthropicApiKey: ""
+  # Shared secret for the serve→worker Ladybug RPC (:8090). Empty = derived from
+  # secretKey (a one-way hash, see templates/secret.yaml), so the RPC is
+  # authenticated out of the box; set a dedicated
+  # random string to rotate it independently. The worker refuses to serve an
+  # unauthenticated RPC (LADYBUG_RPC_INSECURE=true is a local-dev-only escape).
+  ladybugRpcSecret: ""
+  # HMAC key signing DECISION_WEBHOOK_URL posts (X-Graph-Signature). Required
+  # for config.decisionWebhookUrl to send, unless decisionWebhookAllowUnsigned.
+  decisionWebhookSecret: ""
+  # Shared secret the proxy sends in X-Graph-Proxy-Secret (at least 32
+  # characters). Defence in depth for config.oauth2Proxy: anyone who can read it
+  # can claim any identity, so never inject it via a publicly reachable
+  # /oauth2/auth response. Required unless config.oauth2ProxyOidcIssuer is set.
+  oauth2ProxySharedSecret: ""
+  # HMAC key signing APPROVAL_WEBHOOK_URL posts (X-Graph-Signature). Required
+  # when config.approvalWebhookUrl is set, unless approvalWebhookAllowUnsigned.
+  approvalWebhookSecret: ""
+  # Signs (worker) and verifies (serve) email approval links; at least 32
+  # bytes. Required when config.smtpHost is set.
+  approvalTokenSecret: ""
+  # OAuth client secrets for sso.google / sso.okta. Required when that
+  # provider's clientId is set.
+  googleClientSecret: ""
+  oktaClientSecret: ""
+  # Only used when postgres/clickhouse .enabled=false (external datastores;
+  # deploy/README.md "External datastores" gives the grants). clickhouseUrl is
+  # the app user's; clickhouseMigrateUrl is the user the migrate init
+  # container applies the schema as (empty: clickhouseUrl). With
+  # scanner.enabled, scannerDatabaseUrl and scannerClickhouseUrl are the
+  # scanner's own users and the render fails without them; set them to
+  # databaseUrl / clickhouseUrl to run the scanner as the app users instead.
+  databaseUrl: ""
+  clickhouseUrl: ""
+  clickhouseMigrateUrl: ""
+  scannerDatabaseUrl: ""
+  scannerClickhouseUrl: ""
+
+# LLM provider for reasoning, chat, NL→query translation and AI template
+# generation. Everything is optional: with no key set, those features are off
+# and the rest of the platform runs normally. The key goes in secret.llmApiKey.
+#   provider:  anthropic | openai (any OpenAI-compatible server). Empty =
+#              inferred: anthropic if a key is set, openai if baseURL is set.
+#   baseURL:   endpoint override — e.g. https://openrouter.ai/api/v1,
+#              http://ollama.ollama.svc:11434/v1, an Azure OpenAI deployment.
+#   model:     capable model. Defaults to claude-opus-5-5 on anthropic;
+#              REQUIRED on openai.
+#   fastModel: cheap model for high-volume triage (defaults: claude-haiku-4-5 on
+#              anthropic, model on openai).
+#   reasoningEffort: openai only — reasoning_effort for reasoning models.
+llm:
+  provider: ""
+  baseURL: ""
+  model: ""
+  fastModel: ""
+  reasoningEffort: ""
+
+# NetworkPolicy for the graph pods (templates/networkpolicy.yaml), on by
+# default. Ingress only; egress stays open, since the collectors call cloud
+# APIs. With it:
+#   - the bundled Postgres and ClickHouse accept their client ports only from
+#     serve (and its migrate init container), the worker and the scanner;
+#   - the worker's graph RPC (8090) accepts serve and the scanner only;
+#   - the scanner accepts nothing but its metrics port (metrics.enabled);
+#   - serve's API port accepts every source, as without a policy, until
+#     ingressNamespace narrows it.
+# A CNI that does not enforce NetworkPolicy (Calico and Cilium do; not every
+# CNI does) ignores these objects, so they cannot break an install there.
+# Policies are additive: admit anything else (a backup job reaching Postgres)
+# with a NetworkPolicy of your own.
+networkPolicy:
+  enabled: true
+  # Namespace of the ingress controller in front of serve, e.g. ingress-nginx.
+  # Empty: serve's API port accepts every source. Set it to limit that port to
+  # the controller's namespace and nodeCIDRs (required with it);
+  # config.oauth2Proxy requires it.
+  ingressNamespace: ""
+  # Node address ranges, for serve's kubelet probes (/healthz and /readyz on
+  # service.port; every other pod probes by exec). Probes come from the node,
+  # not from a pod, so only an ipBlock matches them. Required with
+  # ingressNamespace (the render fails without it, since an empty `from:` would
+  # allow all ingress); without these ranges serve's readiness and liveness
+  # probes are blocked, so it drops out of the Service and is restarted.
+  # Only used with ingressNamespace (the render fails otherwise). A load
+  # balancer that sends traffic straight to pod IPs (the AWS Load Balancer
+  # Controller in IP target mode, GKE container-native load balancing) connects
+  # and health-checks from its own addresses, not from a pod: add its subnets
+  # or health-check ranges here as well, or serve is cut off from it.
+  # e.g. ["10.0.0.0/16"]
+  nodeCIDRs: []
+  # Namespace of the Prometheus-compatible agent that scrapes pod metrics
+  # (metrics.enabled). Empty: the metrics port accepts every source.
+  metricsNamespace: ""
+
+# Opt-in node posture reader (ADR 094): reports the kubelet configuration and
+# the CIS-listed node files, which no Kubernetes API exposes without
+# nodes/proxy (a grant graph's own RBAC checks flag as dangerous). Without it
+# the CIS Kubernetes 1.1/4.1/4.2 and CIS EKS/GKE 3.x controls are unknown,
+# never passing.
+#
+# It runs `graph node-posture` from the graph image: no new image, its own
+# ServiceAccount (serviceAccountName) with no Kubernetes token
+# (automountServiceAccountToken: false) and no RBAC, no network (a
+# NetworkPolicy denies all egress and ingress), read-only host mounts of
+# exactly the paths below. It prints its report to stdout; the worker reads it
+# back through pods/log, the one RBAC grant this adds. That grant is get on the
+# logs of EVERY pod in the release namespace (RBAC cannot narrow it by label),
+# bound to the worker's ServiceAccount (serviceAccount.name) only. When serve
+# shares that ServiceAccount it still cannot use the grant: serve mounts no API
+# token. Install graph in a dedicated namespace when this is enabled.
+#
+# hostPath volumes need this namespace's Pod Security level to be privileged
+# (baseline forbids hostPath), and graph's own k8s-pod-host-path-volume and
+# k8s-container-runs-as-root checks report the reader: accepted, see the ADR.
+#
+# Each volume is mounted read-only at /host/<name> in ONE container:
+#   kubelet  uid 0 with every capability dropped. Root only because a
+#            CIS-compliant kubelet config is mode 600 root:root; without
+#            CAP_DAC_OVERRIDE uid 0 is still held to mode bits, but it owns
+#            every root file it can reach. So it gets single type: File mounts
+#            of kubelet configuration and flag files only, never a directory
+#            and never a credential.
+#   files    uid 65532. Stats, and reads of world-readable files: a directory
+#            mount lets it stat (not read) a 600 key; a single-file mount lets
+#            it stat a file inside a 700 directory (the static pod manifests).
+# A type: File volume whose host path is missing keeps that node's pod from
+# starting; the node then counts as unreported and the controls stay unknown
+# (node_posture_nodes_reported/desired on the cluster asset show the gap).
+# Roles are the names graph's collector interprets; kind is read (content and
+# stat), stat, or tree (a directory and every file beneath it).
+#
+# The defaults are kubeadm's paths (pkgs.k8s.io packages). EKS AL2023 nodes:
+#   kubelet  /etc/kubernetes/kubelet/config.json (File)        role kubelet_config
+#            /etc/eks/kubelet/environment (File)               role kubelet_flags_nodeadm
+#            /etc/systemd/system/kubelet.service (File)        role kubelet_service
+#   files    /etc/kubernetes/kubelet/config.json.d (Directory) role kubelet_config_dropins, kind readdir
+#            /var/lib/kubelet/kubeconfig (File)                role kubelet_kubeconfig
+#            /etc/kubernetes/pki/ca.crt (File)                 role client_ca
+# GKE COS nodes: /home/kubernetes/kubelet-config.yaml (kubelet_config) and
+# /var/lib/kubelet/kubeconfig (kubelet_kubeconfig).
+# AKS nodes (CIS AKS 3.x): kubelet flags in /etc/default/kubelet (role
+# kubelet_flags_defaults, files container) and the config file the flags
+# --config names (current node images: /etc/default/kubeletconfig.json, File,
+# kubelet container, role kubelet_config); /var/lib/kubelet/kubeconfig (File,
+# files container, role kubelet_kubeconfig); /etc/kubernetes/azure.json (File,
+# files container, kind stat, role azure_json). azure.json holds the cluster
+# service principal's secret: it is only ever stat'ed, never mounted into the
+# kubelet container.
+# Managed control planes have no control-plane nodes: leave
+# controlPlane.enabled false there.
+nodePosture:
+  enabled: false
+  # Its own ServiceAccount, rendered with automountServiceAccountToken: false.
+  # Bind no RBAC or cloud identity to it.
+  serviceAccountName: graph-node-posture
+  interval: 1h
+  resources:
+    requests: { cpu: "10m", memory: "32Mi" }
+    limits: { cpu: "100m", memory: "64Mi" }
+  # Every node, control plane included (all taints tolerated).
+  node:
+    volumes:
+      - name: kubelet-config
+        hostPath: /var/lib/kubelet/config.yaml
+        type: File
+        container: kubelet
+        roles:
+          - { role: kubelet_config, kind: read }
+      - name: kubelet-flags
+        hostPath: /var/lib/kubelet/kubeadm-flags.env
+        type: File
+        container: kubelet
+        roles:
+          - { role: kubelet_flags_kubeadm, kind: read }
+      - name: kubelet-unit
+        hostPath: /usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf
+        type: File
+        container: kubelet
+        roles:
+          - { role: kubelet_service, kind: read }
+      # /etc/default/kubelet is optional, so the directory is mounted, and only
+      # into the non-root container: other files there (docker's proxy
+      # settings, for one) can hold credentials root may read and uid 65532
+      # may not.
+      - name: etc-default
+        hostPath: /etc/default
+        type: Directory
+        container: files
+        roles:
+          - { role: kubelet_flags_defaults, kind: read, file: kubelet }
+      - name: etc-kubernetes
+        hostPath: /etc/kubernetes
+        type: Directory
+        container: files
+        roles:
+          - { role: kubelet_kubeconfig, kind: stat, file: kubelet.conf }
+          - { role: client_ca, kind: stat, file: pki/ca.crt }
+  # Control-plane nodes of a self-managed cluster
+  # (node-role.kubernetes.io/control-plane).
+  controlPlane:
+    enabled: false
+    volumes:
+      - name: manifest-apiserver
+        hostPath: /etc/kubernetes/manifests/kube-apiserver.yaml
+        type: File
+        container: files
+        roles:
+          - { role: apiserver_manifest, kind: stat }
+      - name: manifest-controller-manager
+        hostPath: /etc/kubernetes/manifests/kube-controller-manager.yaml
+        type: File
+        container: files
+        roles:
+          - { role: controller_manager_manifest, kind: stat }
+      - name: manifest-scheduler
+        hostPath: /etc/kubernetes/manifests/kube-scheduler.yaml
+        type: File
+        container: files
+        roles:
+          - { role: scheduler_manifest, kind: stat }
+      - name: manifest-etcd
+        hostPath: /etc/kubernetes/manifests/etcd.yaml
+        type: File
+        container: files
+        roles:
+          - { role: etcd_manifest, kind: stat }
+      - name: etc-kubernetes
+        hostPath: /etc/kubernetes
+        type: Directory
+        container: files
+        roles:
+          - { role: admin_kubeconfig, kind: stat, file: admin.conf }
+          - { role: super_admin_kubeconfig, kind: stat, file: super-admin.conf }
+          - { role: scheduler_kubeconfig, kind: stat, file: scheduler.conf }
+          - { role: controller_manager_kubeconfig, kind: stat, file: controller-manager.conf }
+          - { role: pki_dir, kind: tree, file: pki }
+      - name: cni
+        hostPath: /etc/cni/net.d
+        type: Directory
+        container: files
+        roles:
+          - { role: cni_dir, kind: tree }
+      - name: etcd-data
+        hostPath: /var/lib/etcd
+        type: Directory
+        container: files
+        roles:
+          - { role: etcd_data_dir, kind: stat }
+      - name: passwd
+        hostPath: /etc/passwd
+        type: File
+        container: files
+        roles:
+          - { role: host_passwd, kind: read }
+      - name: group
+        hostPath: /etc/group
+        type: File
+        container: files
+        roles:
+          - { role: host_group, kind: read }
+
+# Cluster RBAC the chart grants the worker's ServiceAccount (serviceAccount.name)
+# for the Kubernetes collector. policyEngineRead: list on validating webhooks, ValidatingAdmission-
+# Policy bindings, Kyverno ClusterPolicies/Policies and Gatekeeper pod-security
+# constraints (templates/policy-engine-rbac.yaml), so CIS 5.2.1 is decided from
+# enforcing policies, not from an installed engine. Turn it off if you manage
+# graph's RBAC out of band; the namespaces are then graded on their labels.
+kubernetesRBAC:
+  policyEngineRead: true
+  # Read-only ClusterRole for the in-cluster Kubernetes connector
+  # (templates/kubernetes-collector-rbac.yaml): list on the workloads, RBAC,
+  # network and config objects it inventories — never Secrets. Off by default:
+  # enable it when you add a Kubernetes connector for this cluster.
+  collectorRead: false

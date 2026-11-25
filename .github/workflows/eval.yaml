@@ -1,0 +1,56 @@
+name: Reasoning eval (manual)
+
+# The reasoning-quality gates: the respond golden set and the
+# severity-adjudicator golden set. Both are //go:build eval and make real
+# Anthropic calls, so they NEVER run on push/PR (real cost, non-deterministic) —
+# only when dispatched here, deliberately, before a prompt/model change or to
+# baseline the current behaviour.
+#
+# internal/reason has no ladybug/cgo dependency, so this is a plain Go job (no liblbug
+# build, unlike the main `go test` CI job).
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Anthropic model override (empty = code default, claude-opus-5-5 — the adjudicator's default model)"
+        required: false
+        default: ""
+      tests:
+        description: "Which eval tests to run (-run regex)"
+        required: false
+        default: "TestAdjudicatorGolden|TestReasoningGolden"
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    name: reasoning eval
+    runs-on: ubuntu-24.04
+    # Runs in a protected environment so the job can read ANTHROPIC_API_KEY.
+    # Gating real LLM cost behind environment approval is intentional.
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.26.11"
+          cache: true
+
+      # Without the key the golden sets skip every case and the job would go
+      # green having graded nothing.
+      - name: Require the Anthropic API key
+        run: test -n "$ANTHROPIC_API_KEY" || { echo "::error::ANTHROPIC_API_KEY not available"; exit 1; }
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Run reasoning eval (golden sets)
+        run: go test -tags=eval ./internal/reason/ -run "$EVAL_TESTS" -v -count=1
+        env:
+          EVAL_TESTS: ${{ inputs.tests }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ADJUDICATOR_MODEL: ${{ inputs.model }}
+          REASON_MODEL: ${{ inputs.model }}

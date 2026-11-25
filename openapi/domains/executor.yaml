@@ -1,0 +1,480 @@
+# Executor domain (internal/app/executor) — cloud remediation actions.
+# Every route is admin-gated in the router (auth.RequireRole) and is an
+# explicit operator / break-glass surface: the connector must be in
+# read_write mode, the action must be a known enum, and every execution is
+# audited. Executions run synchronously in the request; there is no job
+# queue and nothing is retried.
+#
+# Three controls sit in front of every mutation:
+#   dry_run     — resolve and describe the change without performing it. No
+#                 cloud call is made; use it before anything else.
+#   execution   — the connector must carry an execution principal distinct from
+#     principal   its collection credential (execute_role_arn on AWS,
+#                 execute_service_account on GCP, execute_client_id/secret on
+#                 Azure). Without one, nothing runs.
+#   approval    — the destructive subset (ec2_stop, ec2_start,
+#                 gcp_firewall_remove, azure_nsg_rule_remove, and
+#                 iam_key_disable with delete_key=true) needs an
+#                 approval_token minted by a DIFFERENT
+#                 admin via POST /api/executor/approvals, from an account at
+#                 least EXECUTOR_APPROVER_MIN_ACCOUNT_AGE old. The MCP
+#                 execute_action tool, and any request authenticated with
+#                 an API key, needs one for EVERY action (agent: true). An
+#                 API key cannot mint a grant: approving takes a session.
+#   audit       — an intent row is written before the cloud call; if it cannot
+#                 be written the call is refused with 503.
+
+components:
+  pathItems:
+    executorSGRuleRemove:
+      post:
+        operationId: executorSGRuleRemove
+        tags: [executor]
+        summary: Remove one ingress rule from an AWS security group (admin only)
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SGRuleRemoveRequest' }
+        responses:
+          '200':
+            description: The action ran; detail describes what changed.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ExecutionResult' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+    executorIAMKeyDisable:
+      post:
+        operationId: executorIAMKeyDisable
+        tags: [executor]
+        summary: Disable (optionally delete) an AWS IAM access key (admin only)
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IAMKeyDisableRequest' }
+        responses:
+          '200':
+            description: The action ran; detail describes what changed.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ExecutionResult' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+    executorExecute:
+      post:
+        operationId: executorExecute
+        tags: [executor]
+        summary: Run a named executor action (generic admin execution endpoint; an API-key caller also needs a grant from a different admin)
+        description: >
+          An unknown action or missing/invalid params is rejected (400) before
+          any cloud call.
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExecuteRequest' }
+        responses:
+          '200':
+            description: The action ran; detail describes what changed.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/ExecutionResult' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+    executorApprovals:
+      post:
+        operationId: executorApprove
+        tags: [executor]
+        summary: Mint a two-person approval grant for one destructive execution (admin only)
+        description: >
+          Resolves the named action exactly as the execution would and returns a
+          short-lived signed grant bound to that resolved plan. The approver is
+          taken from the session, never the body, and the grant is refused at
+          execution time if the same admin presents it. A request
+          authenticated with an API key, which an agent may hold, is refused
+          (403) for any action, before the action is resolved (a body that
+          does not parse or names no connector_id or action is a 400
+          first): the grant is a signed-in
+          person's approval. On a session, the approving account must be at
+          least EXECUTOR_APPROVER_MIN_ACCOUNT_AGE old (403 otherwise). Both 403
+          refusals are audited as executor.refused. Also on a session,
+          actions that are not destructive are rejected with 400 — a grant
+          nobody checks is not a control — unless agent is true.
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalRequest' }
+        responses:
+          '200':
+            description: A grant bound to the plan shown in the response.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/Approval' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+
+    # ── Approve-and-run from a decision ───────────────────────────────────
+    # The decision panel's flow over the same executor path: the decision
+    # supplies connector, action and params; the person supplies the yes.
+    decisionExecutionPlan:
+      get:
+        operationId: getDecisionExecutionPlan
+        tags: [executor, decisions]
+        summary: What approve-and-run would do for a decision, or why it cannot (admin only)
+        description: >
+          Resolves the decision's executor action and the one connector that
+          collects its resource. state is guidance_only (with reason) when no
+          action fits, no or several connectors collect the resource, or the
+          connector cannot write; needs_input when a person must type
+          parameters the finding does not carry; ready otherwise. Carries the
+          run's state and its executor audit rows once one exists. Changes
+          nothing.
+        parameters:
+          - { $ref: '../openapi.yaml#/components/parameters/IdPath' }
+        responses:
+          '200':
+            description: The plan.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/DecisionExecutionPlan' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    decisionExecutionDryRun:
+      post:
+        operationId: dryRunDecisionExecution
+        tags: [executor, decisions]
+        summary: Dry-run a decision's fix — the exact change, nothing changed (admin only)
+        parameters:
+          - { $ref: '../openapi.yaml#/components/parameters/IdPath' }
+        requestBody:
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DecisionExecutionRequest' }
+        responses:
+          '200':
+            description: What would change, and what must be typed to confirm it.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/DecisionDryRun' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+          '409': { $ref: '../openapi.yaml#/components/responses/Conflict' }
+
+    decisionExecutionRequest:
+      post:
+        operationId: requestDecisionExecution
+        tags: [executor, decisions]
+        summary: First admin's yes on a fix that needs a second admin (admin only)
+        description: >
+          Refused (403) for a request authenticated with an API key, before
+          anything about the decision is checked (a body that does not parse
+          is a 400 first): the grant is a signed-in
+          person's approval. For a destructive fix only (400 otherwise). Mints the two-person grant
+          from this admin's session — their account must be at least
+          EXECUTOR_APPROVER_MIN_ACCOUNT_AGE old — bound to the exact plan, and
+          parks the decision until a DIFFERENT admin confirms it via the run
+          route within the grant's lifetime (10 minutes). The grant never leaves
+          the server. confirm must equal the dry run's confirm_text. A refusal
+          of who asked (an API key, an account under the age floor) is
+          audited as executor.refused.
+        parameters:
+          - { $ref: '../openapi.yaml#/components/parameters/IdPath' }
+        requestBody:
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DecisionExecutionRequest' }
+        responses:
+          '200':
+            description: The decision now awaits a second admin.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/DecisionRun' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+          '409': { $ref: '../openapi.yaml#/components/responses/Conflict' }
+
+    decisionExecutionRun:
+      post:
+        operationId: runDecisionExecution
+        tags: [executor, decisions]
+        summary: Run a decision's fix (admin only)
+        description: >
+          A fix that needs no second admin runs on this admin's yes. One that
+          does runs only as a different admin's confirmation of a live request:
+          its params and grant come from the request, the requester is refused,
+          and the confirming account must be at least
+          EXECUTOR_APPROVER_MIN_ACCOUNT_AGE old. A destructive or irreversible
+          fix needs confirm to equal the dry run's confirm_text. Every attempt
+          that reaches the executor is audited, and so is a refusal
+          of who asked (an API key, the requester confirming, an account under
+          the age floor, a destructive fix with no live request) as
+          executor.refused; a wrong confirm_text or an unknown decision writes
+          no row. Only a fix that actually ran is recorded as the
+          decision's outcome. 409 when the fix is already running, awaiting, or
+          done. A run stuck in running (a crash mid-call) is never taken over
+          automatically; an admin releases it with the mark-failed route.
+          A request authenticated with an API key may only confirm a
+          different admin's live request; a fix that needs no second admin is
+          refused outright (403) on a key, since a key's execution needs a
+          grant: run it from a signed-in session.
+        parameters:
+          - { $ref: '../openapi.yaml#/components/parameters/IdPath' }
+        requestBody:
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DecisionExecutionRequest' }
+        responses:
+          '200':
+            description: The fix ran; result.detail says what changed.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/DecisionRunResult' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+          '409': { $ref: '../openapi.yaml#/components/responses/Conflict' }
+          '503': { $ref: '#/components/responses/AuditUnavailable' }
+
+    decisionExecutionMarkFailed:
+      post:
+        operationId: markDecisionExecutionFailed
+        tags: [executor, decisions]
+        summary: Release a stalled run so the fix can be retried (admin only)
+        description: >
+          Marks a run that has been running for more than 15 minutes, or whose
+          status is outcome_unknown (its cloud call was cut off), failed, so a
+          later run click may retry it. An outcome_unknown run always needs
+          verified. A run is never released
+          automatically: a crash mid-call may already have changed the cloud.
+          When the run's audit trail shows an intent row with no result, a
+          recorded result, or cannot be read, verified must be true — the
+          admin's attestation that they checked the resource. 409 when the run
+          is not running, is younger than 15 minutes, or needs verification.
+          The release is audited as executor.run_marked_failed.
+        parameters:
+          - { $ref: '../openapi.yaml#/components/parameters/IdPath' }
+        requestBody:
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DecisionMarkFailedRequest' }
+        responses:
+          '200':
+            description: The run is now failed and may be retried.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/DecisionRun' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '409': { $ref: '../openapi.yaml#/components/responses/Conflict' }
+
+  responses:
+    AuditUnavailable:
+      description: The pre-execution audit row could not be written, so nothing was executed.
+      content:
+        application/problem+json:
+          schema: { $ref: '../openapi.yaml#/components/schemas/Problem' }
+
+  schemas:
+    SGRuleRemoveRequest:
+      type: object
+      required: [connector_id]
+      properties:
+        connector_id: { type: string }
+        group_id: { type: string }
+        region: { type: string }
+        protocol: { type: string }
+        from_port: { type: string }
+        to_port: { type: string }
+        cidr: { type: string }
+        dry_run: { type: boolean, description: 'When true, report what would change without changing it.' }
+        approval_token:
+          type: string
+          description: Grant from POST /api/executor/approvals, minted by a different admin. Required when the request authenticates with an API key.
+    IAMKeyDisableRequest:
+      type: object
+      required: [connector_id]
+      properties:
+        connector_id: { type: string }
+        key_id: { type: string }
+        username: { type: string }
+        region: { type: string, description: Optional — falls back to the connector's configured region. }
+        delete_key:
+          type: boolean
+          description: >
+            When true, physically deletes the key after disabling it. This
+            variant is destructive and requires approval_token.
+        dry_run: { type: boolean, description: 'When true, report what would change without changing it.' }
+        approval_token:
+          type: string
+          description: Grant from POST /api/executor/approvals, minted by a different admin. Required when delete_key is true, and for any request authenticated with an API key.
+    ExecuteRequest:
+      type: object
+      required: [connector_id, action]
+      properties:
+        connector_id: { type: string }
+        action: { type: string, description: A known executor action name. }
+        params:
+          type: object
+          additionalProperties: { type: string }
+        dry_run: { type: boolean, description: 'When true, report what would change without changing it.' }
+        approval_token:
+          type: string
+          description: Grant from POST /api/executor/approvals, minted by a different admin. Required for destructive actions, and for every action when the request authenticates with an API key.
+    ApprovalRequest:
+      type: object
+      required: [connector_id, action]
+      properties:
+        connector_id: { type: string }
+        action: { type: string, description: 'A destructive executor action name, or any action when agent is true.' }
+        params:
+          type: object
+          additionalProperties: { type: string }
+        agent:
+          type: boolean
+          description: Mint the grant an agent's execution (the MCP execute_action tool) needs; such executions need a grant for every action.
+    Approval:
+      type: object
+      required: [approval_token, plan, approver, expires_at]
+      properties:
+        approval_token: { type: string }
+        plan: { type: string, description: The exact change this grant authorises. }
+        approver: { type: string, description: 'The admin who granted it, taken from their session.' }
+        expires_at: { type: string, format: date-time }
+    ExecutionResult:
+      type: object
+      required: [connector_id, action, detail, dry_run, destructive]
+      properties:
+        connector_id: { type: string }
+        action: { type: string }
+        detail: { type: string, description: 'What was changed — or, when dry_run, what would have been.' }
+        dry_run: { type: boolean, description: True when nothing was changed. }
+        destructive: { type: boolean, description: True when this action requires a second admin's approval. }
+    DecisionExecutionRequest:
+      type: object
+      properties:
+        inputs:
+          type: object
+          additionalProperties: { type: string }
+          description: Values for the plan's inputs — parameters the finding does not carry. Any other key is rejected.
+        confirm:
+          type: string
+          description: The typed confirmation (the dry run's confirm_text) for a destructive or irreversible fix.
+    DecisionExecutionGuide:
+      type: object
+      required: [change, reversible, rollback, cli]
+      properties:
+        change: { type: string, description: 'What the action changes, with <placeholders> for parameters the finding does not carry.' }
+        reversible: { type: boolean }
+        rollback: { type: string }
+        cli: { type: string, description: The equivalent provider CLI command. }
+    DecisionAuditRow:
+      type: object
+      required: [ts, actor, action, details]
+      properties:
+        ts: { type: string, format: date-time }
+        actor: { type: string }
+        action: { type: string, description: 'executor.dry_run, executor.approve, executor.execute_intent, executor.execute, executor.execute_failed, executor.execute_outcome_unknown or executor.run_marked_failed. executor.refused rows are not included; they are kept in audit_events.' }
+        details: { type: string, description: The row's JSON details. }
+    DecisionRun:
+      type: object
+      required: [status, action, connector_id, params, plan, requested_by, requested_by_you, updated_at]
+      properties:
+        status:
+          type: string
+          enum: [awaiting_second_admin, running, succeeded, failed, outcome_unknown]
+          description: >
+            outcome_unknown means the cloud call was cut off after it may have
+            been sent; verify in the cloud console, then release it with
+            mark-failed before retrying.
+        action: { type: string }
+        connector_id: { type: string }
+        params:
+          type: object
+          additionalProperties: { type: string }
+        plan: { type: string, description: The exact change this run carries out. }
+        requested_by: { type: string }
+        requested_by_you: { type: boolean, description: 'True when this session made the request (and so cannot be the second admin).' }
+        executed_by: { type: string }
+        detail: { type: string, description: The executor's account of what changed. }
+        error: { type: string, description: 'Set when status is failed or outcome_unknown. For failed, why the run failed; for outcome_unknown, why its effect is unknown — the change may have happened. It does not mean nothing changed: a run marked failed after outcome_unknown may also have landed.' }
+        grant_expires_at:
+          type: string
+          format: date-time
+          description: While awaiting a second admin, when the request lapses.
+        confirm_text: { type: string, description: 'While awaiting a second admin, what they type to confirm.' }
+        updated_at: { type: string, format: date-time }
+    DecisionExecutionPlan:
+      type: object
+      required: [decision_id, state, params, inputs, requires_second_admin, audit, audit_known]
+      properties:
+        decision_id: { type: string }
+        state:
+          type: string
+          enum: [guidance_only, needs_input, ready]
+        reason: { type: string, description: Why the fix cannot run from Vulngraph (guidance_only). }
+        action: { type: string }
+        connector_id: { type: string }
+        connector_name: { type: string }
+        params:
+          type: object
+          additionalProperties: { type: string }
+          description: Parameters the decision's finding fixes; inputs never override them.
+        inputs:
+          type: array
+          items: { type: string }
+          description: Parameter keys a person may type.
+        requires_second_admin: { type: boolean }
+        guide: { $ref: '#/components/schemas/DecisionExecutionGuide' }
+        run: { $ref: '#/components/schemas/DecisionRun' }
+        audit:
+          type: array
+          items: { $ref: '#/components/schemas/DecisionAuditRow' }
+        audit_known:
+          type: boolean
+          description: False when the run's audit rows could not be read — an empty audit list is then not "no rows".
+    DecisionDryRun:
+      type: object
+      required: [action, connector_id, params, detail, destructive, confirm_text]
+      properties:
+        action: { type: string }
+        connector_id: { type: string }
+        params:
+          type: object
+          additionalProperties: { type: string }
+        detail: { type: string, description: The dry run's account of what would change. }
+        destructive: { type: boolean, description: True when a second admin must confirm. }
+        confirm_text: { type: string, description: What to type to confirm; empty when a click is enough. }
+    DecisionMarkFailedRequest:
+      type: object
+      properties:
+        verified:
+          type: boolean
+          description: The admin checked the resource and knows whether the stalled run changed it.
+        note: { type: string, description: What the admin found; recorded on the run and in the audit trail. }
+    DecisionRunResult:
+      type: object
+      required: [run, result]
+      properties:
+        run: { $ref: '#/components/schemas/DecisionRun' }
+        result: { $ref: '#/components/schemas/ExecutionResult' }

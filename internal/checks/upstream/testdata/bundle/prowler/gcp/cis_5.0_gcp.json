@@ -1,0 +1,19 @@
+{
+ "Framework": "CIS",
+ "Name": "CIS 5.0",
+ "Version": "5.0",
+ "Provider": "GCP",
+ "Description": "fixture",
+ "Requirements": [
+  {
+   "Id": "3.1",
+   "Description": "",
+   "Attributes": [
+    {
+     "Section": "s"
+    }
+   ],
+   "Checks": []
+  }
+ ]
+}

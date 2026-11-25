@@ -1,0 +1,182 @@
+# Respond domain (internal/app/respond). Agent decision trail.
+components:
+  pathItems:
+    listDecisions:
+      get:
+        operationId: listDecisions
+        tags: [decisions]
+        summary: The agent decision trail, newest first, keyset-paginated
+        parameters:
+          - { name: limit, in: query, schema: { type: integer, minimum: 0 } }
+          - { name: cursor, in: query, description: Opaque cursor from a prior response's next_cursor., schema: { type: string } }
+          - name: outcome
+            in: query
+            description: |
+              Filter to decisions with this outcome. Accepts the real outcomes
+              plus two UI-derived groupings: needs_action (escalated OR
+              parked_for_approval) and safe_to_fix (the same safety_band=safe
+              AND action_class!=observe AND outcome!=suppressed_by_verdict
+              predicate DecisionsSummary's quick_wins count uses). An
+              unrecognized value 400s.
+            schema:
+              type: string
+              enum: [observed, escalated, parked_for_approval, suppressed_by_verdict, needs_action, safe_to_fix]
+          - name: action_class
+            in: query
+            description: Filter to decisions whose plan has this action class. ANDs with outcome. An unrecognized value 400s.
+            schema:
+              type: string
+              enum: [observe, remediate, modify, isolate, destroy]
+        responses:
+          '200':
+            description: A page of decisions.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/DecisionPage' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    decisionsSummary:
+      get:
+        operationId: decisionsSummary
+        tags: [decisions]
+        summary: Whole-trail decision aggregates for the banner/footer stats
+        description: |
+          Server-side aggregation over every decision — the client must never
+          derive these numbers from loaded pages of the paginated list.
+        responses:
+          '200':
+            description: Aggregates over the full decision trail.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/DecisionsSummary' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+    refineDecision:
+      post:
+        operationId: refineDecision
+        tags: [decisions]
+        summary: Ask a follow-up question about one decision; responds with an SSE stream (admin)
+        description: |
+          Streams an assistant answer grounded in the decision's stored details and
+          its findings, as `text/event-stream`. Each event carries a JSON payload in
+          its `data:` field: `{"type":"text","text":…}` deltas, then exactly one
+          terminal event — `{"type":"done"}` on success or
+          `{"type":"error","message":…}` when generation failed mid-stream. A stream
+          that ends without a terminal event was cut and must be treated as failed.
+          Admin-only — the answer includes the full decision context. 503 when no
+          LLM provider is configured or the provider fails before any output.
+        parameters:
+          - { $ref: '../openapi.yaml#/components/parameters/IdPath' }
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RefineRequest' }
+        responses:
+          '200':
+            description: An SSE stream of assistant output.
+            content:
+              text/event-stream:
+                schema: { type: string }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+          '429': { $ref: '../openapi.yaml#/components/responses/TooManyRequests' }
+          '503':
+            description: No LLM provider is configured, or the provider request failed before any output.
+            content:
+              application/problem+json:
+                schema: { $ref: '../openapi.yaml#/components/schemas/Problem' }
+
+  schemas:
+    RefineRequest:
+      type: object
+      description: A follow-up question about the decision named in the path.
+      required: [message]
+      properties:
+        message: { type: string, minLength: 1 }
+    DecisionsSummary:
+      type: object
+      required: [total, observed, escalated, parked_for_approval, suppressed_by_verdict, quick_wins, unique_resources, action_classes, confidence_bands, escalation_reasons, hotspots]
+      properties:
+        total: { type: integer }
+        observed: { type: integer, description: 'Read-only observe decisions: nothing to approve, nothing executed.' }
+        escalated: { type: integer }
+        parked_for_approval: { type: integer }
+        suppressed_by_verdict:
+          type: integer
+          description: |
+            Decisions suppressed because a human governor already ruled DENIED
+            on this finding's whole (check_id, action_class) pattern
+            — questions a human already answered, not re-escalated.
+        quick_wins: { type: integer, description: safety_band=safe and action_class!=observe. }
+        unique_resources: { type: integer, description: Distinct resources behind the targeted findings. }
+        action_classes:
+          type: object
+          additionalProperties: { type: integer }
+        confidence_bands:
+          type: object
+          additionalProperties: { type: integer }
+        escalation_reasons:
+          type: object
+          additionalProperties: { type: integer }
+          description: |
+            Tally of Decision.EscalationReason over the trail: policy_blocked
+            (the gate escalated a destroy/isolate action), verification_concern (CoVe forced it), insufficient_confidence, or
+            pattern_denied (suppressed_by_verdict decisions).
+            A decision with no escalation reason is not counted in any bucket.
+        hotspots:
+          type: array
+          items: { $ref: '#/components/schemas/EscalationHotspot' }
+    EscalationHotspot:
+      type: object
+      required: [target_id, count, latest]
+      properties:
+        target_id: { type: string }
+        target_title: { type: string }
+        target_resource: { type: string }
+        count: { type: integer }
+        latest: { type: string, format: date-time }
+    DecisionPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Decision' }
+        next_cursor: { type: string }
+    Decision:
+      type: object
+      required: [id, ts, actor, action]
+      properties:
+        id: { type: string }
+        ts: { type: string, format: date-time }
+        actor: { type: string }
+        action: { type: string }
+        target_type: { type: string }
+        target_id: { type: string }
+        target_title: { type: string, description: Resolved finding title for the decision's target. }
+        target_resource: { type: string, description: Resolved resource id for the decision's target. }
+        target_must_fix_reason: { type: string, description: 'Compact evidence for why the finding matters, e.g. "internet-reachable (2 hops) · KEV · blast 42".' }
+        target_remediation: { type: string, description: The finding source's own fix advice. }
+        remediation: { $ref: '#/components/schemas/DecisionRemediation' }
+        details: { type: string }
+    DecisionRemediation:
+      type: object
+      description: |
+        The executor action that would carry out the decision's plan, for the
+        person deciding whether to approve it. Present only when an executor
+        action fits the plan's action class and the finding's resource type.
+        Nothing here runs anything: a change runs only through the executor,
+        with an authenticated person, a read_write connector, and (when
+        destructive) a second admin's grant (ADR 087).
+      required: [action, change, destructive, reversible, rollback, cli]
+      properties:
+        action: { type: string, description: 'Executor action id, for example s3_block_public.' }
+        change: { type: string, description: 'Exactly what would change — the dry-run text, with <placeholders> for parameters the finding does not carry.' }
+        destructive: { type: boolean, description: The executor needs a grant minted by a second admin. }
+        reversible: { type: boolean, description: Rollback fully undoes the change. }
+        rollback: { type: string, description: 'How to undo it; when not reversible, what to save first.' }
+        cli: { type: string, description: 'The equivalent provider CLI command, for applying the fix by hand.' }

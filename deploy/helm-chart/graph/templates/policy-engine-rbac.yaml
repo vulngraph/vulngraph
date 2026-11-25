@@ -1,0 +1,55 @@
+{{- if .Values.kubernetesRBAC.policyEngineRead }}
+# Read-only access the Kubernetes collector uses to decide CIS Kubernetes 5.2.1
+# from evidence rather than presence (ADR 094): which validating webhooks and
+# ValidatingAdmissionPolicy bindings exist, and whether Kyverno policies or
+# Gatekeeper pod-security constraints actually ENFORCE pod security. list only,
+# named resources only (no wildcards), so graph's own RBAC checks stay quiet.
+# Without it the reads are forbidden and an unlabelled namespace is graded as
+# unlabelled (Info when an engine is installed), never clean.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "graph.clusterScopedName" (dict "suffix" "policy-engine-reader" "Release" .Release) }}
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations", "validatingadmissionpolicybindings"]
+    verbs: ["list"]
+  - apiGroups: ["kyverno.io"]
+    resources: ["clusterpolicies", "policies"]
+    verbs: ["list"]
+  - apiGroups: ["constraints.gatekeeper.sh"]
+    resources:
+      - k8spspallowedusers
+      - k8spspallowprivilegeescalationcontainer
+      - k8spspapparmor
+      - k8spspautomountserviceaccounttokenpod
+      - k8spspcapabilities
+      - k8spspflexvolumes
+      - k8spspforbiddensysctls
+      - k8spspfsgroup
+      - k8spsphostfilesystem
+      - k8spsphostnamespace
+      - k8spsphostnetworkingports
+      - k8spspprivilegedcontainer
+      - k8spspprocmount
+      - k8spspreadonlyrootfilesystem
+      - k8spspseccomp
+      - k8spspselinuxv2
+      - k8spspvolumetypes
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "graph.clusterScopedName" (dict "suffix" "policy-engine-reader" "Release" .Release) }}
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "graph.clusterScopedName" (dict "suffix" "policy-engine-reader" "Release" .Release) }}
+subjects:
+  {{- include "graph.workerServiceAccountSubjects" . | nindent 2 }}
+{{- end }}

@@ -1,0 +1,162 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  OPTIONAL Vulngraph execution role for Approve & run (ADR 087). Off by default:
+  deploy it only if you want graph's executor to carry out remediations a
+  human has approved. Vulngraph never mutates on its own — every action needs an
+  explicit approval, and the connector must also be switched to read_write.
+  The IAM actions are exactly the executor's action list
+  (internal/app/executor/service.go) and nothing else; some grants are broader
+  than the calls the executor makes with them (see the comment below).
+
+# Executor action → IAM action:
+#   revoke a security-group ingress rule   ec2:RevokeSecurityGroupIngress
+#   stop / start an instance               ec2:StopInstances, ec2:StartInstances
+#   deactivate / delete an IAM access key  iam:UpdateAccessKey, iam:DeleteAccessKey
+#   block public access on a bucket        s3:PutBucketPublicAccessBlock, after
+#                                          s3:GetBucketPublicAccessBlock (the
+#                                          earlier block, recorded for the undo)
+#   (start, CMK-encrypted EBS volumes)     kms:CreateGrant, only for EC2-created grants
+#
+# Every grant is held to this account: EC2, IAM and KMS by resource ARN, S3 by
+# s3:ResourceAccount (S3 ARNs carry no account id). Resources tagged
+# vulngraph-protected (any value) are excluded where AWS evaluates the tag for
+# the action: security groups, instances and IAM users. Tag break-glass users
+# and anything the executor must never touch.
+#
+# What stays broader than the executor's own calls, because IAM has no
+# condition key for the request parameters involved:
+#   iam:UpdateAccessKey also allows setting a key back to Active; the executor
+#     only ever sets Inactive.
+#   s3:PutBucketPublicAccessBlock also allows clearing the four flags (turning
+#     Block Public Access off); the executor only ever sets all four to true.
+#   This role does not exclude buckets by tag (S3 evaluates resource tags only
+#     on buckets with attribute-based access control turned on).
+#   ec2:StopInstances / StartInstances and RevokeSecurityGroupIngress cover
+#     every untagged instance and security group in the account.
+# An SCP or permissions boundary can add the same tag exclusion account-wide.
+#
+# The executor assumes this role from graph's AMBIENT identity (the hub role),
+# never from a stored access key: set the aws_org connector's
+# execute_role_name to RoleName and run graph with hub_auth=ambient.
+#
+# The approval rules are enforced by graph, not by IAM: any code running as the
+# hub role that holds the ExternalId can assume this role. On EKS Pod Identity,
+# ExecutorServiceAccount narrows that to serve's own ServiceAccount, so the
+# worker and the scanner cannot (docs/security-hardening.md, "Credential
+# isolation").
+
+Parameters:
+  HubRoleArn:
+    Type: String
+    Description: ARN of the hub role graph runs as. Only it may assume this role.
+    AllowedPattern: "^arn:aws[a-z-]*:iam::\\d{12}:role/.+$"
+  ExternalId:
+    Type: String
+    NoEcho: true
+    Description: The aws_org connector's external_id.
+    MinLength: 2
+    MaxLength: 1224
+    AllowedPattern: "^[\\w+=,.@:/-]+$"
+  ExecutorServiceAccount:
+    Type: String
+    Default: ""
+    Description: >-
+      EKS Pod Identity only, optional: serve's ServiceAccount (chart
+      serviceAccount.serveName). When set, only hub sessions from that
+      ServiceAccount may assume this role. Match graph-hub-role.yaml's
+      ExecutorServiceAccount.
+    AllowedPattern: "^([a-z0-9]([-.a-z0-9]{0,251}[a-z0-9])?)?$"
+  RoleName:
+    Type: String
+    Default: GraphExecute
+    Description: Must match the aws_org connector's execute_role_name, and differ from the read-only role.
+    AllowedPattern: "^[\\w+=,.@-]{1,64}$"
+
+Conditions:
+  HasExecutorServiceAccount: !Not [!Equals [!Ref ExecutorServiceAccount, ""]]
+
+Resources:
+  GraphExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: Vulngraph Approve & run executor. Used only for human-approved remediations.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref HubRoleArn
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                sts:ExternalId: !Ref ExternalId
+                aws:PrincipalTag/kubernetes-service-account: !If
+                  - HasExecutorServiceAccount
+                  - !Ref ExecutorServiceAccount
+                  - !Ref AWS::NoValue
+      Policies:
+        - PolicyName: graph-executor-actions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: GraphRevokeIngress
+                Effect: Allow
+                Action: ec2:RevokeSecurityGroupIngress
+                Resource: !Sub arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:security-group/*
+              - Sid: GraphStopStartInstances
+                Effect: Allow
+                Action:
+                  - ec2:StopInstances
+                  - ec2:StartInstances
+                Resource: !Sub arn:${AWS::Partition}:ec2:*:${AWS::AccountId}:instance/*
+              # Starting an instance whose EBS volumes use a customer managed
+              # KMS key needs a grant created on the caller's behalf; without
+              # it the instance goes pending -> stopped
+              # (Client.InternalError). Grants only for EC2, only for AWS
+              # resources, only keys in this account. The key policy must
+              # delegate to IAM (the default key policy does).
+              - Sid: GraphStartEncryptedVolumes
+                Effect: Allow
+                Action: kms:CreateGrant
+                Resource: !Sub arn:${AWS::Partition}:kms:*:${AWS::AccountId}:key/*
+                Condition:
+                  Bool:
+                    kms:GrantIsForAWSResource: "true"
+                  StringLike:
+                    kms:ViaService: ec2.*.amazonaws.com
+              - Sid: GraphAccessKeyLifecycle
+                Effect: Allow
+                Action:
+                  - iam:UpdateAccessKey
+                  - iam:DeleteAccessKey
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:user/*
+              - Sid: GraphBucketPublicAccessBlock
+                Effect: Allow
+                Action:
+                  - s3:GetBucketPublicAccessBlock
+                  - s3:PutBucketPublicAccessBlock
+                Resource: !Sub arn:${AWS::Partition}:s3:::*
+                Condition:
+                  StringEquals:
+                    s3:ResourceAccount: !Ref AWS::AccountId
+              # On a resource without the tag, Null is true and nothing is
+              # denied.
+              - Sid: GraphSkipProtectedResources
+                Effect: Deny
+                Action:
+                  - ec2:RevokeSecurityGroupIngress
+                  - ec2:StopInstances
+                  - ec2:StartInstances
+                  - iam:UpdateAccessKey
+                  - iam:DeleteAccessKey
+                Resource: "*"
+                Condition:
+                  "Null":
+                    aws:ResourceTag/vulngraph-protected: "false"
+
+Outputs:
+  RoleArn:
+    Description: The executor role in this account.
+    Value: !GetAtt GraphExecutionRole.Arn

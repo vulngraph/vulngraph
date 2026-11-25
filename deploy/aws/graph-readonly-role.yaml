@@ -1,0 +1,249 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Vulngraph read-only member role (ADR 091). Deployed to every account in the
+  organization by graph-org-stackset.yaml (a service-managed StackSet), and
+  separately to the management account, which StackSets never target. Grants
+  SecurityAudit + ViewOnlyAccess plus the few reads graph's collectors make
+  that neither managed policy covers. No write permission of any kind, but
+  read access is not harmless. ECR layer pulls expose full image contents; the
+  opt-in Terraform-state read (GrantTerraformStateRead, off by default)
+  exposes whatever secrets those state files hold; and the managed policies
+  return configuration that often holds plaintext secrets, such as ECS
+  task-definition, CodeBuild, Lambda and SageMaker model environment
+  variables, Elastic Beanstalk option settings, CloudFormation stack
+  parameters, API Gateway stage variables, Glue job arguments and EC2 user
+  data. See docs/onboarding-aws-org.md for which of these Vulngraph reads.
+
+# SecurityAudit and ViewOnlyAccess are read-only, but some of their calls
+# return values that commonly hold plaintext secrets. The collectors receive
+# these responses and store none of the secret-bearing values; three keep
+# something else, noted per line:
+#   ecs:DescribeTaskDefinition          container env (ecs_taskdef.go keeps the
+#                                       names of secret-looking plaintext vars)
+#   codebuild:BatchGetProjects          project env (codebuild.go keeps the names
+#                                       of plaintext AWS-credential vars)
+#   elasticbeanstalk:DescribeConfigurationSettings  every option setting,
+#                                       including environment properties
+#                                       (elasticbeanstalk.go keeps three
+#                                       platform options)
+#   lambda:ListFunctions                function env vars (lambda.go)
+#   cloudformation:DescribeStacks       non-NoEcho stack parameters (cloudformation.go)
+#   sagemaker:DescribeModel             container env (sagemaker.go)
+#   apigateway:GET stages               stage variables (apigateway_stages.go)
+#   glue:GetJobs                        job default arguments (glue.go)
+#   ec2:DescribeLaunchTemplateVersions  default-version user data
+#                                       (launch_templates.go)
+#   ec2:DescribeSpotFleetRequests       launch-specification user data
+#                                       (launch_templates.go)
+#   bedrock-agentcore:GetAgentRuntime   runtime env vars (agentcore.go)
+#   autoscaling:DescribeLaunchConfigurations  launch configuration user data
+#                                       (autoscaling.go)
+#   elasticmapreduce:DescribeCluster    cluster configurations (emr.go)
+# states:DescribeStateMachine can return state machine definitions, but
+# stepfunctions.go requests metadata only, so they are never received.
+# Allowed but called by no collector: ec2:DescribeInstanceAttribute (instance
+# user data), cloudformation:GetTemplate, and others; check the current policy
+# versions in IAM for the full list. Anyone holding the hub role or the
+# worker's credentials can read all of these across every member account.
+#
+# Extra reads, beyond SecurityAudit and ViewOnlyAccess, and who needs them.
+# Derived from the AWS API calls in internal/collect/aws, cmd/graph and
+# internal/app/mcp, checked against both managed policies' current versions
+# (docs/onboarding-aws-org.md#permissions keeps the derivation):
+#   ce:GetCostAndUsage                    Cost surface (costexplorer.go)
+#   ecr:GetAuthorizationToken             image CVE sweep, private ECR (ecrauth.go)
+#   ecr:BatchGetImage, GetDownloadUrlForLayer  pull images by digest and read the
+#                                         OS/package manifests inside their layers
+#                                         (layerwalk.go). The grant lets the role
+#                                         download full layer content, so any secret
+#                                         baked into an image is readable by it.
+#   identitystore:DescribeUser, DescribeGroup  Identity Center principals (identitycenter_principal.go)
+#   codebuild:ListReportGroups, BatchGetReportGroups  CodeBuild report export encryption (codebuild.go)
+#   glue:GetMLTransforms                  Glue ML transform encryption, FSBP Glue.3 (glue.go)
+#   s3express:GetLifecycleConfiguration   directory bucket lifecycle, FSBP S3.25 (s3_access_points.go)
+#   waf:GetRule, waf-regional:GetRule, wafv2:GetRuleGroup
+#                                         WAF rule contents (waf_classic.go, waf.go)
+#   macie2:GetMacieSession, GetAutomatedDiscoveryConfiguration
+#                                         Macie status per region (region_detection.go)
+#   s3:GetObject on *tfstate* / *terraform-state* buckets owned by this account
+#                                         (s3:ResourceAccount)
+#                                         Terraform ownership (tfstate_ingest.go). Opt-in
+#                                         (GrantTerraformStateRead, default "false").
+#                                         Terraform state routinely holds plaintext
+#                                         secrets (database passwords, keys); with this
+#                                         grant the role can read all of them. The
+#                                         parser keeps only each resource's address,
+#                                         arn and id (internal/collect/iac/tfstate.go),
+#                                         but the IAM grant is not limited to those.
+#   ebs:GetSnapshotBlock, ebs:ListSnapshotBlocks, ebs:ListChangedBlocks,
+#   ec2:DescribeSnapshots                 disk scan of existing snapshots
+#                                         (internal/scanner/diskscan/awsdisk). Opt-in
+#                                         (GrantDiskScanRead, default "false"). A
+#                                         snapshot is a whole disk: with this grant
+#                                         the role can read every snapshot in the
+#                                         account, secrets included. Encrypted
+#                                         snapshots additionally need kms:Decrypt on
+#                                         their key, which this template never grants.
+
+Parameters:
+  HubRoleArn:
+    Type: String
+    Description: ARN of the hub role graph runs as (graph-hub-role.yaml). Only it may assume this role.
+    AllowedPattern: "^arn:aws[a-z-]*:iam::\\d{12}:role/.+$"
+  ExternalId:
+    Type: String
+    NoEcho: true
+    Description: The sts:ExternalId graph presents — the aws_org connector's external_id.
+    MinLength: 2
+    MaxLength: 1224
+    AllowedPattern: "^[\\w+=,.@:/-]+$"
+  RoleName:
+    Type: String
+    Default: GraphReadOnly
+    Description: Must match the aws_org connector's member_role_name.
+    AllowedPattern: "^[\\w+=,.@-]{1,64}$"
+  OrgId:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional AWS Organizations id (o-…). When set, the hub must also be inside
+      this organization (aws:PrincipalOrgID). Leave empty if graph's hub account
+      is outside the organization.
+    AllowedPattern: "^(o-[a-z0-9]{10,32})?$"
+  GrantTerraformStateRead:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      Opt-in. "true" grants s3:GetObject on every bucket named *tfstate* /
+      *terraform-state* that this account owns (s3:ResourceAccount), so
+      Vulngraph can map Terraform-declared resources to their repos
+      (docs/iam/README.md). Terraform state often holds plaintext secrets, and
+      this grant lets the role read them.
+  GrantDiskScanRead:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      Opt-in. "true" grants ebs:GetSnapshotBlock, ebs:ListSnapshotBlocks,
+      ebs:ListChangedBlocks and ec2:DescribeSnapshots so Vulngraph can read the
+      installed packages from snapshots you already have
+      (docs/iam/disk-scan-aws.md). A snapshot holds the whole disk, secrets
+      included, and this grant lets the role read every snapshot in the account.
+
+Conditions:
+  HasOrgId: !Not [!Equals [!Ref OrgId, ""]]
+  TfStateRead: !Equals [!Ref GrantTerraformStateRead, "true"]
+  DiskScanRead: !Equals [!Ref GrantDiskScanRead, "true"]
+
+Resources:
+  GraphReadOnlyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: Read-only access for the Vulngraph security platform. No write permissions.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref HubRoleArn
+            Action: sts:AssumeRole
+            Condition: !If
+              - HasOrgId
+              - StringEquals:
+                  sts:ExternalId: !Ref ExternalId
+                  aws:PrincipalOrgID: !Ref OrgId
+              - StringEquals:
+                  sts:ExternalId: !Ref ExternalId
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/SecurityAudit
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/job-function/ViewOnlyAccess
+      Policies:
+        - PolicyName: graph-readonly-extras
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: GraphCostExplorerRead
+                Effect: Allow
+                Action: ce:GetCostAndUsage
+                Resource: "*"
+              - Sid: GraphECRAuthToken
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Sid: GraphECRPullByDigest
+                Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !Sub arn:${AWS::Partition}:ecr:*:${AWS::AccountId}:repository/*
+              - Sid: GraphIdentityCenterPrincipals
+                Effect: Allow
+                Action:
+                  - identitystore:DescribeUser
+                  - identitystore:DescribeGroup
+                Resource: "*"
+              - Sid: GraphCodeBuildReportGroups
+                Effect: Allow
+                Action:
+                  - codebuild:ListReportGroups
+                  - codebuild:BatchGetReportGroups
+                Resource: "*"
+              - Sid: GraphDataStorePostureRead
+                Effect: Allow
+                Action:
+                  - glue:GetMLTransforms
+                  - s3express:GetLifecycleConfiguration
+                Resource: "*"
+              - Sid: GraphWAFRuleContents
+                Effect: Allow
+                Action:
+                  - waf:GetRule
+                  - waf-regional:GetRule
+                  - wafv2:GetRuleGroup
+                Resource: "*"
+              - Sid: GraphMacieStatus
+                Effect: Allow
+                Action:
+                  - macie2:GetMacieSession
+                  - macie2:GetAutomatedDiscoveryConfiguration
+                Resource: "*"
+              - !If
+                - TfStateRead
+                - Sid: GraphReadTfStateObjects
+                  Effect: Allow
+                  Action: s3:GetObject
+                  Resource:
+                    - !Sub arn:${AWS::Partition}:s3:::*terraform-state*/*
+                    - !Sub arn:${AWS::Partition}:s3:::*tfstate*/*
+                  # S3 ARNs carry no account id: without this the wildcards
+                  # also match state buckets in other accounts whose bucket
+                  # policy admits this role (an org-wide central state bucket).
+                  # Vulngraph reads a bucket it has inventoried with the role
+                  # of the account that owns it. A bucket missing from
+                  # inventory is read with the GitHub connector's fallback
+                  # account (tfstate_aws_account_id); if that account does not
+                  # own it, the read is denied and reported as an
+                  # unreadable_tf_state finding.
+                  Condition:
+                    StringEquals:
+                      s3:ResourceAccount: !Ref AWS::AccountId
+                - !Ref AWS::NoValue
+              - !If
+                - DiskScanRead
+                - Sid: GraphReadSnapshotBlocks
+                  Effect: Allow
+                  Action:
+                    - ebs:GetSnapshotBlock
+                    - ebs:ListSnapshotBlocks
+                    - ebs:ListChangedBlocks
+                    - ec2:DescribeSnapshots
+                  Resource: "*"
+                - !Ref AWS::NoValue
+
+Outputs:
+  RoleArn:
+    Description: The role graph assumes in this account.
+    Value: !GetAtt GraphReadOnlyRole.Arn

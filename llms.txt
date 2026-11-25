@@ -1,0 +1,33 @@
+# Vulngraph
+
+> A self-hosted security graph for cloud accounts. It maps cloud assets, IAM identities, container images,
+> packages and repositories into one graph and ranks findings by what an attacker can actually reach. Apache-2.0,
+> Go, Postgres, ClickHouse. Read-only by default; it never changes anything without a person's approval.
+
+Pre-1.0, one maintainer, built with AI coding assistance, no external security review yet. Connectors start read-only.
+
+## Start here
+
+- [README](https://github.com/vulngraph/vulngraph/blob/main/README.md): what it is, the quickstart and a short tour
+- [Evaluating Vulngraph](https://github.com/vulngraph/vulngraph/blob/main/docs/evaluating.md): what access it needs, how to try it safely, where to check each claim
+- [Getting started](https://github.com/vulngraph/vulngraph/blob/main/docs/getting-started.md): run it locally, load the demo, connect a cloud, production
+- [Connecting your accounts](https://github.com/vulngraph/vulngraph/blob/main/docs/connecting.md): per-provider setup for AWS, GCP, Azure, GitHub, Okta, Google Workspace, Kubernetes
+- [Examples](https://github.com/vulngraph/vulngraph/blob/main/docs/examples.md): screenshots and recordings from the bundled demo account
+- [Roadmap](https://github.com/vulngraph/vulngraph/blob/main/ROADMAP.md): direction, not promises; what is next, later and not planned
+- [FAQ](https://github.com/vulngraph/vulngraph/blob/main/docs/faq.md): write access, LLMs, egress, freshness, what it is not
+
+## Reference
+
+- [Capabilities](https://github.com/vulngraph/vulngraph/blob/main/docs/capabilities.md): what each part does, with its limits
+- [Known limitations](https://github.com/vulngraph/vulngraph/blob/main/docs/known-limitations.md)
+- [Threat model](https://github.com/vulngraph/vulngraph/blob/main/docs/threat-model.md): assets, trust boundaries, threats by boundary and what is not defended
+- [Security hardening](https://github.com/vulngraph/vulngraph/blob/main/docs/security-hardening.md): credential isolation, audit trail, approvals
+- [Query cookbook](https://github.com/vulngraph/vulngraph/blob/main/docs/queries.md): 38 Cypher queries for the graph
+- [Configuration](https://github.com/vulngraph/vulngraph/blob/main/docs/configuration.md): every setting and every outbound connection
+- [Architecture](https://github.com/vulngraph/vulngraph/blob/main/docs/architecture.md)
+
+## Optional
+
+- [Security policy](https://github.com/vulngraph/vulngraph/blob/main/SECURITY.md)
+- [Contributing](https://github.com/vulngraph/vulngraph/blob/main/CONTRIBUTING.md)
+- [Changelog](https://github.com/vulngraph/vulngraph/blob/main/CHANGELOG.md)

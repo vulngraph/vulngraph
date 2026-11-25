@@ -1,0 +1,118 @@
+version: "2"
+
+linters:
+  enable:
+    - depguard
+    - forbidigo
+    - revive
+  settings:
+    depguard:
+      rules:
+        # domain.go files are pure: no transport, no storage, no drivers.
+        domain-purity:
+          files:
+            - "**/domain.go"
+          deny:
+            - pkg: net/http
+              desc: domain types must not know about transport
+            - pkg: github.com/vulngraph/vulngraph/internal/db
+              desc: domain types must not know about storage
+            - pkg: github.com/jackc/pgx
+              desc: domain types must not import database drivers
+            - pkg: github.com/ClickHouse/clickhouse-go
+              desc: domain types must not import database drivers
+        # handlers delegate to services; they never touch storage.
+        handlers-no-storage:
+          files:
+            - "**/handler.go"
+            - "**/handler_*.go"
+            - "**/*_handler.go"
+          deny:
+            - pkg: github.com/vulngraph/vulngraph/internal/db
+              desc: handlers call services, never storage — move the logic to service.go
+            - pkg: github.com/jackc/pgx
+              desc: handlers call services, never database drivers
+            - pkg: github.com/ClickHouse/clickhouse-go
+              desc: handlers call services, never database drivers
+        # services hold interfaces they define themselves; new storage code
+        # goes in repo.go / repo_*.go / *_repo.go. This rule bans storage only
+        # in service.go and service_*.go; other non-repo files are unchecked
+        # (CLAUDE.md lists the ones that already query storage).
+        services-no-storage:
+          files:
+            - "**/internal/app/*/service.go"
+            - "**/internal/app/*/service_*.go"
+          deny:
+            - pkg: github.com/vulngraph/vulngraph/internal/db
+              desc: services depend on repository interfaces, never storage — move the query to repo.go
+            - pkg: github.com/jackc/pgx
+              desc: services depend on repository interfaces, never database drivers
+            - pkg: github.com/ClickHouse/clickhouse-go
+              desc: services depend on repository interfaces, never database drivers
+        # the nuclei SDK and its dependency tree stay quarantined.
+        nuclei-quarantine:
+          files:
+            - "!**/internal/scanner/nuclei/**"
+          deny:
+            - pkg: github.com/projectdiscovery
+              desc: nuclei SDK is imported only by internal/scanner/nuclei
+        # LLM provider SDKs stay behind the provider-neutral internal/llm seam,
+        # so features never couple to one vendor's request/response types.
+        llm-quarantine:
+          files:
+            - "!**/internal/llm/**"
+          deny:
+            - pkg: github.com/anthropics/anthropic-sdk-go
+              desc: LLM provider SDKs are imported only by internal/llm — call llm.Client instead
+            - pkg: github.com/openai/openai-go
+              desc: LLM provider SDKs are imported only by internal/llm — call llm.Client instead
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^http\.DefaultClient$
+          msg: use safenet.New(timeout) for external URLs or safenet.NewInternal(timeout) for trusted internal services
+        - pattern: ^fmt\.Print(f|ln)?$
+          msg: use pkg/log (log.FromContext)
+    revive:
+      rules:
+        - name: file-length-limit
+          arguments:
+            - max: 800
+              skipComments: false
+              skipBlankLines: false
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - revive
+          - forbidigo
+          - errcheck
+      - path: gen/
+        linters:
+          - revive
+      # Grandfathered over the 800-line cap (the project's file-size ceiling) when
+      # file-length-limit started counting comments/blank lines: each one
+      # already exceeded it by physical lines. Tightening the check must not
+      # break every push until each is split, and splitting them all in
+      # one rushed change risks collateral damage. Tracked debt, not a
+      # blanket exemption — new files are held to the real 800 lines from
+      # day one, and growing any of these further should prompt splitting
+      # it, not widening this list.
+      #
+      # `text: file-length-limit` narrows each rule to that ONE revive
+      # sub-check — without it, `linters: [revive]` silences EVERY revive rule
+      # for these files.
+      - path: internal/app/asset/repo\.go
+        linters: [revive]
+        text: file-length-limit
+      - path: internal/app/graphstore/named_queries\.go
+        linters: [revive]
+        text: file-length-limit
+      - path: internal/graphschema/graphschema\.go
+        linters: [revive]
+        text: file-length-limit
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

@@ -1,0 +1,493 @@
+benchmark: cis-aws-foundations
+name: CIS Amazon Web Services Foundations Benchmark
+version: "7.0.0"
+family: cis
+providers: [aws]
+source: https://www.cisecurity.org/benchmark/amazon_web_services
+controls:
+  # ── 2 Identity and Access Management ──────────────────────────────────────
+  - id: "2.1.1"
+    title: Manage root credentials centrally through Organizations
+    service: organizations
+    status: covered
+    check_ids: [aws-org-root-access-not-centralized]
+    reason: "iam:ListOrganizationsFeatures from the management account (or IAM's delegated admin) on the aws_organization asset: fires unless both RootCredentialsManagement and RootSessions are enabled; IAM trusted access off reads as both off. Read only by the connector that can call Organizations (the management or delegated-admin account); without one the asset is never emitted and the control stays unknown, never passing. From any other account the feature read is unknown."
+    severity: medium
+  - id: "2.1.2"
+    title: Apply authorization guardrails to every Organization account
+    service: organizations
+    status: covered
+    check_ids: [aws-org-account-no-scp-guardrail, aws-org-account-no-rcp-guardrail, aws-org-guardrail-policy-type-disabled]
+    reason: "One aws_org_account asset per ACTIVE member account (the management account is never restricted by SCPs/RCPs): walks account → OUs → root with organizations:ListPoliciesForTarget/ListParents and fires when only the AWS-managed FullAWSAccess (SCP) or RCPFullAWSAccess (RCP) applies. A policy type disabled at the root (ListRoots PolicyTypes) is one organization finding instead, and the accounts step aside. A failed walk leaves the key unknown. Management or delegated-admin connector only (else unknown)."
+    severity: medium
+  - id: "2.1.3"
+    title: Keep workloads out of the management account
+    service: organizations
+    status: manual
+    reason: "Whether a resource is a \"workload\" is a judgement; graph could hint by counting assets in the management account, but the control needs human review."
+    severity: medium
+  - id: "2.1.4"
+    title: Structure OUs by environment and sensitivity
+    service: organizations
+    status: manual
+    reason: "OU design adequacy is an organisational judgement, not an API-readable setting."
+    severity: low
+  - id: "2.1.5"
+    title: Delegate Organizations policy management to an admin account
+    service: organizations
+    status: covered
+    check_ids: [aws-org-policy-management-not-delegated]
+    reason: "organizations:DescribeResourcePolicy: fires when there is no organization resource policy (ResourcePolicyNotFoundException) or none of its Allow statements grants organizations:CreatePolicy/UpdatePolicy/AttachPolicy/DetachPolicy/DeletePolicy (wildcards matched). Management or delegated-admin connector only (else unknown)."
+    severity: low
+  - id: "2.1.6"
+    title: Delegate integrated services to admin accounts
+    service: organizations
+    status: covered
+    check_ids: [aws-org-security-services-not-delegated]
+    reason: "organizations:ListAWSServiceAccessForOrganization intersected with the security services that support a delegated administrator (GuardDuty, Security Hub, Access Analyzer, Config, Inspector, Macie, Detective, Firewall Manager, CloudTrail, Audit Manager, Security Lake, Security Incident Response, Backup, IAM Identity Center, IAM centralized root access), minus the services of every ACTIVE delegated admin (ListDelegatedAdministrators + ListDelegatedServicesForAccount). Fires on any trusted security service with no delegated admin. Management or delegated-admin connector only (else unknown)."
+    severity: low
+  - id: "2.2"
+    title: Keep account contact details up to date
+    service: account
+    status: manual
+    reason: "account:GetContactInformation shows that contact details exist, not that they are current; currency needs human confirmation. Presence could be checked once an account collector exists."
+    severity: low
+  - id: "2.3"
+    title: Register a security alternate contact
+    service: account
+    status: covered
+    check_ids: [aws-account-no-security-contact]
+    reason: "account:GetAlternateContact (SECURITY) on the aws_account_settings asset; ResourceNotFoundException is the observed \"none\"."
+    severity: low
+  - id: "2.4"
+    title: Root user has no access keys
+    service: iam
+    status: covered
+    check_ids: [aws-iam-root-active-key]
+    reason: "Root asset reads GetAccountSummary AccountAccessKeysPresent."
+    severity: critical
+  - id: "2.5"
+    title: Root user has MFA enabled
+    service: iam
+    status: covered
+    check_ids: [aws-iam-root-no-mfa]
+    reason: "Root asset reads GetAccountSummary AccountMFAEnabled; a root without a password (credential report password_enabled=false, centralized root access) has no sign-in to protect."
+    severity: critical
+  - id: "2.6"
+    title: Root user uses a hardware MFA device
+    service: iam
+    status: covered
+    check_ids: [aws-iam-root-no-mfa, aws-iam-root-virtual-mfa]
+    reason: "No MFA is aws-iam-root-no-mfa; MFA that is a virtual device assigned to root (iam:ListVirtualMFADevices) is aws-iam-root-virtual-mfa. Any other root MFA (FIDO key, hardware TOTP) is hardware."
+    severity: high
+  - id: "2.7"
+    title: Avoid using root for daily administration
+    service: iam
+    status: covered
+    check_ids: [aws-iam-root-recently-used]
+    reason: "Credential report <root_account> row: latest of password_last_used and access_key_1/2_last_used_date, fired within 30 days."
+    severity: high
+  - id: "2.8"
+    title: Password policy requires 14+ characters
+    service: iam
+    status: covered
+    check_ids: [aws-iam-weak-password-policy]
+    reason: "iam:GetAccountPasswordPolicy on aws_account_settings; NoSuchEntity (no policy) or MinimumPasswordLength < 14 fires. One check for 2.8, 2.9 and FSBP IAM.7, since one policy update fixes all."
+    severity: medium
+  - id: "2.9"
+    title: Password policy prevents reuse
+    service: iam
+    status: covered
+    check_ids: [aws-iam-weak-password-policy]
+    reason: "PasswordReusePrevention < 24, or no policy, fires the shared password-policy check."
+    severity: medium
+  - id: "2.10"
+    title: Console users have MFA enabled
+    service: iam
+    status: covered
+    check_ids: [aws-iam-user-no-mfa]
+    reason: "Fires on console_access=true and mfa_enabled=false (ListMFADevices)."
+    severity: high
+  - id: "2.11"
+    title: Disable credentials unused for 45 days
+    service: iam
+    status: covered
+    check_ids: [aws-iam-user-credential-unused-45d, aws-iam-user-unused-access-key, aws-iam-user-stale-console, aws-iam-user-inactive, aws-iam-admin-user-dormant]
+    reason: "A console password (`password_last_used_days`) or any active access key (`access_key_max_idle_days`: the longest idle key, a never-used key counting its age) unused for 45-89 days is aws-iam-user-credential-unused-45d (Low); at 90 days or never-used passwords the existing 90-day checks take over, and a dormant admin user is aws-iam-admin-user-dormant — each credential reported once. A failed GetAccessKeyLastUsed leaves the idle time unknown."
+    severity: medium
+  - id: "2.12"
+    title: Rotate access keys within 90 days
+    service: iam
+    status: covered
+    check_ids: [aws-iam-access-key-old, aws-iam-admin-user-dormant]
+    reason: "access_key_age_days is the oldest active key's age; fires above 90. Suppressed on a dormant admin user, which aws-iam-admin-user-dormant reports instead."
+    severity: medium
+  - id: "2.13"
+    title: Grant user permissions only via groups
+    service: iam
+    status: covered
+    check_ids: [aws-iam-user-direct-policy]
+    reason: "`policies` is built from ListAttachedUserPolicies + ListUserPolicies only (no group policies), so non-empty means a direct grant."
+    severity: low
+  - id: "2.14"
+    title: No attached policy grants full admin
+    service: iam
+    status: covered
+    check_ids: [aws-iam-user-full-admin, aws-iam-role-full-admin, aws-iam-group-full-admin, aws-iam-policy-full-admin, aws-iam-admin-user-dormant, aws-iam-admin-role-dormant, aws-iam-overprivileged-role, aws-sso-permission-set-admin]
+    reason: "Users, roles and groups whose policies resolve to *:* (`admin`), and every customer-managed policy with Allow * on * (iam:GetAccountAuthorizationDetails lists unattached and group-only ones; an unattached policy is Low, a boundary-only one is not reported). Each root cause once: dormant, Access-Advisor-evidenced, Identity Center and customer-policy-only admins step aside for the more specific check; an empty admin group is Low."
+    severity: high
+  - id: "2.15"
+    title: Support role exists for AWS Support
+    service: iam
+    status: covered
+    check_ids: [aws-iam-no-support-role]
+    reason: "iam:ListEntitiesForPolicy (AWSSupportAccess, EntityFilter Role) gives `support_role_count` on aws_account_settings; fires at zero roles. A failed listing leaves the key absent (unknown)."
+    severity: low
+  - id: "2.16"
+    title: Instances use IAM roles for AWS access
+    service: ec2
+    status: covered
+    check_ids: [aws-ec2-no-iam-role]
+    reason: "Fires when the instance was read with no IamInstanceProfile."
+    severity: medium
+  - id: "2.17"
+    title: Remove expired IAM server certificates
+    service: iam
+    status: covered
+    check_ids: [aws-iam-server-certificate-expired]
+    reason: "iam:ListServerCertificates gives iam_server_certificate assets with `expiration`; fires once the expiration has passed (time-dependent, re-evaluated daily)."
+    severity: medium
+  - id: "2.18"
+    title: IAM Access Analyzer enabled in every region
+    service: accessanalyzer
+    status: covered
+    check_ids: [aws-access-analyzer-disabled]
+    reason: "accessanalyzer:ListAnalyzers per region (every page) on aws_region_settings: an ACTIVE analyzer of type ACCOUNT or ORGANIZATION. Unused- and internal-access analyzers do not count; an organization analyzer homed in a delegated administrator is invisible from a member account, which the benchmark still requires to have its own."
+    severity: medium
+  - id: "2.19"
+    title: Manage users centrally via federation
+    service: iam
+    status: manual
+    reason: "Whether identities are centrally managed is an architecture judgement; graph collects SSO and federated trust but cannot decide adequacy."
+    severity: low
+  - id: "2.20"
+    title: Restrict the CloudShell full-access policy
+    service: iam
+    status: covered
+    check_ids: [aws-iam-user-cloudshell-full-access, aws-iam-role-cloudshell-full-access, aws-iam-group-cloudshell-full-access]
+    reason: "AWSCloudShellFullAccess attached to a user, role or group (groups from iam:GetAccountAuthorizationDetails). Admin principals step aside: their admin grant already covers CloudShell."
+    severity: medium
+  - id: "2.21"
+    title: Resource policies do not allow any principal
+    service: iam
+    status: partial
+    check_ids: [aws-s3-public-read, aws-s3-public-write, aws-s3-public-bucket, aws-lambda-public-access, aws-kms-key-policy-public, aws-sqs-queue-policy-public, aws-sns-topic-policy-public, aws-ecr-repository-policy-public, aws-secretsmanager-resource-policy-public, aws-iam-public-trust-policy, aws-eventbridge-bus-policy-public, aws-efs-policy-public, aws-backup-vault-policy-public, aws-dynamodb-table-policy-public]
+    reason: "A policy that allows everyone (Principal \"*\", or an Allow with NotPrincipal) a sensitive action under no condition that restricts the caller, not taken back by an unconditional Deny that reaches everyone. A condition only on transport or client shape (aws:SecureTransport, aws:UserAgent) does not restrict the caller. Graded by the shared resource-policy evaluator for Lambda, KMS, SQS, SNS, ECR, Secrets Manager, EventBridge event buses, EFS file systems, Backup vaults and DynamoDB tables; S3 buckets by AWS's GetBucketPolicyStatus (aws-s3-public-read and aws-s3-public-write when the public part names its data actions, otherwise aws-s3-public-bucket, which also reports a public ACL and an incomplete Block Public Access, neither of them a resource policy); role trust policies by the trust evaluator (an Allow to Principal \"*\" with no Condition and no Deny confining it). OpenSearch access policies are read and graded the same way, but reported only for a public-endpoint domain (aws-opensearch-domain-public), so an open policy on a VPC domain is not. S3 Access Point policies are read only as AWS's GetAccessPointPolicyStatus verdict, which tiers FSBP S3.19. Not yet read: Glacier vault and API Gateway REST API policies."
+    severity: high
+  # ── 3 Storage ─────────────────────────────────────────────────────────────
+  - id: "3.1.1"
+    title: S3 bucket policies deny non-TLS requests
+    service: s3
+    status: covered
+    check_ids: [aws-s3-no-tls-enforcement]
+    reason: "s3:GetBucketPolicy: a Deny for Principal \"*\" on s3:* (or *) over the bucket and its objects, conditioned only on Bool/BoolIfExists aws:SecureTransport=false; no policy (NoSuchBucketPolicy) fires."
+    severity: medium
+  - id: "3.1.2"
+    title: S3 buckets have MFA Delete enabled
+    service: s3
+    status: covered
+    check_ids: [aws-s3-mfa-delete-disabled, aws-s3-no-versioning]
+    reason: "The two checks together fire exactly on the recommendation's failures: versioning Enabled with MFA Delete Disabled is aws-s3-mfa-delete-disabled; versioning never enabled or Suspended (MFA Delete needs versioning Enabled) is aws-s3-no-versioning. An unread GetBucketVersioning leaves both silent."
+    severity: low
+  - id: "3.1.3"
+    title: Discover and classify sensitive S3 data
+    service: macie
+    status: covered
+    check_ids: [aws-macie-disabled]
+    reason: "The automatable part: Macie enabled per region (macie2:GetMacieSession; NOT_ENABLED only from Macie's own \"not enabled\" answer, PAUSED fails). Reviewing what Macie classified is the human half; automated discovery itself is FSBP Macie.2 (aws-macie-automated-discovery-off)."
+    severity: medium
+  - id: "3.1.4"
+    title: S3 Block Public Access is enabled
+    service: s3
+    status: covered
+    check_ids: [aws-s3-public-bucket, aws-s3-public-read, aws-s3-public-write, aws-s3-account-bpa-disabled]
+    reason: "A bucket fails unless all four flags are effectively on (bucket and account combined, `bpa_all_enabled`): aws-s3-public-bucket reports it, and steps aside for aws-s3-public-read / aws-s3-public-write when the bucket is actually publicly readable or writable (both imply an incomplete block). The account-level block has its own finding on aws_account_settings."
+    severity: high
+  - id: "3.2.1"
+    title: RDS instances are encrypted at rest
+    service: rds
+    status: covered
+    check_ids: [aws-rds-not-encrypted, aws-rds-cluster-not-encrypted]
+    reason: "Standalone instances on the instance; Aurora and Multi-AZ DB cluster members take StorageEncrypted from their cluster and are reported once, on the cluster."
+    severity: high
+  - id: "3.2.2"
+    title: RDS auto minor version upgrade enabled
+    service: rds
+    status: covered
+    check_ids: [aws-rds-auto-minor-upgrade-disabled]
+    severity: medium
+  - id: "3.2.3"
+    title: No public network access to RDS instances
+    service: rds
+    status: covered
+    check_ids: [aws-rds-publicly-accessible, aws-rds-public-subnet-igw]
+    reason: "The two are mutually exclusive by design; together they fire on every PubliclyAccessible instance."
+    severity: high
+  - id: "3.2.4"
+    title: RDS uses Multi-AZ deployments
+    service: rds
+    status: covered
+    check_ids: [aws-rds-no-multi-az, aws-rds-cluster-single-az]
+    reason: "Standalone instances by MultiAZ; Aurora and Multi-AZ DB clusters by DBCluster.MultiAZ (instances in more than one AZ), their members excluded from the instance check."
+    severity: medium
+  - id: "3.3.1"
+    title: EFS file systems are encrypted
+    service: efs
+    status: covered
+    check_ids: [aws-efs-not-encrypted]
+    reason: "elasticfilesystem:DescribeFileSystems Encrypted = false; a nil Encrypted is unknown."
+    severity: medium
+  # ── 4 Logging ─────────────────────────────────────────────────────────────
+  - id: "4.1"
+    title: CloudTrail enabled across all regions
+    service: cloudtrail
+    status: covered
+    check_ids: [aws-cloudtrail-no-multiregion-trail, aws-cloudtrail-not-logging]
+    reason: "Account-level on aws_account_settings: fires when no multi-region trail is logging (including an account with no trail), or when none that is logging records both read and write management events (cloudtrail:GetEventSelectors, basic or advanced selectors; graded Low); excluded management event sources count as incomplete. Unread status or selectors leave it unknown."
+    severity: high
+  - id: "4.2"
+    title: Trail log digests validate file integrity
+    service: cloudtrail
+    status: covered
+    check_ids: [aws-cloudtrail-no-log-validation]
+    severity: medium
+  - id: "4.3"
+    title: Config recorder active in every region
+    service: config
+    status: covered
+    check_ids: [aws-config-recorder-off]
+    reason: "Per region on aws_region_settings: no customer configuration recorder, recording stopped, allSupported false, no delivery channel, or last status Failure (config:DescribeConfigurationRecorders/RecorderStatus/DeliveryChannels). Service-linked recorders other services own are ignored; includeGlobalResourceTypes is not required per region (AWS records IAM in one region)."
+    severity: medium
+  - id: "4.4"
+    title: CloudTrail bucket has access logging
+    service: cloudtrail
+    status: covered
+    check_ids: [aws-cloudtrail-bucket-no-access-logging]
+    severity: medium
+  - id: "4.5"
+    title: CloudTrail logs encrypted with KMS keys
+    service: cloudtrail
+    status: covered
+    check_ids: [aws-cloudtrail-no-kms-encryption]
+    reason: "KmsKeyId from DescribeTrails stored as `kms_key_id`; empty fires."
+    severity: medium
+  - id: "4.6"
+    title: Customer KMS keys have rotation enabled
+    service: kms
+    status: covered
+    check_ids: [aws-kms-rotation-disabled]
+    reason: "Customer-managed keys in state Enabled that can rotate automatically: SYMMETRIC_DEFAULT key spec, origin AWS_KMS, no custom key store, and not a multi-Region replica (asymmetric, HMAC, imported-material, custom-key-store and replica keys are not graded; a replica follows its primary; an unread key spec, origin or multi-Region role stays unevaluated). Pending deletion is aws-kms-key-pending-deletion."
+    severity: medium
+  - id: "4.7"
+    title: VPC flow logs enabled for every VPC
+    service: vpc
+    status: covered
+    check_ids: [aws-vpc-flow-logs-disabled]
+    reason: "ec2:DescribeFlowLogs: an ACTIVE VPC-level flow log with traffic type REJECT or ALL, stamped flow_logs_enabled on each vpc. Default VPCs with no network interfaces (ec2:DescribeNetworkInterfaces) are skipped as unused; an unread interface list keeps them graded."
+    severity: medium
+  - id: "4.8"
+    title: S3 object-level write events logged
+    service: cloudtrail
+    status: covered
+    check_ids: [aws-cloudtrail-no-s3-write-events, aws-cloudtrail-no-multiregion-trail]
+    reason: "A logging multi-region trail whose basic selectors (AWS::S3::Object, all-buckets ARN, WriteOnly/All) or advanced selectors (Data, AWS::S3::Object, readOnly false/absent, no resources.ARN filter beyond a StartsWith on the bare S3 prefix) record S3 writes for every bucket; selectors excluding buckets count as partial. With no multi-region trail logging at all the check steps aside for aws-cloudtrail-no-multiregion-trail."
+    severity: low
+  - id: "4.9"
+    title: S3 object-level read events logged
+    service: cloudtrail
+    status: covered
+    check_ids: [aws-cloudtrail-no-s3-read-events, aws-cloudtrail-no-multiregion-trail]
+    reason: "As 4.8 for reads (ReadOnly/All, readOnly true/absent)."
+    severity: low
+  - id: "4.10"
+    title: Web front-end services have access logging
+    service: logging
+    status: covered
+    check_ids: [aws-alb-access-logs-disabled, aws-apigateway-access-logging-off, aws-cloudfront-logging-disabled]
+    reason: "ALB and Classic Load Balancer access logs (access_logs_s3_enabled), API Gateway stage access logs for REST, HTTP and WebSocket stages (access_log_destination on api_gateway_stage, one finding per stage) and CloudFront distribution logging (legacy or standard-logging v2, logging_enabled)."
+    severity: medium
+  # ── 5 Monitoring ──────────────────────────────────────────────────────────
+  - id: "5.1"
+    title: Alert on unauthorized API calls
+    service: cloudwatch
+    status: covered
+    check_ids: [aws-cloudwatch-alarm-unauthorized-api-calls, aws-cloudwatch-no-cis-monitoring-trail, aws-cloudtrail-no-multiregion-trail]
+    reason: "One evaluator for 5.1-5.15 (cloudwatch_alarms.go). Metric-filter patterns on the log group of a multi-region, logging trail recording all management events (logs:DescribeMetricFilters) are parsed to AND-groups; each CIS event term needs a group holding that exact term and only terms CIS puts beside it (eventSource, the benchmark's exclusions), so event terms must be OR'd and no extra narrowing passes. An alarm on the filter's metric (matched by name and namespace from cloudwatch:DescribeAlarms) with actions enabled must notify an SNS topic with a confirmed subscription (sns:ListSubscriptionsByTopic). With no qualifying trail log group the fifteen step aside for aws-cloudwatch-no-cis-monitoring-trail, which steps aside for aws-cloudtrail-no-multiregion-trail when the trail itself is missing, stopped or missing management events. A log group in another account (organization trail seen from a member) is unknown."
+    severity: medium
+  - id: "5.2"
+    title: Alert on console sign-in without MFA
+    service: cloudwatch
+    status: covered
+    check_ids: [aws-cloudwatch-alarm-console-login-no-mfa, aws-cloudwatch-no-cis-monitoring-trail, aws-cloudtrail-no-multiregion-trail]
+    reason: "See 5.1; event term ConsoleLogin, beside MFAUsed != Yes, userIdentity.type = IAMUser, ConsoleLogin = Success."
+    severity: medium
+  - id: "5.3"
+    title: Alert on root account usage
+    service: cloudwatch
+    status: covered
+    check_ids: [aws-cloudwatch-alarm-root-usage, aws-cloudwatch-no-cis-monitoring-trail, aws-cloudtrail-no-multiregion-trail]
+    reason: "See 5.1; userIdentity.type = Root, beside invokedBy NOT EXISTS and eventType != AwsServiceEvent."
+    severity: medium
+  - id: "5.4"
+    title: Alert on IAM policy changes
+    service: cloudwatch
+    status: covered
+    check_ids: [aws-cloudwatch-alarm-iam-policy-changes, aws-cloudwatch-no-cis-monitoring-trail, aws-cloudtrail-no-multiregion-trail]
+    reason: "See 5.1; all sixteen IAM policy event names."
+    severity: medium
+  - id: "5.5"
+    title: Alert on CloudTrail configuration changes
+    service: cloudwatch
+    status: covered
+    check_ids: [aws-cloudwatch-alarm-cloudtrail-changes, aws-cloudwatch-no-cis-monitoring-trail, aws-cloudtrail-no-multiregion-trail]
+    reason: "See 5.1; Create/Update/DeleteTrail, Start/StopLogging."
+    severity: medium
+  - id: "5.6"
+    title: Alert on console authentication failures
+    service: cloudwatch
+    status: covered
+    check_ids: [aws-cloudwatch-alarm-console-auth-failures, aws-cloudwatch-no-cis-monitoring-trail, aws-cloudtrail-no-multiregion-trail]
+    reason: "See 5.1; ConsoleLogin beside errorMessage \"Failed authentication\"."
+    severity: low
+  - id: "5.7"
+    title: Alert on disabling or deleting customer KMS keys
+    service: cloudwatch
+    status: covered
+    check_ids: [aws-cloudwatch-alarm-kms-disable-or-delete, aws-cloudwatch-no-cis-monitoring-trail, aws-cloudtrail-no-multiregion-trail]
+    reason: "See 5.1; DisableKey and ScheduleKeyDeletion beside eventSource kms.amazonaws.com."
+    severity: low
+  - id: "5.8"
+    title: Alert on S3 bucket policy changes
+    service: cloudwatch
+    status: covered
+    check_ids: [aws-cloudwatch-alarm-s3-bucket-policy-changes, aws-cloudwatch-no-cis-monitoring-trail, aws-cloudtrail-no-multiregion-trail]
+    reason: "See 5.1; the nine bucket ACL/policy/CORS/lifecycle/replication events beside eventSource s3.amazonaws.com."
+    severity: low
+  - id: "5.9"
+    title: Alert on AWS Config changes
+    service: cloudwatch
+    status: covered
+    check_ids: [aws-cloudwatch-alarm-config-changes, aws-cloudwatch-no-cis-monitoring-trail, aws-cloudtrail-no-multiregion-trail]
+    reason: "See 5.1; the four recorder and delivery-channel events beside eventSource config.amazonaws.com."
+    severity: low
+  - id: "5.10"
+    title: Alert on security group changes
+    service: cloudwatch
+    status: covered
+    check_ids: [aws-cloudwatch-alarm-security-group-changes, aws-cloudwatch-no-cis-monitoring-trail, aws-cloudtrail-no-multiregion-trail]
+    reason: "See 5.1; the six security group events."
+    severity: low
+  - id: "5.11"
+    title: Alert on network ACL changes
+    service: cloudwatch
+    status: covered
+    check_ids: [aws-cloudwatch-alarm-nacl-changes, aws-cloudwatch-no-cis-monitoring-trail, aws-cloudtrail-no-multiregion-trail]
+    reason: "See 5.1; the six network ACL events."
+    severity: low
+  - id: "5.12"
+    title: Alert on network gateway changes
+    service: cloudwatch
+    status: covered
+    check_ids: [aws-cloudwatch-alarm-network-gateway-changes, aws-cloudwatch-no-cis-monitoring-trail, aws-cloudtrail-no-multiregion-trail]
+    reason: "See 5.1; customer and internet gateway events."
+    severity: low
+  - id: "5.13"
+    title: Alert on route table changes
+    service: cloudwatch
+    status: covered
+    check_ids: [aws-cloudwatch-alarm-route-table-changes, aws-cloudwatch-no-cis-monitoring-trail, aws-cloudtrail-no-multiregion-trail]
+    reason: "See 5.1; the seven route table events (CreateRouteTable does not stand in for CreateRoute)."
+    severity: low
+  - id: "5.14"
+    title: Alert on VPC changes
+    service: cloudwatch
+    status: covered
+    check_ids: [aws-cloudwatch-alarm-vpc-changes, aws-cloudwatch-no-cis-monitoring-trail, aws-cloudtrail-no-multiregion-trail]
+    reason: "See 5.1; VPC, peering and ClassicLink events."
+    severity: low
+  - id: "5.15"
+    title: Alert on AWS Organizations changes
+    service: cloudwatch
+    status: covered
+    check_ids: [aws-cloudwatch-alarm-organizations-changes, aws-cloudwatch-no-cis-monitoring-trail, aws-cloudtrail-no-multiregion-trail]
+    reason: "See 5.1; the eighteen Organizations events beside eventSource organizations.amazonaws.com."
+    severity: low
+  - id: "5.16"
+    title: Security Hub turned on in every region
+    service: securityhub
+    status: covered
+    check_ids: [aws-securityhub-disabled]
+    reason: "securityhub:DescribeHub per region on aws_region_settings; InvalidAccessException (not subscribed) is disabled, any other error unknown."
+    severity: medium
+  # ── 6 Networking ──────────────────────────────────────────────────────────
+  - id: "6.1.1"
+    title: EBS default encryption on in every region
+    service: ec2
+    status: covered
+    check_ids: [aws-ebs-default-encryption-disabled, aws-ebs-unencrypted]
+    reason: "ec2:GetEbsEncryptionByDefault per region on the aws_region_settings asset; existing unencrypted volumes are aws-ebs-unencrypted."
+    severity: medium
+  - id: "6.1.2"
+    title: Restrict CIFS port 445 to trusted networks
+    service: ec2
+    status: covered
+    check_ids: [aws-sg-open-high-risk-ports, aws-sg-open-all-ports]
+    reason: "445 and 139 are in the shared high-risk port list; world means 0.0.0.0/0 or ::/0."
+    severity: high
+  - id: "6.2"
+    title: NACLs block internet ingress to admin ports
+    service: vpc
+    status: covered
+    check_ids: [aws-nacl-world-open-admin-port]
+    reason: "ec2:DescribeNetworkAcls -> network_acl: ingress entries evaluated in rule-number order per internet family (0.0.0.0/0, ::/0); the first entry at which the allowed or denied ranges covering TCP 22/3389 (and WinRM) add up to the whole family decides, so a lower-numbered world deny shadows the allow, split ranges (0.0.0.0/1 + 128.0.0.0/1) count as the world, and all-traffic (-1) entries count. Default ACLs are included at Info (stock allow-all); Medium when a filtered subnet is public or its routing is unread, Low only when all are known private."
+    severity: medium
+  - id: "6.3"
+    title: Security groups block IPv4 internet to admin ports
+    service: ec2
+    status: covered
+    check_ids: [aws-security-group-world-open-admin-port, aws-sg-open-all-ports]
+    reason: "Admin-port check covers 22/3389 (plus WinRM); all-port rules go to the sibling check. Both read IPv4 and IPv6 CIDRs."
+    severity: high
+  - id: "6.4"
+    title: Security groups block IPv6 internet to admin ports
+    service: ec2
+    status: covered
+    check_ids: [aws-security-group-world-open-admin-port, aws-sg-open-all-ports]
+    reason: "Collector folds Ipv6Ranges into `cidrs`; ruleWorldOpen matches ::/0."
+    severity: high
+  - id: "6.5"
+    title: Default security group restricts all traffic
+    service: ec2
+    status: covered
+    check_ids: [aws-sg-default-allows-traffic]
+    reason: "Rule counts (`ingress_rules`/`egress_rules`) are collected on every group so zero rules is an observation; the group is identified by its name `default`."
+    severity: medium
+  - id: "6.6"
+    title: VPC peering routes follow least access
+    service: vpc
+    status: manual
+    reason: "Whether peering routes are narrow enough is a design judgement; peering connections are collected but route-table CIDR breadth to a peer needs human review."
+    severity: low
+  - id: "6.7"
+    title: EC2 metadata service requires IMDSv2
+    service: ec2
+    status: covered
+    check_ids: [aws-ec2-imdsv2-not-required, aws-eks-node-imdsv1-registry-write]
+    reason: "Mutually exclusive pair on http_tokens=optional; an instance whose metadata endpoint is disabled (HttpEndpoint=disabled) is exempt."
+    severity: high
+  - id: "6.8"
+    title: Use VPC endpoints for AWS service access
+    service: vpc
+    status: manual
+    reason: "Which services need endpoints is a design decision; ec2:DescribeVpcEndpoints could inventory them but cannot judge sufficiency."
+    severity: low

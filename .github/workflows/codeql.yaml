@@ -1,0 +1,82 @@
+name: CodeQL
+
+# Static analysis security scanning of this project's own code — a Go static
+# analyzer is present in .golangci.yml, but CodeQL catches a different class of
+# issue (taint-tracked injection/SSRF-shaped bugs) that a style linter doesn't.
+# Known-CVE dependency scanning (govulncheck) runs in ci.yaml's go test job, on
+# push and pull request only: nothing rescans unchanged dependencies on a
+# schedule. For a security
+# product, shipping with no visible self-scanning is the kind of gap a
+# security-conscious adopter checks for first.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC — runs current CodeQL queries against unchanged code
+
+# A newer push to a pull request supersedes its older run. A run on main is never
+# cancelled: a cancelled run is what turns the README badge red.
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    # Code scanning on a private repo requires GitHub Advanced Security; without
+    # it the job runs ~30 min and then fails at upload. It is free once public.
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read # the analyze step reads the workflow run
+      contents: read
+      security-events: write # upload SARIF results
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: go
+            build-mode: manual
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      # The Go build links liblbug, the pinned prebuilt LadybugDB release.
+      - name: Fetch liblbug
+        if: matrix.language == 'go'
+        run: scripts/fetch-ladybug.sh --install-dir "$RUNNER_TEMP/ladybug" linux-amd64
+
+      - name: Install liblbug
+        if: matrix.language == 'go'
+        run: |
+          sudo cp -P "$RUNNER_TEMP"/ladybug/liblbug.so* /usr/local/lib/ && sudo ldconfig
+          echo 'CGO_LDFLAGS=-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib' >> "$GITHUB_ENV"
+
+      # Autobuild compiles every package at full parallelism under the CodeQL tracer, and
+      # the AWS SDK and Nuclei packages are large enough to starve a hosted runner
+      # ("lost communication with the server"). Build with limited parallelism and a
+      # memory limit instead.
+      - name: Build
+        if: matrix.language == 'go'
+        env:
+          GOFLAGS: -p=2
+          GOMEMLIMIT: 4GiB
+        run: go build ./...
+
+      - uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          category: "/language:${{ matrix.language }}"

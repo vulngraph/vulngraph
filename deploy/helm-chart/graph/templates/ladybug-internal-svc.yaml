@@ -1,0 +1,20 @@
+{{- if .Values.ladybug.enabled }}
+# Internal ClusterIP service exposing the worker's Ladybug RPC on :8090.
+# Reachable only within the cluster; serve pod queries it via LADYBUG_RPC_URL.
+apiVersion: v1
+kind: Service
+metadata:
+  name: graph-ladybug-internal
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: graph
+    app.kubernetes.io/component: worker
+  ports:
+    - name: rpc
+      port: 8090
+      targetPort: 8090
+      protocol: TCP
+{{- end }}

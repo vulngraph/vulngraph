@@ -1,0 +1,207 @@
+# Savedquery domain (internal/app/savedquery). Named, optionally-scheduled Cypher
+# detections over the Ladybug graph; admin-only writes. Queries must be read-only
+# Cypher — write operations are rejected at create/update.
+components:
+  pathItems:
+    savedQueries:
+      get:
+        operationId: listSavedQueries
+        tags: [saved-queries]
+        summary: List saved queries
+        responses:
+          '200':
+            description: Saved queries.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/SavedQueryList' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+      post:
+        operationId: createSavedQuery
+        tags: [saved-queries]
+        summary: Create a saved query (admin only)
+        description: '`created_by` is stamped from the authenticated user, not the body.'
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SavedQueryRequest' }
+        responses:
+          '201':
+            description: Saved query created.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/SavedQuery' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+
+    savedQuery:
+      put:
+        operationId: updateSavedQuery
+        tags: [saved-queries]
+        summary: Update a saved query (admin only)
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SavedQueryRequest' }
+        responses:
+          '200':
+            description: Saved query updated.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/SavedQuery' }
+          '400': { $ref: '../openapi.yaml#/components/responses/BadRequest' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+      delete:
+        operationId: deleteSavedQuery
+        tags: [saved-queries]
+        summary: Delete a saved query (admin only)
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '204': { description: Saved query deleted. }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    runSavedQuery:
+      post:
+        operationId: runSavedQuery
+        tags: [saved-queries]
+        summary: Execute a saved query now (admin only)
+        description: >-
+          Manual trigger; records a run in the history. A manual run never alerts and
+          never moves the change-detection baseline (last_run_at / last_result_count),
+          which only a complete scheduled run advances. A result truncated at the row
+          budget is returned with the truncation in `error`, and so is a result the
+          graph engine flagged multi-hop-may-be-incomplete (a node table above one
+          engine node group, ladybug#1341).
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '200':
+            description: Run result counts.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/RunResult' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+          '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+          '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+
+    listSavedQueryRuns:
+      get:
+        operationId: listSavedQueryRuns
+        tags: [saved-queries]
+        summary: Run history for a saved query (most recent 50)
+        parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
+        responses:
+          '200':
+            description: Runs, newest first.
+            content:
+              application/json:
+                schema: { $ref: '#/components/schemas/RunList' }
+          '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+
+  schemas:
+    SavedQuery:
+      type: object
+      required: [id, name, description, cypher, schedule, alert_channel_ids, alert_on_change, alert_severity, enabled, last_result_count]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        cypher: { type: string }
+        created_by: { type: string, description: Email of the creating user; absent for system-seeded queries. }
+        schedule: { type: string, description: 'Cron expression; empty = manual only.' }
+        schedule_error:
+          type: string
+          description: >-
+            Set when the stored schedule is not a valid 5-field cron expression
+            (saved before schedules were validated): the query never runs on a
+            schedule until it is fixed. Absent when the schedule is valid or empty.
+        alert_channel_ids:
+          type: array
+          items: { type: string }
+          description: Notify channel IDs to alert when the result set changes. Empty = every channel routing query_match. Each channel's own severity and min_score rules still apply.
+        alert_on_change: { type: boolean }
+        alert_severity: { $ref: '#/components/schemas/SavedQueryAlertSeverity' }
+        enabled: { type: boolean }
+        last_run_at: { type: string, format: date-time, description: 'When the change-detection baseline last advanced (a complete scheduled run). Not the latest run: see last_attempt_at.' }
+        last_result_count: { type: integer, description: Node count of the baseline run. }
+        last_attempt_at:
+          type: string
+          format: date-time
+          description: >-
+            When the query last ran, manual or scheduled, whatever the outcome.
+            Absent when it has never run.
+        last_attempt_status:
+          type: string
+          enum: [ok, truncated, incomplete, failed]
+          description: >-
+            Outcome of the latest run: ok, truncated (hit the row budget; its
+            counts are partial and did not move the baseline), incomplete (the
+            graph engine has a node table above one engine node group, so
+            multi-hop and variable-length matches may have missed relationships;
+            the run still counts and may move the baseline) or failed (the
+            query errored, or its change alert was not delivered or matched no
+            channel). Absent when it has never run.
+        last_attempt_error: { type: string, description: The latest run's error; absent when it succeeded or never ran. }
+        last_attempt_trigger: { type: string, enum: [manual, schedule], description: What started the latest run; absent when it has never run. }
+    SavedQueryRequest:
+      type: object
+      required: [name, cypher]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        cypher: { type: string, description: Read-only Cypher; queries with write operations are rejected with a 400. }
+        schedule:
+          type: string
+          description: >-
+            5-field cron expression (minute hour day-of-month month day-of-week;
+            each field a star, N, A-B, an optional /step, or a comma list of those); empty = manual
+            only. Any other value is rejected with a 400.
+        alert_channel_ids:
+          type: array
+          items: { type: string }
+        alert_on_change: { type: boolean }
+        alert_severity:
+          type: string
+          enum: ['', critical, high, medium, low, info]
+          description: Omitted or empty = high. Any other value is rejected with a 400.
+        enabled: { type: boolean }
+    SavedQueryAlertSeverity:
+      type: string
+      enum: [critical, high, medium, low, info]
+      description: Severity of the change alert; its notify score follows it, so channel severity and min_score filters apply.
+    SavedQueryList:
+      type: object
+      required: [queries]
+      properties:
+        queries:
+          type: array
+          items: { $ref: '#/components/schemas/SavedQuery' }
+    RunResult:
+      type: object
+      required: [node_count, edge_count, error]
+      properties:
+        node_count: { type: integer }
+        edge_count: { type: integer }
+        error: { type: string, description: Empty when the run succeeded. }
+    Run:
+      type: object
+      required: [ran_at, node_count, edge_count, trigger]
+      properties:
+        ran_at: { type: string, format: date-time }
+        node_count: { type: integer }
+        edge_count: { type: integer }
+        trigger: { type: string, enum: [manual, schedule] }
+        error: { type: string }
+    RunList:
+      type: object
+      required: [runs]
+      properties:
+        runs:
+          type: array
+          items: { $ref: '#/components/schemas/Run' }

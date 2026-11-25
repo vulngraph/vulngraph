@@ -1,0 +1,66 @@
+{{/* Chart-set env for the scanner container, merged with extraEnv by graph.env. */}}
+{{- define "graph.chartEnv.scanner" -}}
+{{ include "graph.podEnv" . }}
+{{ include "graph.datastoreEnv" (dict "scanner" true "Values" .Values) }}
+{{- end -}}
+{{- if .Values.scanner.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: graph-scanner
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.scanner.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "graph.selectorLabels" (dict "component" "scanner") | nindent 6 }}
+  template:
+    metadata:
+      {{- if .Values.metrics.enabled }}
+      annotations:
+        {{- include "graph.metricsAnnotations" . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "graph.labels" . | nindent 8 }}
+        {{- include "graph.componentLabels" (dict "component" "scanner") | nindent 8 }}
+        {{- include "graph.metricsLabels" (dict "component" "scanner" "Values" .Values) | nindent 8 }}
+    spec:
+      # Its own ServiceAccount, no token: see scanner.serviceAccountName.
+      serviceAccountName: {{ .Values.scanner.serviceAccountName }}
+      automountServiceAccountToken: false
+      {{- include "graph.podSecurityContext" (dict "Values" .Values) | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 120
+      volumes:
+        # nuclei template validation/generation writes os.CreateTemp files, so
+        # the scanner needs a writable temp path under a read-only root.
+        {{- include "graph.tmpVolume" . | nindent 8 }}
+        {{- include "graph.dbCAVolume" . | nindent 8 }}
+      containers:
+        - name: scanner
+          image: {{ include "graph.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["scanner"]
+          env:
+            {{- include "graph.env" (dict "component" "scanner" "Values" .Values "chart" (include "graph.chartEnv.scanner" .)) | nindent 12 }}
+          {{- include "graph.envFrom" (dict "component" "scanner" "Values" .Values) | nindent 10 }}
+          volumeMounts:
+            {{- include "graph.tmpVolumeMount" . | nindent 12 }}
+            {{- include "graph.dbCAVolumeMount" . | nindent 12 }}
+          {{- if .Values.metrics.enabled }}
+          # The scan queue's job metrics exist only here — the scanner pod is where
+          # the scan worker runs. Without this port the "did nuclei run at all?"
+          # question has no series behind it in the pod that would know.
+          ports:
+            {{- include "graph.metricsPort" . | nindent 12 }}
+          {{- end }}
+          {{- include "graph.containerSecurityContext" . | nindent 10 }}
+          resources:
+            {{- toYaml .Values.scanner.resources | nindent 12 }}
+{{- end }}

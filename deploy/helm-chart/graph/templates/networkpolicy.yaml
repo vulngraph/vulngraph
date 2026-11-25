@@ -1,0 +1,173 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+{{- $scanner := .Values.scanner.enabled }}
+# Who may open a connection to each graph pod. Ingress only: egress is
+# untouched, because the collectors must reach the AWS, GCP, GitHub and Okta
+# APIs, and constraining that is a separate exercise with a much larger blast
+# radius. On a CNI that does not enforce NetworkPolicy these objects do nothing.
+#
+# The worker, scanner and datastore pods probe by exec, so they need no rule
+# for kubelet probes. serve probes over HTTP on its API port, which kubelet
+# reaches from the node address: no podSelector or namespaceSelector matches
+# that, so serve's port accepts every source until networkPolicy.ingressNamespace
+# narrows it to the ingress controller plus networkPolicy.nodeCIDRs. A load
+# balancer that targets pod IPs directly sends its traffic and health checks
+# from its own addresses, which belong in nodeCIDRs too.
+#
+# Policies are additive: to let something else in (a backup job reaching
+# Postgres, a debug pod), add a NetworkPolicy of your own that admits it.
+{{- if and $np.ingressNamespace (not $np.nodeCIDRs) }}
+{{- fail "networkPolicy.ingressNamespace needs networkPolicy.nodeCIDRs: serve's readiness and liveness probes come from the node address, which only an ipBlock matches, so limiting serve's port to the ingress controller without the node ranges blocks its probes" }}
+{{- end }}
+{{- if and $np.nodeCIDRs (not $np.ingressNamespace) }}
+{{- fail "networkPolicy.nodeCIDRs restricts nothing without networkPolicy.ingressNamespace: serve's port accepts every source until ingressNamespace is set, and the CIDRs are only added to that allow list" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: graph-serve
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "graph.selectorLabels" (dict "component" "serve") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # serve's API port (service.port, the pod port ADDR listens on).
+    #
+    # With ingressNamespace set (required by config.oauth2Proxy): the ingress
+    # controller, the one path on which oauth2-proxy ran first
+    # (nginx.ingress.kubernetes.io/auth-url), and the node CIDRs for kubelet.
+    # Anything on the node network (hostNetwork pods, NodePort traffic) matches
+    # those CIDRs too and can still reach serve: that is why the oauth2-proxy
+    # path should verify the ID token rather than rely on the shared secret.
+    # An empty nodeCIDRs list fails the render above: `from:` with no peers
+    # means "allow from anywhere".
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.service.port }}
+      {{- if $np.ingressNamespace }}
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.ingressNamespace }}
+        {{- range $np.nodeCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      {{- end }}
+    {{- with include "graph.networkPolicyMetricsIngress" $ }}
+    {{- . | trim | nindent 4 }}
+    {{- end }}
+{{- if .Values.worker.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: graph-worker
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "graph.selectorLabels" (dict "component" "worker") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  {{- if or .Values.ladybug.enabled .Values.metrics.enabled }}
+  ingress:
+    {{- if .Values.ladybug.enabled }}
+    # The graph RPC (graph-ladybug-internal:8090): serve's Cypher and Explore
+    # reads, and the scanner's scan-profile target queries. Its shared secret
+    # is by default derived (one-way hash, see secret.yaml) from
+    # GRAPH_SECRET_KEY, so it is only as private as that key; no other pod
+    # reaches the port.
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "graph.selectorLabels" (dict "component" "serve") | nindent 14 }}
+        {{- if $scanner }}
+        - podSelector:
+            matchLabels:
+              {{- include "graph.selectorLabels" (dict "component" "scanner") | nindent 14 }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 8090
+    {{- end }}
+    {{- with include "graph.networkPolicyMetricsIngress" $ }}
+    {{- . | trim | nindent 4 }}
+    {{- end }}
+  {{- else }}
+  ingress: []
+  {{- end }}
+{{- end }}
+{{- if $scanner }}
+---
+# The scanner listens on nothing but the metrics port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: graph-scanner
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "graph.selectorLabels" (dict "component" "scanner") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  {{- if .Values.metrics.enabled }}
+  ingress:
+    {{- with include "graph.networkPolicyMetricsIngress" $ }}
+    {{- . | trim | nindent 4 }}
+    {{- end }}
+  {{- else }}
+  ingress: []
+  {{- end }}
+{{- end }}
+{{- range $store := list "postgres" "clickhouse" }}
+{{- if (index $.Values $store).enabled }}
+---
+# The bundled {{ $store }} accepts its client port from the graph pods that hold
+# its credentials (serve with its migrate init container, the worker, the
+# scanner) and nothing else{{ if eq $store "clickhouse" }}: not even its HTTP SQL interface (8123), which
+# nothing but its own exec probes uses{{ end }}.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: graph-{{ $store }}
+  labels:
+    {{- include "graph.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "graph.selectorLabels" (dict "component" $store) | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [graph]
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [serve, worker{{ if $scanner }}, scanner{{ end }}]
+      ports:
+        {{- if eq $store "postgres" }}
+        - protocol: TCP
+          port: 5432
+        {{- else }}
+        - protocol: TCP
+          port: 9000
+        {{- if $.Values.clickhouse.tlsSecret }}
+        - protocol: TCP
+          port: 9440
+        {{- end }}
+        {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

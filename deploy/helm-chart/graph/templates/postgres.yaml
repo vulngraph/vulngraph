@@ -1,0 +1,141 @@
+{{- if .Values.postgres.enabled }}
+# Creates the app role graph on first start (files/postgres-init.sql;
+# deploy/docker-compose mounts the same file).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: graph-postgres-init
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+data:
+  10-graph-role.sql: |
+    {{- .Files.Get "files/postgres-init.sql" | trim | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: graph-postgres
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+spec:
+  clusterIP: None # headless — stable DNS for the StatefulSet pod
+  selector:
+    {{- include "graph.selectorLabels" (dict "component" "postgres") | nindent 4 }}
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: graph-postgres
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+spec:
+  serviceName: graph-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "graph.selectorLabels" (dict "component" "postgres") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "graph.labels" . | nindent 8 }}
+        {{- include "graph.componentLabels" (dict "component" "postgres") | nindent 8 }}
+        {{- include "graph.offSpotLabels" . | nindent 8 }}
+    spec:
+      {{- include "graph.offSpotAffinity" . | nindent 6 }}
+      {{- with .Values.postgres.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          {{- if .Values.postgres.tlsSecret }}
+          # The image's entrypoint passes leading flags to postgres.
+          args:
+            - -c
+            - ssl=on
+            - -c
+            - ssl_cert_file=/etc/postgresql/tls/tls.crt
+            - -c
+            - ssl_key_file=/etc/postgresql/tls/tls.key
+          {{- end }}
+          {{- with .Values.postgres.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - containerPort: 5432
+          # The superuser, postgres, is the image's bootstrap account: serve,
+          # the worker and the scanner never get its password. They connect as
+          # graph and graph_scanner, which graph-postgres-init creates with
+          # GRAPH_DB_PASSWORD and GRAPH_SCANNER_DB_PASSWORD on the first start
+          # of an empty volume.
+          env:
+            - name: POSTGRES_DB
+              value: graph
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: postgres-superuser-password } }
+            - name: GRAPH_DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: postgres-password } }
+            - name: GRAPH_SCANNER_DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: postgres-scanner-password } }
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+            {{- if .Values.postgres.tlsSecret }}
+            - name: tls
+              mountPath: /etc/postgresql/tls
+              readOnly: true
+            {{- end }}
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "graph", "-d", "graph"] }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # Generous: a restart after an unclean stop replays WAL before it
+          # accepts connections, and killing it mid-recovery only restarts that.
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "graph", "-d", "graph"] }
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
+      volumes:
+        - name: init
+          configMap:
+            name: graph-postgres-init
+        {{- with .Values.postgres.tlsSecret }}
+        # Root-owned, group fsGroup: Postgres accepts a key that root owns with
+        # mode 0640 or less.
+        - name: tls
+          secret:
+            secretName: {{ . }}
+            defaultMode: 0640
+        {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.postgres.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgres.storage }}
+{{- end }}

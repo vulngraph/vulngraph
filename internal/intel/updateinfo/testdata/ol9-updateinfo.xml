@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<updates>
+<update status="final" type="security" version="1" from="el-errata@oss.oracle.com">
+    <id>ELSA-2024-9333</id>
+    <title> openssl and openssl-fips-provider security update</title>
+    <severity>Low</severity>
+    <release>Oracle Linux 9</release>
+    <issued date="2024-11-14 00:00:00"/>
+    <updated date="2024-11-14 00:00:00"/>
+    <rights>Copyright 2024 Oracle, Inc.</rights>
+    <description>trimmed</description>
+    <solution>This update is available via the Unbreakable Linux Network (ULN) and the Oracle Public Yum Server. Details on how to use ULN or http://public-yum.oracle.com to apply this update are available at http://linux.oracle.com/applying_updates.html.</solution>
+    <references>
+      <reference href="https://linux.oracle.com/errata/ELSA-2024-9333.html" type="self" title="ELSA-2024-9333" />
+      <reference href="https://linux.oracle.com/cve/CVE-2024-2511.html" id="CVE-2024-2511" type="cve" title="CVE-2024-2511" />
+      <reference href="https://linux.oracle.com/cve/CVE-2024-4603.html" id="CVE-2024-4603" type="cve" title="CVE-2024-4603" />
+      <reference href="https://linux.oracle.com/cve/CVE-2024-4741.html" id="CVE-2024-4741" type="cve" title="CVE-2024-4741" />
+      <reference href="https://linux.oracle.com/cve/CVE-2024-5535.html" id="CVE-2024-5535" type="cve" title="CVE-2024-5535" />
+    </references>
+    <pkglist>
+      
+      <collection short="ol9_x86_64_baseos_latest">
+        <name>ol9_x86_64_baseos_latest</name>
+        <package name="openssl-fips-provider-so" version="3.0.7" release="6.0.1.el9_5" epoch="0" arch="x86_64">
+          <filename>openssl-fips-provider-so-3.0.7-6.0.1.el9_5.x86_64.rpm</filename>
+          <sum type="sha256">26df39dd27a6625a13be14c5a5d42f9d817859da858a0c8bc3bd41e02ae82f1c</sum>
+        </package>
+        <package name="openssl-libs" version="3.2.2" release="6.0.1.el9_5" epoch="1" arch="x86_64">
+          <filename>openssl-libs-3.2.2-6.0.1.el9_5.x86_64.rpm</filename>
+          <sum type="sha256">4f7b5d54df93b7588107b3f271d8c322c96cde5645cc45459d5d432a88db6f42</sum>
+        </package>
+        <package name="openssl-libs" version="3.2.2" release="6.0.1.el9_5" epoch="1" arch="i686">
+          <filename>openssl-libs-3.2.2-6.0.1.el9_5.i686.rpm</filename>
+          <sum type="sha256">9501741a5c697c8ecf7693edac59ba3406054dc2d1fb696cd0f4deebf5f96614</sum>
+        </package>
+        <package name="openssl" version="3.2.2" release="6.0.1.el9_5" epoch="1" arch="x86_64">
+          <filename>openssl-3.2.2-6.0.1.el9_5.x86_64.rpm</filename>
+          <sum type="sha256">b8acd341320488bc29d7c3d0e6f021f8885d4a7a5d316253a5c1f3b86b5a1574</sum>
+        </package>
+        <package name="openssl-fips-provider" version="3.0.7" release="6.0.1.el9_5" epoch="0" arch="x86_64">
+          <filename>openssl-fips-provider-3.0.7-6.0.1.el9_5.x86_64.rpm</filename>
+          <sum type="sha256">85db9d1aa010df210a10ca2e37e26e6837e162b495d0b28e595a22791c4041d7</sum>
+        </package>
+        <package name="openssl" version="3.2.2" release="6.0.1.el9_5" epoch="1" arch="src">
+          <filename>openssl-3.2.2-6.0.1.el9_5.src.rpm</filename>
+          <sum type="sha256">14875206db687013824905c64f1ddaa3107f0f6e77ae3aa2deaa9216cb6590dd</sum>
+        </package>
+        <package name="openssl-fips-provider" version="3.0.7" release="6.0.1.el9_5" epoch="0" arch="i686">
+          <filename>openssl-fips-provider-3.0.7-6.0.1.el9_5.i686.rpm</filename>
+          <sum type="sha256">544e62f26487347206ca068bed54a5a72ef2232b12076d3c8b8907cb6d4a5464</sum>
+        </package>
+        <package name="openssl-fips-provider" version="3.0.7" release="6.0.1.el9_5" epoch="0" arch="src">
+          <filename>openssl-fips-provider-3.0.7-6.0.1.el9_5.src.rpm</filename>
+          <sum type="sha256">98b459d04d1dd8d643a152906fc123dabd0eca4cd398be075d6aeaee04e2f29a</sum>
+        </package>
+      </collection>
+    </pkglist>
+  </update>
+<update status="final" type="bugfix" version="1" from="el-errata@oss.oracle.com">
+    <id>ELBA-2024-12431</id>
+    <title> samba  bug fix update</title>
+    <release>Oracle Linux 9</release>
+    <issued date="2024-06-11 00:00:00"/>
+    <updated date="2024-06-11 00:00:00"/>
+    <rights>Copyright 2024 Oracle, Inc.</rights>
+    <description>trimmed</description>
+    <solution>This update is available via the Unbreakable Linux Network (ULN) and the Oracle Public Yum Server. Details on how to use ULN or http://public-yum.oracle.com to apply this update are available at http://linux.oracle.com/applying_updates.html.</solution>
+    <references>
+      <reference href="https://linux.oracle.com/errata/ELBA-2024-12431.html" type="self" title="ELBA-2024-12431" />
+    </references>
+    <pkglist>
+      
+      <collection short="ol9_x86_64_baseos_latest">
+        <name>ol9_x86_64_baseos_latest</name>
+        <package name="samba-common-libs" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>samba-common-libs-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">04124129cfaa978cbfa79393754c2949e5514496bd431313f3d1f103d1608dce</sum>
+        </package>
+        <package name="samba-libs" version="4.19.4" release="104.0.2.el9" epoch="0" arch="i686">
+          <filename>samba-libs-4.19.4-104.0.2.el9.i686.rpm</filename>
+          <sum type="sha256">baa0cc65747b7e287c8f0d489e538b5cc7fc554bfaf18bdf77dac5c3da712088</sum>
+        </package>
+        <package name="samba" version="4.19.4" release="104.0.2.el9" epoch="0" arch="src">
+          <filename>samba-4.19.4-104.0.2.el9.src.rpm</filename>
+          <sum type="sha256">10f441d78a2d7a2541236d394b782742e7db4afb2b8093615970d0c2ff5d3432</sum>
+        </package>
+        <package name="python3-samba" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>python3-samba-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">d4c146f084d9851f4ae8dfe41430488a33c05655138176a989ef783b4c7c2520</sum>
+        </package>
+        <package name="samba-common-libs" version="4.19.4" release="104.0.2.el9" epoch="0" arch="i686">
+          <filename>samba-common-libs-4.19.4-104.0.2.el9.i686.rpm</filename>
+          <sum type="sha256">463547426835048917adda410aa72231ced470e3d8c712b118ddba52a590fe46</sum>
+        </package>
+        <package name="samba-common" version="4.19.4" release="104.0.2.el9" epoch="0" arch="noarch">
+          <filename>samba-common-4.19.4-104.0.2.el9.noarch.rpm</filename>
+          <sum type="sha256">bdd2906a7b2d0c2d2ebb079a61deeec8b7be66344106422b752ae458546a28b5</sum>
+        </package>
+        <package name="libsmbclient" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>libsmbclient-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">6a25ce428b2ef2daf100426abd40bac30a80b41d465bb3f61a395fcb53e53607</sum>
+        </package>
+        <package name="samba-usershares" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>samba-usershares-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">13f14be828065322de022db0da3f676000fbf4caace93e242ba6b509e3432925</sum>
+        </package>
+        <package name="samba-tools" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>samba-tools-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">804edc25d40eb2b04cd5e19e07e7742d961fe1d66e597a60cdefd55914d45132</sum>
+        </package>
+        <package name="samba-dc-libs" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>samba-dc-libs-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">a61fa783f31ad96d12e0811756d5d00de160e3895a8be0fa527b8ffbf0043fee</sum>
+        </package>
+        <package name="samba" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>samba-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">8bc08192c60d040e1e980db3c92ee09bc00ea70466e8156dbe07ba8d4295c8ca</sum>
+        </package>
+        <package name="libwbclient" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>libwbclient-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">f005a274648ebde0727130b3c7dc6b64654fc98a5ec85c899af056ac11b34e2b</sum>
+        </package>
+        <package name="libwbclient" version="4.19.4" release="104.0.2.el9" epoch="0" arch="i686">
+          <filename>libwbclient-4.19.4-104.0.2.el9.i686.rpm</filename>
+          <sum type="sha256">409350fa80ea0ce8a674a8425d51a9ca760d9aef4b76fd17ac19141c5e813283</sum>
+        </package>
+        <package name="libnetapi" version="4.19.4" release="104.0.2.el9" epoch="0" arch="i686">
+          <filename>libnetapi-4.19.4-104.0.2.el9.i686.rpm</filename>
+          <sum type="sha256">13fc5078b2be3313eda7db730edf3f6a623c1310851eaf1ca617dbc0a52ec13b</sum>
+        </package>
+        <package name="python3-samba-dc" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>python3-samba-dc-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">17f34436f4a0974f458422fa68d000ce53050f1b5d7e7febb3c7401c2eb6b307</sum>
+        </package>
+        <package name="samba-winbind-modules" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>samba-winbind-modules-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">6fa9133d2598258b44670d314438140e730933ec566294c2f63c431ceb721b21</sum>
+        </package>
+        <package name="python3-samba" version="4.19.4" release="104.0.2.el9" epoch="0" arch="i686">
+          <filename>python3-samba-4.19.4-104.0.2.el9.i686.rpm</filename>
+          <sum type="sha256">11ef4c6570f2ee570b75c9fb8c400098a73bb91d3aca5e8505f4b0bbcf970e10</sum>
+        </package>
+        <package name="samba-dcerpc" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>samba-dcerpc-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">693fb121d33745bda3350a852c4d24a75f7cc2518c8b6a1883eb8aab9595c5f9</sum>
+        </package>
+        <package name="samba-winbind" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>samba-winbind-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">1988fb9ec3c2f3dc5fdb15b00e6f06cd72b63f23364d297bcf92ae3f3dda84d0</sum>
+        </package>
+        <package name="libnetapi" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>libnetapi-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">92f04f7910f57507a5371c8b549ca09e9508d801b06b3d071a7165a382f7e5b2</sum>
+        </package>
+        <package name="samba-client-libs" version="4.19.4" release="104.0.2.el9" epoch="0" arch="i686">
+          <filename>samba-client-libs-4.19.4-104.0.2.el9.i686.rpm</filename>
+          <sum type="sha256">01294f86207fd59f37b6f466d42159a915964de94d97966dae656ca48364bb48</sum>
+        </package>
+        <package name="samba-client-libs" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>samba-client-libs-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">5314d47fc57102fb4f21b9902046bdd7175e31d210f0ab084a61f190cd1319c0</sum>
+        </package>
+        <package name="libsmbclient" version="4.19.4" release="104.0.2.el9" epoch="0" arch="i686">
+          <filename>libsmbclient-4.19.4-104.0.2.el9.i686.rpm</filename>
+          <sum type="sha256">66e243b6dfef95540a4dbad11dcadf3b80f32d5dbcc4ad38ac1b361a7cd660b5</sum>
+        </package>
+        <package name="samba-winbind-modules" version="4.19.4" release="104.0.2.el9" epoch="0" arch="i686">
+          <filename>samba-winbind-modules-4.19.4-104.0.2.el9.i686.rpm</filename>
+          <sum type="sha256">b6491d612a55387b1ebc0980582d88e4b690537f489474e18b93865dba7b5b80</sum>
+        </package>
+        <package name="samba-ldb-ldap-modules" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>samba-ldb-ldap-modules-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">979410808fb4ff94bb6da2024cb54af770c1ecf001aac56baba73a2fbded1d18</sum>
+        </package>
+        <package name="samba-dc-libs" version="4.19.4" release="104.0.2.el9" epoch="0" arch="i686">
+          <filename>samba-dc-libs-4.19.4-104.0.2.el9.i686.rpm</filename>
+          <sum type="sha256">c76ff8aac00617bcc94c3951249700fb8284fcc2c028116ea4d06c0e65eb2f0c</sum>
+        </package>
+        <package name="samba-common-tools" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>samba-common-tools-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">7b7645fd8e7f884aaedb9cc1ad37cc95612f11b4a2d5b4c41ed0016aae157a5c</sum>
+        </package>
+        <package name="samba-libs" version="4.19.4" release="104.0.2.el9" epoch="0" arch="x86_64">
+          <filename>samba-libs-4.19.4-104.0.2.el9.x86_64.rpm</filename>
+          <sum type="sha256">99df962fc50b81e4261a3d27ede3467b9b1dd308c5b0a1be67b5eef68c21c221</sum>
+        </package>
+      </collection>
+    </pkglist>
+  </update>
+</updates>

@@ -1,0 +1,32 @@
+# Keeps the build context small and secrets out of image layers. The Dockerfile
+# COPYs go.mod/go.sum, internal/graphdb/ladybug/go.*, third_party/*-stub,
+# scripts/fetch-ladybug.sh, scripts/collect-licenses.sh, frontend/ and then `.` — everything a go:embed
+# directive reads (deploy/aws/*.yaml, migrations/, internal/**, web/web.go)
+# must stay in the context.
+.git
+.github
+.claude
+.idea
+.vscode
+.DS_Store
+.env
+.env.*
+**/.env
+**/.env.*
+**/app.env
+
+# Rebuilt inside the image: the frontend stage runs `bun install`, the vite
+# build writes web/dist, and stage 0 fetches liblbug for the target arch.
+frontend/node_modules
+frontend/dist
+web/dist/*
+!web/dist/.gitkeep
+internal/graphdb/ladybug/lib
+
+# Local build and test output.
+/graph
+/bin
+/.bin
+*.test
+coverage.out
+report.json

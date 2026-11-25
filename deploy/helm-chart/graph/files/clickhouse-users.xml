@@ -1,0 +1,86 @@
+<!-- The users of the bundled ClickHouse, in both the Helm chart and
+     deploy/docker-compose (loaded into /etc/clickhouse-server/users.d/). The
+     image's own user setup is off (CLICKHOUSE_SKIP_USER_SETUP=1) and its
+     built-in admin, default, is removed, so these are the only users there
+     are and none has access management or a password-less login.
+
+     graph_migrate  migrate only: the schema, every right on the graph
+                 database and none outside it. The image's bootstrap (CREATE
+                 DATABASE graph on an empty volume) runs as it
+                 (CLICKHOUSE_USER), which ALL ON graph.* allows.
+     graph       serve and the worker: reads and inserts, plus the few
+                 mutations the code runs. No DDL, no DROP or TRUNCATE, and no
+                 ALTER on audit_events, so it can add audit rows but not
+                 rewrite them. cmd/graph/chart_chgrants_test.go derives these
+                 grants from the statements in the code.
+     graph_scanner  the scanner: reads the assets it targets, the findings it
+                 re-observes and the schema version (its readiness wait), and
+                 inserts findings. Nothing else, so no audit_events, no
+                 assets or edges written, no mutations.
+
+     The passwords come from the container's environment. -->
+<clickhouse>
+    <users>
+        <default remove="remove"/>
+        <graph_migrate>
+            <password from_env="GRAPH_CH_MIGRATE_PASSWORD"/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <!-- No default_database: the bootstrap logs in as it before the
+                 graph database exists, and a login to a missing default
+                 database fails. migrate's DSN names graph. -->
+            <grants>
+                <query>GRANT ALL ON graph.*</query>
+            </grants>
+        </graph_migrate>
+        <graph>
+            <password from_env="GRAPH_CH_APP_PASSWORD"/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <!-- Keep the default profile (readonly=0): queries set per-query
+                 SETTINGS such as max_execution_time. -->
+            <profile>default</profile>
+            <quota>default</quota>
+            <default_database>graph</default_database>
+            <grants>
+                <query>GRANT SELECT, INSERT ON graph.*</query>
+                <!-- Connector account purge (internal/app/asset/purge.go). -->
+                <query>GRANT ALTER DELETE ON graph.assets</query>
+                <query>GRANT ALTER DELETE ON graph.graph_edges</query>
+                <!-- Part compaction (asset.OptimizableTables) and the part
+                     sizes its guard reads. -->
+                <query>GRANT OPTIMIZE ON graph.graph_edges</query>
+                <query>GRANT OPTIMIZE ON graph.signals</query>
+                <query>GRANT OPTIMIZE ON graph.beliefs</query>
+                <query>GRANT OPTIMIZE ON graph.findings</query>
+                <query>GRANT OPTIMIZE ON graph.assets</query>
+                <query>GRANT SELECT ON system.parts</query>
+                <query>GRANT SELECT ON system.projection_parts</query>
+            </grants>
+        </graph>
+        <graph_scanner>
+            <password from_env="GRAPH_CH_SCANNER_PASSWORD"/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <default_database>graph</default_database>
+            <grants>
+                <!-- migrate.Status, the readiness wait. -->
+                <query>GRANT SELECT ON graph.goose_db_version</query>
+                <!-- Scan targets (asset.Service ListExternal, Get, ByIDs). -->
+                <query>GRANT SELECT ON graph.assets</query>
+                <!-- finding.Service RecordObserved: reads the stored
+                     versions (ByIDs, which joins finding_enrichment), then
+                     inserts. -->
+                <query>GRANT SELECT, INSERT ON graph.findings</query>
+                <query>GRANT SELECT ON graph.finding_enrichment</query>
+            </grants>
+        </graph_scanner>
+    </users>
+</clickhouse>

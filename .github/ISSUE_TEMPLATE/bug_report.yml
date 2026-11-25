@@ -1,0 +1,59 @@
+name: Bug report
+description: Something doesn't work the way it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. For security vulnerabilities do **not** open an issue; see SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Vulngraph version / commit
+      placeholder: "output of `graph version`: a release tag such as v0.1.0, or a commit SHA"
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment method
+      options:
+        - docker compose
+        - Helm chart
+        - Built from source
+        - Other (describe below)
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error output
+      description: Redact secrets and credentials before pasting.
+      render: shell
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Datastores (chart defaults / external Postgres+ClickHouse), relevant `internal/app/*` domain, etc.

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="120" viewBox="0 0 560 120" role="img" aria-label="Vulngraph">
+  <title>Vulngraph</title>
+  <g fill="none" stroke="#52525b" stroke-width="3" stroke-linecap="round">
+    <path d="M22 84 L52 44 L88 66 L118 28"/>
+    <path d="M52 44 L66 96"/>
+  </g>
+  <g>
+    <circle cx="22" cy="84" r="9" fill="#a1a1aa"/>
+    <circle cx="52" cy="44" r="9" fill="#2dd4bf"/>
+    <circle cx="88" cy="66" r="9" fill="#a1a1aa"/>
+    <circle cx="66" cy="96" r="7" fill="#a1a1aa"/>
+    <circle cx="118" cy="28" r="11" fill="#fb923c"/>
+    <circle cx="118" cy="28" r="17" fill="none" stroke="#fb923c" stroke-width="2" opacity="0.45"/>
+  </g>
+  <text x="156" y="76" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="52" font-weight="650" letter-spacing="-1" fill="#f4f4f5">vulngraph</text>
+</svg>

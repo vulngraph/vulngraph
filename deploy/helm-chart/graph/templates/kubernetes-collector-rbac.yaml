@@ -1,0 +1,50 @@
+{{- if .Values.kubernetesRBAC.collectorRead }}
+# Opt-in read-only grant for the in-cluster Kubernetes connector
+# (internal/collect/kubernetes). list on exactly the resources the collector
+# reads — no Secrets, no wildcards, no write verbs — plus the OIDC discovery
+# document it reads to identify the cluster. Without it the connector's sync
+# fails with Forbidden rather than reporting an empty cluster.
+#
+# The policy-engine reads (CIS 5.2.1) live in policy-engine-rbac.yaml, and the
+# node posture log read in node-posture.yaml.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "graph.clusterScopedName" (dict "suffix" "kubernetes-collector" "Release" .Release) }}
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "services", "serviceaccounts", "configmaps"]
+    verbs: ["list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["list"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["list"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles", "clusterrolebindings", "roles", "rolebindings"]
+    verbs: ["list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["list"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    verbs: ["list"]
+  - nonResourceURLs: ["/.well-known/openid-configuration"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "graph.clusterScopedName" (dict "suffix" "kubernetes-collector" "Release" .Release) }}
+  labels:
+    {{- include "graph.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "graph.clusterScopedName" (dict "suffix" "kubernetes-collector" "Release" .Release) }}
+subjects:
+  {{- include "graph.workerServiceAccountSubjects" . | nindent 2 }}
+{{- end }}

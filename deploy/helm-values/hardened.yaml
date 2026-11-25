@@ -1,0 +1,132 @@
+# Hardened production overlay. Layer it under your own values file:
+#
+#   helm upgrade --install graph deploy/helm-chart/graph -n graph \
+#     -f deploy/helm-values/hardened.yaml -f my-values.yaml --set-string "$SECRETS"
+#
+# It turns on the chart's hardening values below and sets hardened: true,
+# which fails the render, listing every gap at once, until each value whose
+# comment says REQUIRED is set (in my-values.yaml or with --set) and every
+# check in that template holds. Among them: no dangerous flag, no extraEnv
+# entry that replaces a variable the chart sets (or one of its sign-in,
+# datastore, proxy and approval variables), and no extraEnvFrom, whose
+# variables the checks cannot see. Any other extraEnv entry is not checked
+# (docs/production-checklist.md step 5).
+# Nothing here is a placeholder that renders: an empty required value stops
+# `helm install`.
+# docs/production-checklist.md is the ordered list of what to do around it
+# (secrets, the first admin, backups, upgrades, monitoring, IAM, egress).
+#
+# A later -f replaces a list here rather than merging into it (Helm merges
+# maps, not lists): repeat networkPolicy.nodeCIDRs in full if you set it.
+
+# The fail-closed checks: templates/checks/hardened.yaml.
+hardened: true
+
+image:
+  # REQUIRED. The sha256 digest of the release you run (sha256:<64 hex>),
+  # looked up and signature-checked as in deploy/README.md "Verifying a release
+  # image". Every graph container then runs repository@digest, so the image
+  # cannot change under a moved tag.
+  digest: ""
+
+# The chart's defaults, pinned: hardened refuses either off.
+securityContext:
+  enabled: true                # runAsNonRoot, uid 65532, every capability dropped, RuntimeDefault seccomp
+  readOnlyRootFilesystem: true # writers get emptyDirs at /tmp and $HOME (deploy/README.md "Container hardening")
+scanner:
+  # nuclei, which parses responses from the hosts it scans, runs in its own pod
+  # with no GRAPH_SECRET_KEY, LLM key, signing secret or cloud identity.
+  enabled: true
+worker:
+  pprofPort: ""                # profiling stays off; hardened refuses a port
+
+# Keeps the worker (the in-memory graph), serve and the datastores off spot
+# capacity. The default label is GKE's. On EKS, Karpenter or AKS set
+# avoidSpotNodeLabelKey to that cloud's key (values.yaml lists them) and the
+# chart uses its spot value; for any other key also set
+# avoidSpotNodeLabelValues, or the render fails. On a cluster with no spot
+# nodes it changes nothing.
+avoidSpotNodes: true
+
+# Prometheus scraping of every graph pod (deploy/README.md "Monitoring").
+metrics:
+  enabled: true
+
+networkPolicy:
+  enabled: true
+  # REQUIRED. Namespace of the ingress controller in front of serve (for
+  # example ingress-nginx). serve's port then accepts only that namespace and
+  # nodeCIDRs.
+  ingressNamespace: ""
+  # REQUIRED. Node address ranges, for serve's kubelet probes, plus the subnets
+  # or health-check ranges of a load balancer that targets pod IPs directly.
+  # e.g. ["10.0.0.0/16"]. hardened refuses a range wider than /8 (IPv4) or
+  # /32 (IPv6; /7 inside fc00::/7).
+  nodeCIDRs: []
+  # REQUIRED with metrics.enabled. Namespace of the agent that scrapes pod
+  # metrics; the metrics ports then accept only it.
+  metricsNamespace: ""
+
+ingress:
+  enabled: true
+  # REQUIRED. The hostname people reach Vulngraph at.
+  host: ""
+  # TLS at the ingress with the certificate in tlsSecret (yours, or
+  # cert-manager's via ingress.annotations). Set tls: false only when TLS ends
+  # at a load balancer in front of the ingress.
+  tls: true
+  tlsSecret: graph-tls
+
+config:
+  # Admins without TOTP cannot sign in with a password; enroll each one with
+  # `graph user totp` (docs/security-hardening.md#admin-mfa).
+  requireAdminTotp: true
+  # TLS ends at the ingress: serve sends HSTS on the plain hop too.
+  tlsProxy: true
+  # The real client address, for the login rate limits and the audit trail's
+  # client_ip. X-Forwarded-For is what ingress-nginx sets; use your
+  # controller's header.
+  clientIpHeader: X-Forwarded-For
+  # REQUIRED. Comma-separated CIDRs of the ingress controller's pods (the TCP
+  # peer serve sees); the header is honoured only from them. hardened refuses
+  # a range wider than /8 for IPv4 (an IPv4-mapped ::ffff: range counts as
+  # IPv4) or /32 for IPv6 (/7 inside fc00::/7).
+  trustedProxyCidrs: ""
+  # Sign-in. Password login with TOTP needs nothing more. To sign in through
+  # your IdP instead, configure one of sso.google, sso.okta, config.iapAudience
+  # or config.oauth2Proxy (values.yaml); hardened then also requires
+  # config.adminEmails, config.oidcAdminGroups or config.oidcAnalystGroups (no
+  # first-sign-in bootstrap admin), an https redirectUrl, and for oauth2Proxy
+  # ID-token verification (config.oauth2ProxyOidcIssuer +
+  # config.oauth2ProxyOidcAudience).
+
+# TLS to the bundled datastores. Each tlsSecret is a kubernetes.io/tls Secret
+# (tls.crt, tls.key; cert-manager writes this shape) in the release namespace.
+postgres:
+  # REQUIRED. Its certificate covers graph-postgres.
+  tlsSecret: ""
+  # verify-full checks the certificate and the name graph-postgres against the
+  # Secret's ca.crt, which the chart mounts into the graph pods; cert-manager
+  # writes ca.crt for a CA issuer. A Secret without ca.crt stops the graph pods
+  # from starting: use require (encrypts, no certificate check) for that one.
+  sslMode: verify-full
+clickhouse:
+  # REQUIRED. Its certificate covers graph-clickhouse.
+  tlsSecret: ""
+  # The DSN moves to the secure native port 9440. It encrypts without checking
+  # the certificate (skip_verify=true): the ClickHouse client checks only
+  # against the system CA bundle.
+  secure: true
+
+# The chart renders graph-secrets, so the checks can see the datastore DSNs.
+# Supply the values from your secret manager (--set-string, or a values file it
+# templates), never from git. Helm keeps every value it is given in the
+# release's revision Secrets (sh.helm.release.v1.graph.v<N>, --history-max of
+# them, 10 by default), so a rotated GRAPH_SECRET_KEY or password stays there
+# until its revisions are pruned (docs/production-checklist.md, step 10).
+# External datastores (postgres.enabled / clickhouse.enabled false):
+# secret.databaseUrl (and scannerDatabaseUrl) must be a postgres:// URL whose
+# every sslmode is require, verify-ca or verify-full, and secret.clickhouseUrl
+# (and clickhouseMigrateUrl, scannerClickhouseUrl) must carry secure=true.
+secret:
+  create: true

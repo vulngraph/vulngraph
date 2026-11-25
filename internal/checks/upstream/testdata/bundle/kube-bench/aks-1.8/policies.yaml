@@ -1,0 +1,55 @@
+---
+controls:
+version: "aks-1.8"
+groups:
+  - id: x
+    text: "ids only"
+    checks:
+      - id: 4.1.1
+        text: ""
+      - id: 4.1.2
+        text: ""
+      - id: 4.1.3
+        text: ""
+      - id: 4.1.4
+        text: ""
+      - id: 4.1.5
+        text: ""
+      - id: 4.1.6
+        text: ""
+      - id: 4.1.7
+        text: ""
+      - id: 4.1.8
+        text: ""
+      - id: 4.1.9
+        text: ""
+      - id: 4.1.10
+        text: ""
+      - id: 4.1.11
+        text: ""
+      - id: 4.1.12
+        text: ""
+      - id: 4.2.1
+        text: ""
+      - id: 4.2.2
+        text: ""
+      - id: 4.2.3
+        text: ""
+      - id: 4.2.4
+        text: ""
+      - id: 4.2.5
+        text: ""
+      - id: 4.4.1
+        text: ""
+      - id: 4.4.2
+        text: ""
+      - id: 4.5.1
+        text: ""
+      - id: 4.5.2
+        text: ""
+      - id: 4.6.1
+        text: ""
+      - id: 4.6.2
+        text: ""
+      - id: 4.6.3
+        text: ""

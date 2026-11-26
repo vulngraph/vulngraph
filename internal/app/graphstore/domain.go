@@ -205,7 +205,7 @@ func RelTableFor(edgeType string) (string, bool) {
 // old label is not rerouted, so the loader's node-match silently discards every
 // edge on that endpoint. See producer_label_test.go and the assetTypeToNode
 // comment above.
-const SchemaVersion = "v2"
+const SchemaVersion = "v3"
 
 // SchemaDDLChecksum pins a hash of the Ladybug DDL — node/rel CREATE statements plus
 // the UNWIND insert templates. TestSchemaDDLChecksum recomputes it and fails if it

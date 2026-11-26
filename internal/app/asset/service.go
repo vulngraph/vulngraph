@@ -16,6 +16,7 @@ type Repo interface {
 	UpsertEdges(ctx context.Context, edges []Edge) error
 	GetAsset(ctx context.Context, id string) (Asset, error)
 	FindByExactName(ctx context.Context, name string, limit int) ([]Asset, error)
+	FindPackageVersions(ctx context.Context, name string, limit int) ([]Asset, error)
 	EdgesFrom(ctx context.Context, srcIDs []string) ([]Edge, error)
 	EdgesTo(ctx context.Context, dstIDs []string) ([]Edge, error)
 	EdgesInto(ctx context.Context, dstID, edgeType string) ([]Edge, error)
@@ -48,6 +49,8 @@ type Repo interface {
 	PurgeAccount(ctx context.Context, provider, accountID string) (int, error)
 	AssetIDsByAccount(ctx context.Context, provider, accountID string) ([]string, error)
 	PurgeEdgesForAssets(ctx context.Context, ids []string) (int, error)
+	RetireAssets(ctx context.Context, deletions map[string]time.Time) ([]string, error)
+	PackageRiskByRunner(ctx context.Context) (map[string]uint8, error)
 	UpsertImageBases(ctx context.Context, bases []ImageBase) error
 	ImageBases(ctx context.Context) ([]ImageBase, error)
 }
@@ -59,7 +62,17 @@ const (
 )
 
 type Service struct {
-	repo Repo
+	repo           Repo
+	deletionProofs DeletionProofs
+}
+
+type DeletionProofs interface {
+	AssetDeletions(context.Context, []string) (map[string]time.Time, error)
+}
+
+func (s *Service) WithDeletionProofs(proofs DeletionProofs) *Service {
+	s.deletionProofs = proofs
+	return s
 }
 
 func NewService(repo Repo) *Service { return &Service{repo: repo} }

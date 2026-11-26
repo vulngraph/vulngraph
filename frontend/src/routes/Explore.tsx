@@ -91,7 +91,6 @@ const SUGGESTION_RULES: Array<{ nodeType: string; exampleId: string }> = [
   { nodeType: "k8s_service", exampleId: "k8s-internet-exposed-services" },
   { nodeType: "K8sWorkload", exampleId: "k8s-exposed-workload-to-iam-escalation" },
   { nodeType: "Repo", exampleId: "repos-deploying-to-exposed-services" },
-  { nodeType: "Package", exampleId: "supply-chain-full-attack-chain" },
   { nodeType: "k8s_certificate", exampleId: "expiring-certs-on-exposed" },
   { nodeType: "acm_certificate", exampleId: "expiring-certs-on-exposed" },
   { nodeType: "dns_record", exampleId: "dns-points-to" },
@@ -446,7 +445,7 @@ export function Explore() {
           // rel types, so the query stays scoped to topology edges and is easy to edit.
           const safeId = id.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
           setQuery(
-            `MATCH (n:Asset {id: '${safeId}'})-[r:ConnectedViaSG|ExecutesAs|HasRole|Accesses|DnsPointsTo|ProtectedBy|AllowsFrom|Binds|ExposedToInternet|RunsPackage]->(m)\nRETURN n, r, m LIMIT 50`
+            `MATCH (n:Asset {id: '${safeId}'})-[r:ConnectedViaSG|ExecutesAs|HasRole|Accesses|DnsPointsTo|ProtectedBy|AllowsFrom|Binds|ExposedToInternet]->(m)\nRETURN n, r, m LIMIT 50`
           );
           // Scroll editor into view
           setTimeout(() => taRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
@@ -596,7 +595,7 @@ function GraphResult({ result, centerId, navigate, onQueryFromNode, onLimit50 }:
       {isScalar ? (
         <ScalarResult columns={merged.columns ?? []} rows={scalarRows} />
       ) : merged.nodes.length === 0 ? (
-        <Empty message="No results. Try a different query or check the Ladybug schema — node labels are Asset, Repo, IamRole, Package." />
+        <Empty message="No results. Try a different query or check the Ladybug schema — node labels include Asset, Repo, IamRole and K8sWorkload." />
       ) : viewMode === "table" ? (
         <ResultTable nodes={merged.nodes} edges={merged.edges} navigate={navigate} />
       ) : tooMany ? (

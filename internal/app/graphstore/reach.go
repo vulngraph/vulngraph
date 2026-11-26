@@ -2,6 +2,7 @@ package graphstore
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
 	"github.com/vulngraph/vulngraph/internal/graphschema"
@@ -313,7 +314,11 @@ func (s *Service) prewarmSignalCache(sigByResource map[string]NodeSignals) {
 		// SignalSource populates them, so the rollup carries zero values (which for
 		// InternetHops means "0-hop exposed", not "unknown"). Overlay all three from
 		// the last topology build instead of trusting the rollup's zeros.
-		s.nodeSignalsCache.Store(id, ov.signalsFor(id, sig, notReached))
+		merged := ov.signalsFor(id, sig, notReached)
+		if strings.HasPrefix(id, "pkg:") {
+			merged.InternetHops = ReachUnknown
+		}
+		s.nodeSignalsCache.Store(id, merged)
 	}
 	for _, id := range nodeIDs {
 		if _, ok := sigByResource[id]; ok {
@@ -324,6 +329,7 @@ func (s *Service) prewarmSignalCache(sigByResource map[string]NodeSignals) {
 		// a finding-free node lands correctly at ToxicCombo=false.
 		s.nodeSignalsCache.Store(id, ov.signalsFor(id, NodeSignals{}, notReached))
 	}
+	s.packageSeeds.Store(kevPackageSeeds(sigByResource))
 }
 
 // setLastHops stashes the reach overlay AND the full loaded-node-id list from a

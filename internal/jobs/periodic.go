@@ -222,6 +222,11 @@ func buildPeriodicJobs(cfg PeriodicConfig) []*river.PeriodicJob {
 			},
 			&river.PeriodicJobOpts{RunOnStart: true},
 		),
+		river.NewPeriodicJob(
+			river.PeriodicInterval(5*time.Minute),
+			func() (river.JobArgs, *river.InsertOpts) { return InventoryRetirementArgs{}, nil },
+			&river.PeriodicJobOpts{RunOnStart: false},
+		),
 		// RunOnStart: false — the dangling-finding resolve sweep is a
 		// backstop, not a boot-critical path (the 365d TTL is the ultimate floor),
 		// so keep it off the deploy-time thundering herd. Always-on (unlike the feeds):

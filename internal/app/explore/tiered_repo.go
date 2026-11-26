@@ -83,6 +83,9 @@ func NewTieredRepo(primary, secondary, fallback Repo, observer ...TierObserver) 
 }
 
 func (r *TieredRepo) MatchSeed(ctx context.Context, m NodeMatch, limit int) ([]Node, error) {
+	if inventorySeed(m) {
+		return r.fallback.MatchSeed(ctx, m, limit)
+	}
 	empties := 0
 	if isReady(r.primary) {
 		if nodes, err := r.primary.MatchSeed(ctx, m, limit); err == nil {
@@ -109,14 +112,14 @@ func (r *TieredRepo) Neighbors(ctx context.Context, ids, edgeTypes []string, dir
 	if isReady(r.primary) {
 		if edges, nodes, truncated, err := r.primary.Neighbors(ctx, ids, edgeTypes, dir); err == nil {
 			if !emptyIsMiss(len(edges), ids) {
-				return edges, nodes, truncated, nil
+				return mergeInventoryNeighbors(ctx, r.fallback, ids, edgeTypes, dir, edges, nodes, truncated)
 			}
 			empties++
 		}
 	}
 	if edges, nodes, truncated, err := r.secondary.Neighbors(ctx, ids, edgeTypes, dir); err == nil {
 		if !emptyIsMiss(len(edges), ids) {
-			return edges, nodes, truncated, nil
+			return mergeInventoryNeighbors(ctx, r.fallback, ids, edgeTypes, dir, edges, nodes, truncated)
 		}
 		empties++
 	}

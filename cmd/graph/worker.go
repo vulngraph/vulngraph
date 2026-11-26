@@ -14,6 +14,7 @@ import (
 	"github.com/vulngraph/vulngraph/internal/app/enrich"
 	"github.com/vulngraph/vulngraph/internal/app/enrichcache"
 	"github.com/vulngraph/vulngraph/internal/app/executor"
+	"github.com/vulngraph/vulngraph/internal/app/explore"
 	"github.com/vulngraph/vulngraph/internal/app/finding"
 	"github.com/vulngraph/vulngraph/internal/app/govern"
 	"github.com/vulngraph/vulngraph/internal/app/graphstore"
@@ -106,7 +107,7 @@ func worker(ctx context.Context, getenv func(string) string) error {
 	))
 
 	assetRepo := asset.NewCHRepo(ch)
-	assetSvc := asset.NewService(assetRepo)
+	assetSvc := asset.NewService(assetRepo).WithDeletionProofs(connectorSvc)
 
 	// Which default-on outbound feeds this pod runs; logs once what is off. The
 	// VM collectors read it too: a VM on a distribution whose advisory feed is off
@@ -175,6 +176,7 @@ func worker(ctx context.Context, getenv func(string) string) error {
 	}
 	if graphDB != nil {
 		defer graphDB.Close()
+		graphDB.WithPackageInventory(explore.NewCHRepo(ch), assetSvc)
 	}
 	if msg := workerGraphOffWarning(getenv); msg != "" {
 		log.FromContext(ctx).Warn().Msg(msg)
@@ -229,7 +231,7 @@ func worker(ctx context.Context, getenv func(string) string) error {
 	// exact same package↔deployment lineage, so they can never disagree about
 	// what "reachable" means for a supply-chain finding. Fleets lets it defer a
 	// VM-only package to its per-fleet vm_vuln findings (one finding per host fleet).
-	supplyChainExposure := enrich.SupplyChainExposure{Graph: assetSvc, Ladybug: supplyChainLadybug, Fleets: findingSvc}
+	supplyChainExposure := enrich.SupplyChainExposure{Graph: assetSvc, Ladybug: supplyChainLadybug, Fleets: findingSvc, Reach: reachProvider}
 
 	// SSO-graph resolver: grounds the compensating-control decision so an
 	// SSO permission set that grants admin is not demoted as "SSO-gated". Shared by

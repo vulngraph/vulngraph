@@ -150,23 +150,6 @@ const (
 	relRowEndpointAbsent
 )
 
-// ephemeralEndpointType reports whether an endpoint of this DECLARED asset type
-// is worth asking ClickHouse about at all — i.e. a candidate for the
-// verifiedExpired check bulkSyncCopy runs before classification, not a basis
-// for the classification itself: classifyRelEndpoints never trusts a declared
-// type on its own, since a wrong or stale producer type could otherwise force
-// "expired" with nothing to verify it against. Derived from asset.EphemeralTypes
-// — the same list asset.EphemeralLivenessCond filters the asset read on, so
-// candidate selection can never disagree with what the verification query
-// itself would ever return true for.
-var ephemeralEndpointType = func() map[string]bool {
-	m := make(map[string]bool, len(asset.EphemeralTypes))
-	for _, t := range asset.EphemeralTypes {
-		m[t] = true
-	}
-	return m
-}()
-
 // classifyRelEndpoints decides whether a candidate rel row can load, and if not
 // which of the three drop reasons applies.
 //
@@ -188,8 +171,7 @@ var ephemeralEndpointType = func() map[string]bool {
 // churn from an exposure chain actually losing its last hop.
 //
 // verifiedExpired is populated by a single bulk ClickHouse check
-// (asset.VerifyExpiredEphemeral) run once per build over every candidate id
-// whose DECLARED type is ephemeral — never by trusting the declared type in
+// (asset.VerifyDepartedAssets) over missing endpoints of every type — never by trusting the declared type in
 // isolation. A producer that mislabels a type, or a future regression that drops
 // a live ephemeral asset from the load for an unrelated reason, can no longer
 // force "expired" on its own: verifiedExpired only says true for an id that

@@ -137,14 +137,9 @@ func TestInternetHops(t *testing.T) {
 		}
 	})
 
-	// Containment inheritance: what is INSIDE a reached workload is reachable at
-	// that workload's distance, not further away. This is what lets an image CVE
-	// reach must_fix — before it, package nodes got no hop count at all and
-	// critical image CVEs sat in monitor with a blank must_fix_class.
-	t.Run("package inherits the pod's hop count across containment", func(t *testing.T) {
-		// internet → ingress(0) → service(1) → pod(2) → image → package.
-		// The full chain is 5 edges deep; under plain BFS the package would land at
-		// depth 4 and be cut off by maxReachDepth=3 even if containment were traversed.
+	// Image/container reach remains resident; packages use runtime membership
+	// lookups when evaluating vulnerability exposure.
+	t.Run("image inherits the pod hop count without package nodes", func(t *testing.T) {
 		edges := []asset.Edge{
 			edge("ingress", "exposed_to_internet", InternetNodeID),
 			edge("ingress", "routes_to", "service"),
@@ -155,17 +150,15 @@ func TestInternetHops(t *testing.T) {
 		hops, _ := internetHops(edges)
 		want := map[string]int{
 			"ingress": 0, "service": 1, "pod": 2,
-			"image":                    2, // inherited, not 3
-			"pkg:apk/openssl@3.1.4-r5": 2, // inherited, not 4 (which the cap would drop)
+			"image": 2, // inherited, not 3
 		}
 		for id, w := range want {
 			if hops[id] != w {
 				t.Errorf("hops[%s] = %d, want %d", id, hops[id], w)
 			}
 		}
-		if hops["pkg:apk/openssl@3.1.4-r5"] > maxMustFixHopsForTest {
-			t.Errorf("package must land within the must-fix hop budget, got %d",
-				hops["pkg:apk/openssl@3.1.4-r5"])
+		if _, ok := hops["pkg:apk/openssl@3.1.4-r5"]; ok {
+			t.Fatal("package inventory must not enter the resident reach map")
 		}
 	})
 
@@ -178,7 +171,7 @@ func TestInternetHops(t *testing.T) {
 			edge("image", "runs_package", "pkg:deb/openssl@3.0.11"),
 		}
 		hops, _ := internetHops(edges)
-		for id, w := range map[string]int{"alb": 0, "ecs-svc": 1, "image": 1, "pkg:deb/openssl@3.0.11": 1} {
+		for id, w := range map[string]int{"alb": 0, "ecs-svc": 1, "image": 1} {
 			if got, ok := hops[id]; !ok || got != w {
 				t.Errorf("hops[%s] = %d (reached=%t), want %d", id, got, ok, w)
 			}
@@ -193,7 +186,7 @@ func TestInternetHops(t *testing.T) {
 			edge("image", "runs_package", "pkg"),
 		}
 		hops, _ := internetHops(edges)
-		for _, id := range []string{"container", "image", "pkg"} {
+		for _, id := range []string{"container", "image"} {
 			if hops[id] != 0 {
 				t.Errorf("hops[%s] = %d, want 0 (inherited from a directly exposed pod)", id, hops[id])
 			}
@@ -234,20 +227,14 @@ func TestInternetHops(t *testing.T) {
 		edges := []asset.Edge{
 			edge("pod", "exposed_to_internet", InternetNodeID),
 			edge("pod", "runs_image", "image"),
-			edge("image", "runs_package", "pkg"),
-			edge("pkg", "runs_package", "image"), // bogus back-edge in containment data
+			edge("image", "runs_image", "pod"), // bogus back-edge in containment data
 		}
 		hops, _ := internetHops(edges) // must not hang
-		if hops["pkg"] != 0 {
-			t.Errorf("hops[pkg] = %d, want 0", hops["pkg"])
+		if got, ok := hops["image"]; !ok || got != 0 {
+			t.Errorf("hops[image] = %d (known=%t), want 0", got, ok)
 		}
 	})
 }
-
-// maxMustFixHopsForTest mirrors enrich.maxMustFixHops. Duplicated rather than
-// imported because graphstore must not depend on enrich; if the two ever diverge,
-// the containment test above is the thing that should fail.
-const maxMustFixHopsForTest = 3
 
 // INV-6: any InternetHops outside the valid domain {-2,-1,0..maxReachHops}
 // collapses to ReachUnknown (fail-open) — a corrupt or unexpected value must never
@@ -361,8 +348,8 @@ func TestInternetHopsInheritanceIsDeterministic(t *testing.T) {
 		if hops["image"] != 0 {
 			t.Fatalf("run %d: hops[image] = %d, want 0 (the shorter of its two runners)", i, hops["image"])
 		}
-		if hops["pkg"] != 0 {
-			t.Fatalf("run %d: hops[pkg] = %d, want 0 (inherited through the image)", i, hops["pkg"])
+		if _, ok := hops["pkg"]; ok {
+			t.Fatalf("run %d: package inventory entered the resident reach map", i)
 		}
 	}
 }

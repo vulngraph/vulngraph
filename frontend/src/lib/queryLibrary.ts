@@ -8,7 +8,7 @@
 //
 // Cypher examples RETURN nodes + relationships (e.g. `RETURN n, r, m`) so the
 // result renders as a graph, not a scalar table. Node labels (Asset, IamRole,
-// Repo, Package) and relationship types mirror the Ladybug schema DDL in
+// Repo, K8sWorkload) and relationship types mirror the Ladybug schema DDL in
 // internal/app/graphstore/repo.go — keep them in sync.
 //
 // QUERY CONSTRAINTS (LadybugDB v0.22.3, ADR 095) — keep in sync with the named
@@ -28,8 +28,7 @@
 //     HasPolicy, PeeredWith, RunsImage, InSubnet, MemberOfZone, Owns, RunsIn.
 //     A preset traversing any of these renders EMPTY — those edges live only in
 //     ClickHouse. Do not add presets for them. (ContainsData IS loaded.)
-//   - Use RunsPackage (Asset->Package) for asset-to-package traversals; runs_in
-//     rows map to Accesses, which is Asset->Asset only.
+//   - Package memberships use the named queries or structured query API.
 //   - ProtectedBy is (compute/LB:Asset)-[:ProtectedBy]->(sg:Asset). No collector
 //     links a service to the certificate it serves.
 //   - Exposed K8s workloads use ExposedToInternetK8sWorkload (src :K8sWorkload),
@@ -42,7 +41,7 @@ import { SCORE_THRESHOLDS } from "./format";
 // vocabulary the Ladybug DDL (repo.go) exposes. Kept as a real array (not just
 // prose) so the editor and NLQBar can eventually share one source of truth
 // for autocomplete. Not wired to autocomplete yet.
-export const NODE_LABELS: string[] = ["Asset", "IamRole", "Repo", "Package"];
+export const NODE_LABELS: string[] = ["Asset", "IamRole", "Repo", "K8sWorkload"];
 
 export type PresetQuery = {
   id: string;

@@ -165,9 +165,14 @@ func (f *fakeRepo) DeleteAssetHashes(_ context.Context, _ string, _ []string) er
 	return nil
 }
 
-func (f *fakeRepo) RecordAssetDeletions(_ context.Context, _ string, _ []string, _ time.Time) error {
-	return nil
+func (f *fakeRepo) RecordAssetDeletions(_ context.Context, _ string, ids []string, _ time.Time) ([]string, error) {
+	return ids, nil
 }
+
+func (f *fakeRepo) PendingAssetRetirements(context.Context, int) (map[string]time.Time, error) {
+	return nil, nil
+}
+func (f *fakeRepo) CompleteAssetRetirements(context.Context, map[string]time.Time) error { return nil }
 
 func (f *fakeRepo) PruneAssetDeletions(_ context.Context, _ time.Time) (int64, error) { return 0, nil }
 

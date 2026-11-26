@@ -23,15 +23,15 @@ func largeEstateShapes() (healthy, degraded fidelityShape) {
 		Assets:     300000,
 		TotalEdges: 1000000,
 		ByType: map[string]int{
-			"depends_on": 360000, "connected_via_sg": 135000, "runs_package": 95000,
+			"contains_data": 360000, "connected_via_sg": 135000, "member_of": 95000,
 			"has_role": 87000, "executes_as": 78000, "runs_container": 42000,
 			"runs_image": 44000, "deploys_to": 24000, "protected_by": 19000,
 			"exposed_to_internet": 17000, "owns": 15000, "sg_allows_from": 15000,
-			"can_assume": 13000, "contains_data": 10000, "has_policy": 10000,
+			"can_assume": 13000, "has_policy": 10000,
 			"targets": 10000, "allows_action": 8000, "accesses_secret": 7000,
 			"dns_points_to": 5000, "defined_in": 2500, "binds": 1300,
 			"can_escalate_to": 700, "grants_access_to": 500, "routes_to": 300,
-			"assigned_to": 300, "federated_access": 270, "peered_with": 100,
+			"assigned_to": 10300, "federated_access": 270, "peered_with": 100,
 			"grants_admin": 30,
 		},
 	}
@@ -42,7 +42,7 @@ func largeEstateShapes() (healthy, degraded fidelityShape) {
 	for et, n := range healthy.ByType {
 		degraded.ByType[et] = n
 	}
-	for _, bulk := range []string{"depends_on", "contains_data", "dns_points_to", "grants_access_to", "assigned_to", "peered_with"} {
+	for _, bulk := range []string{"contains_data", "dns_points_to", "grants_access_to", "assigned_to", "peered_with"} {
 		degraded.ByType[bulk] = 0
 	}
 	return healthy, degraded
@@ -63,7 +63,7 @@ func TestCheckFidelity_RefusesABulkTierCollapse(t *testing.T) {
 	// producer that stopped emitting).
 	v = checkFidelity(degraded, healthy, true, "", nil, false)
 	require.True(t, v.Refuse, "a ~38%% edge loss must be refused even when the fetch claims success")
-	assert.Contains(t, v.Reason, "depends_on (360000 -> 0)")
+	assert.Contains(t, v.Reason, "contains_data (360000 -> 0)")
 	assert.Contains(t, v.Reason, "fetched edges 624000 vs baseline 1000000")
 
 	// The healthy build publishes.
@@ -198,8 +198,8 @@ func (f *fidelityEdges) AllEdges(context.Context, asset.SyncProjection) (asset.E
 	return f.res, nil
 }
 
-// VerifyExpiredEphemeral: no asset-table model in this stub either; see stubEdges.
-func (f *fidelityEdges) VerifyExpiredEphemeral(context.Context, []string) (map[string]bool, error) {
+// VerifyDepartedAssets: no asset-table model in this stub either; see stubEdges.
+func (f *fidelityEdges) VerifyDepartedAssets(context.Context, []string) (map[string]bool, error) {
 	return map[string]bool{}, nil
 }
 
@@ -368,7 +368,7 @@ func TestCheckFidelity_NoBaselineButSnapshotShapeArmsLayer2(t *testing.T) {
 	v := checkFidelity(degraded, healthy, true, "", nil, false)
 	require.True(t, v.Refuse,
 		"a snapshot-derived baseline must catch the same degradation a freshly-published one would")
-	assert.Contains(t, v.Reason, "depends_on (360000 -> 0)")
+	assert.Contains(t, v.Reason, "contains_data (360000 -> 0)")
 }
 
 // TestLoadFromSnapshot_SchemaBumpArmsBaselineFromShapeNotGraph proves the
@@ -382,7 +382,7 @@ func TestLoadFromSnapshot_SchemaBumpArmsBaselineFromShapeNotGraph(t *testing.T) 
 	path := filepath.Join(t.TempDir(), "ladybug.snap")
 
 	// A small but realistic pre-deploy shape: a bulk-tier type well above
-	// minTypeBaselineRows (depends_on) plus a critical-tier type that survives the
+	// minTypeBaselineRows (contains_data) plus a critical-tier type that survives the
 	// bulk-tier collapse intact (has_role) — the same asymmetry as largeEstateShapes.
 	var assets []asset.Asset
 	var edges []asset.Edge
@@ -390,7 +390,7 @@ func TestLoadFromSnapshot_SchemaBumpArmsBaselineFromShapeNotGraph(t *testing.T) 
 		src, dst := fmt.Sprintf("pkg-%d", i), fmt.Sprintf("host-%d", i)
 		assets = append(assets, asset.Asset{ID: src, Name: src, Type: "os_package", Provider: "aws"},
 			asset.Asset{ID: dst, Name: dst, Type: "ec2_instance", Provider: "aws"})
-		edges = append(edges, asset.Edge{SrcID: dst, SrcType: "ec2_instance", DstID: src, DstType: "os_package", EdgeType: "depends_on"})
+		edges = append(edges, asset.Edge{SrcID: dst, SrcType: "ec2_instance", DstID: src, DstType: "os_package", EdgeType: "contains_data"})
 	}
 	for i := 0; i < 100; i++ {
 		lb, role := fmt.Sprintf("lb-%d", i), fmt.Sprintf("role-%d", i)
@@ -415,7 +415,7 @@ func TestLoadFromSnapshot_SchemaBumpArmsBaselineFromShapeNotGraph(t *testing.T) 
 	require.False(t, svc.Ready(), "the graph itself must not come up from a stale-schema snapshot")
 
 	// The baseline is armed from the snapshot's shape even though the graph load
-	// failed. Replaying the bulk-tier collapse against it — the bulk tier (depends_on)
+	// failed. Replaying the bulk-tier collapse against it — the bulk tier (contains_data)
 	// collapses to zero, the critical tier (has_role) survives — must be refused
 	// rather than slipping through an empty-baseline fail-open.
 	svc.fidelity.mu.Lock()
@@ -426,11 +426,11 @@ func TestLoadFromSnapshot_SchemaBumpArmsBaselineFromShapeNotGraph(t *testing.T) 
 	degraded := fidelityShape{
 		Assets:     baseline.Assets - 200, // os_package/host rows fall out once edgeless, mirroring filterLadybugAssets
 		TotalEdges: 100,
-		ByType:     map[string]int{"depends_on": 0, "has_role": 100},
+		ByType:     map[string]int{"contains_data": 0, "has_role": 100},
 	}
 	v := checkFidelity(degraded, baseline, true, "", nil, false)
 	require.True(t, v.Refuse, "the armed baseline must catch a degraded first-post-deploy build")
-	assert.Contains(t, v.Reason, "depends_on (200 -> 0)")
+	assert.Contains(t, v.Reason, "contains_data (200 -> 0)")
 }
 
 // TestCheckFidelity_ColdStartEscapesLayer1OnRepeat is case 2: Layer 1 has no escape

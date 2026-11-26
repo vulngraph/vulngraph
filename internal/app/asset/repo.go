@@ -288,6 +288,7 @@ const EphemeralLivenessCond = `(type NOT IN ('k8s_pod', 'container', 'k8s_job') 
 ) - INTERVAL 72 HOUR)`
 
 var NeverSyncTypes = []string{
+	"package",
 	"ebs_volume", "vpc",
 	// subnet is deliberately NOT here: it feeds InSubnet edge correlation and
 	// has its own Subnet node table in graphstore.schemaDDL.

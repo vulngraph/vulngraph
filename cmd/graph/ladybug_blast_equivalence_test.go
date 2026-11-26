@@ -27,7 +27,7 @@ func (s equivEdges) AllEdges(context.Context, asset.SyncProjection) (asset.EdgeS
 	return asset.EdgeSyncResult{Edges: s.e}, nil
 }
 
-func (s equivEdges) VerifyExpiredEphemeral(context.Context, []string) (map[string]bool, error) {
+func (s equivEdges) VerifyDepartedAssets(context.Context, []string) (map[string]bool, error) {
 	return nil, nil
 }
 

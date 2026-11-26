@@ -18,7 +18,6 @@ var nodeLabelDocs = map[string]string{
 	graphschema.NodeIamRole: "ALL identity types — iam_role, iam_user, iam_group, gcp_service_account, " +
 		"azure_service_principal, azure_managed_identity. Filter by n.type to distinguish",
 	graphschema.NodeRepo:         "GitHub repositories",
-	graphschema.NodePackage:      "SBOM packages (has cve_id, epss_score, has_kev fields)",
 	graphschema.NodeDataClass:    "DSPM data classifications; ids like 'dataclass:pii'",
 	graphschema.NodeCloudAccount: "cloud account/project nodes",
 	graphschema.NodeSSOGroup:     "SSO groups (e.g. Okta groups). RESERVED label: MUST be written backtick-escaped as `Group`",

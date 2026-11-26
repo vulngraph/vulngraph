@@ -22,10 +22,10 @@ func (s stubEdges) AllEdges(context.Context, asset.SyncProjection) (asset.EdgeSy
 	return asset.EdgeSyncResult{Edges: s.e}, nil
 }
 
-// VerifyExpiredEphemeral: no asset-table model in this stub, so nothing is ever
+// VerifyDepartedAssets: no asset-table model in this stub, so nothing is ever
 // a verified corpse. Tests that need the real check exercise bulkSyncCopy's
 // verifier parameter directly (copy_load_test.go).
-func (s stubEdges) VerifyExpiredEphemeral(context.Context, []string) (map[string]bool, error) {
+func (s stubEdges) VerifyDepartedAssets(context.Context, []string) (map[string]bool, error) {
 	return map[string]bool{}, nil
 }
 

@@ -392,7 +392,17 @@ func (w *SyncWorker) Work(ctx context.Context, job *river.Job[SyncConnectorArgs]
 				Msg("sync: fingerprint update failed (next sweep will re-sync)")
 		}
 	}
-	if !skipped && runErr == nil {
+	if runErr == nil {
+		// Lifecycle reconciliation follows observations, including unchanged ones.
+		// Content deduplication only skips checks and enrichment.
+		if skipped {
+			var err error
+			currentHashes, err = w.connectors.GetAssetHashes(ctx, c.ID)
+			if err != nil {
+				currentHashes = nil
+				logger.Warn().Err(err).Str("connector_id", c.ID).Msg("sync: lifecycle hash read failed; reconciliation will retry")
+			}
+		}
 		// Update per-asset hashes in Postgres for changed assets. Best-effort.
 		if len(toIngest) > 0 {
 			entries := make([]connector.AssetHashEntry, len(toIngest))
@@ -442,7 +452,7 @@ func (w *SyncWorker) Work(ctx context.Context, job *river.Job[SyncConnectorArgs]
 		if !res.Partial {
 			deletionCandidates = len(decision.Deleted)
 			if len(deletedIDs) > 0 {
-				applyDeletions(ctx, w.connectors, w.findings, c.ID, deletedIDs, time.Now())
+				applyDeletions(ctx, w.connectors, w.findings, c.ID, deletedIDs, start)
 			}
 			// A connector whose collector declares no scope that forget's audited
 			// allow-list accepts (see coveredScopes; Azure, GitHub and Kubernetes

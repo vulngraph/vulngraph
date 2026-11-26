@@ -3,10 +3,23 @@
 The Graph page lists 46 ready-made queries: 38 Cypher queries, shown below, and 8 point-and-click
 presets. Pick one from **Browse all queries**, or paste it into any MCP client's `run_cypher` tool.
 They are read-only and run against the graph Vulngraph builds from your connectors. Node labels are
-`Asset`, `IamRole`, `Repo` and `Package`; [`architecture.md`](architecture.md) describes the graph.
+`Asset`, `IamRole`, `Repo` and `K8sWorkload`; [`architecture.md`](architecture.md) describes the graph.
 Score thresholds are the current bands (page 81, high 61, pipeline 50).
 
 The queries are extracted from `frontend/src/lib/queryLibrary.ts`; change them there.
+
+Package inventory is queried on demand. Use the structured graph query/expand
+API with `depends_on` and `runs_package`. Internal graph API clients can use the
+named queries `package_source_repos` and `package_running_workloads` with a `name`
+parameter.
+These memberships and Package nodes are not available to raw Cypher. Package
+findings remain available in inventory; runtime reachability is evaluated through
+the workloads that use them. The resident risk score includes the highest package
+inventory risk score as a floor before graph propagation.
+
+Package named queries start with at most 100 seeds and return at most 2,000 nodes
+and 5,000 edges. A `truncated` response is a partial view; use a specific package
+name or ID to narrow the investigation.
 
 ## Internet exposure
 

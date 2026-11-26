@@ -28,6 +28,9 @@ func (s *Service) RefreshSignals(ctx context.Context, signals SignalSource) erro
 	if err != nil {
 		return fmt.Errorf("RefreshSignals: %w", err)
 	}
+	if sigByResource == nil {
+		sigByResource = map[string]NodeSignals{}
+	}
 	return s.applySignals(ctx, sigByResource)
 }
 

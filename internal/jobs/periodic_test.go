@@ -33,11 +33,11 @@ func fullConfig() PeriodicConfig {
 }
 
 func TestBuildPeriodicJobs_Gating(t *testing.T) {
-	// 7 always-on base jobs: sync, aws_org discovery, enrich, dangling, optimize,
+	// 8 always-on base jobs: sync, aws_org discovery, enrich, dangling, inventory retirement, optimize,
 	// suppression expiry, correlate. (Discovery calls AWS only for configured
 	// aws_org connectors, so it is not an outbound feed.) The outbound feeds (kev, osv, osv malfeed, epss, domain monitor)
 	// are toggles, so OFFLINE_MODE can switch every one of them off.
-	const base = 7
+	const base = 8
 
 	// Everything off, no scan interval → just the base schedule.
 	require.Len(t, buildPeriodicJobs(PeriodicConfig{}), base,

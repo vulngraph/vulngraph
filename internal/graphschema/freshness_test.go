@@ -15,6 +15,7 @@ import (
 // EdgeFreshnessCond — a reader that skips it resurrects edges that no longer
 // exist (they are never deleted, only left un-restamped until TTL).
 var freshnessExempt = map[string]string{
+	"app/asset/repo_retirement.go":      "conditional DELETE applies authoritative lifecycle proof to old edge versions; it must remove stale versions as well as fresh ones and never serves an edge",
 	"app/asset/drift.go":                "drift timeline is deliberately historical — it reports on old edges",
 	"app/asset/repo_package_runners.go": "package departure evidence reads the LAPSED edges into a package and each runner's newest stamp on purpose — which runners used to ship it and whether their producer read them again since; a freshness filter would hide exactly the evidence. Nothing it returns is traversed or served as a live relationship.",
 	"app/asset/purge.go":                "PurgeEdgesForAssets deletes every graph_edges row referencing a purged account's assets, fresh or stale — applying EdgeFreshnessCond here would UNDERCOUNT (missing already-stale rows that still physically exist) and, worse, leave them undeleted: purging must remove all of them, not just the fresh ones.",

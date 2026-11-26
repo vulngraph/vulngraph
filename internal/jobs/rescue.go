@@ -63,6 +63,7 @@ func rescueRegistrations() map[string]rescueRegistration {
 		rescueEntry[EnrichArgs](&EnrichWorker{}),
 		rescueEntry[EnrichSweepArgs](&EnrichSweepWorker{}),
 		rescueEntry[DanglingSweepArgs](&DanglingSweepWorker{}),
+		rescueEntry[InventoryRetirementArgs](&InventoryRetirementWorker{}),
 		rescueEntry[DecideArgs](&RespondWorker{}),
 		rescueEntry[RefreshKEVArgs](&KEVWorker{}),
 		rescueEntry[RefreshOSVArgs](&OSVWorker{}),

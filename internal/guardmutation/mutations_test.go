@@ -2491,8 +2491,8 @@ var mutations = []Mutation{
 		Guard: "TestClassifyRelEndpointsTrustsOnlyVerifiedExpiry", Pkg: "./internal/app/graphstore",
 		File: "internal/app/graphstore/copy_load_relcsv.go",
 		Old:  "\tif (!srcLoaded && verifiedExpired[src]) || (!dstLoaded && verifiedExpired[dst]) {\n\t\treturn relRowEndpointExpired\n\t}\n",
-		New:  "\tif (!srcLoaded && ephemeralEndpointType[spec.from]) || (!dstLoaded && ephemeralEndpointType[spec.to]) {\n\t\treturn relRowEndpointExpired\n\t}\n",
-		Why: "reverts relRowEndpointExpired to trusting the endpoint's DECLARED type (via ephemeralEndpointType) " +
+		New:  "\tif (!srcLoaded && spec.from == NodeK8sWorkload) || (!dstLoaded && spec.to == NodeK8sWorkload) {\n\t\treturn relRowEndpointExpired\n\t}\n",
+		Why: "reverts relRowEndpointExpired to trusting the endpoint's declared K8sWorkload label " +
 			"instead of the caller's ClickHouse-verified map \u2014 the exact gap the fix closed. A wrong or " +
 			"stale producer type, or a future load-set regression that drops a live ephemeral asset for an " +
 			"unrelated reason, would force \"expired\" (the never-alerted-on outcome) with nothing ever verifying " +
@@ -2667,8 +2667,8 @@ var mutations = []Mutation{
 		File: "internal/app/enrich/sources_supply_chain.go",
 		Old: "\tif truncated {\n" +
 			"\t\tworkloadIDs = workloadIDs[:maxSupplyChainWorkloads]\n" +
-			"\t}\n\n\twlOut",
-		New: "\n\twlOut",
+			"\t}\n\n\texposed, unknown",
+		New: "\n\texposed, unknown",
 		Why: "removes the workloadIDs cap reposDeployExposure's second hop needs — " +
 			"maxSupplyChainRepos only bounds the FIRST hop's input, so one repo's deploys_to fanning out " +
 			"to many CI/CD environments/regions can still put several thousand ids into an unbounded CHIn, " +

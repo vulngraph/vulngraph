@@ -515,7 +515,7 @@ func TestGraphAxisAcceptsAnInheritDestination(t *testing.T) {
 	f := bucketFacts(reg, 100)
 	f.EdgesBySrc = nil
 	f.EdgesByDst = []EdgeEndpointCount{
-		{EdgeType: "runs_package", EndpointType: "s3_bucket", Rows: 5, Distinct: 5},
+		{EdgeType: "runs_image", EndpointType: "s3_bucket", Rows: 5, Distinct: 5},
 	}
 	c := axisOf(t, reg, f)
 	assert.NotEqual(t, AxisGraph, c.Axis,

@@ -155,7 +155,7 @@ func ladybugQueryableRelTable(relTable string) bool {
 // expiredEphemeralVerifier checks a batch of candidate ids against the asset
 // table and reports which ones are a CONFIRMED corpse — a real asset row that
 // fails the ephemeral-liveness gate — rather than a declared-type inference.
-// asset.Service.VerifyExpiredEphemeral implements it outside tests; nil means
+// asset.Service.VerifyDepartedAssets implements it outside tests; nil means
 // "no verifier available", which bulkSyncCopy treats as an empty result (every
 // missing ephemeral-typed endpoint reports relRowEndpointAbsent rather than
 // relRowEndpointExpired) — never as licence to trust the declared type again.
@@ -232,8 +232,8 @@ func bulkSyncCopy(ctx context.Context, conn *ladybug.Connection, assets []asset.
 
 	// Verify "expired" against the asset table BEFORE classifying a single row,
 	// rather than trusting each edge's own declared src_type/dst_type. One bulk
-	// query over every candidate id — never one per edge: a missing endpoint is a
-	// candidate only if its declared type is ephemeral (ephemeralEndpointType).
+	// query over missing endpoint IDs — never one per edge. Cloud deletions also
+	// have authoritative lifecycle records after inventory retirement.
 	// verifyExpired == nil (LoadFromSnapshot's fast-boot path, which deliberately
 	// avoids a ClickHouse round trip) degrades to an empty verified set: every such
 	// row reports relRowEndpointAbsent instead of relRowEndpointExpired for that
@@ -243,10 +243,10 @@ func bulkSyncCopy(ctx context.Context, conn *ladybug.Connection, assets []asset.
 		candidates := make(map[string]struct{}, 64)
 		for i := range edges {
 			e := &edges[i]
-			if _, loaded := nodeLabel[e.SrcID]; !loaded && ephemeralEndpointType[e.SrcType] {
+			if _, loaded := nodeLabel[e.SrcID]; !loaded {
 				candidates[e.SrcID] = struct{}{}
 			}
-			if _, loaded := nodeLabel[e.DstID]; !loaded && ephemeralEndpointType[e.DstType] {
+			if _, loaded := nodeLabel[e.DstID]; !loaded {
 				candidates[e.DstID] = struct{}{}
 			}
 		}

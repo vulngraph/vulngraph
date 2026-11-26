@@ -329,13 +329,14 @@ func (r *PGRepo) DeleteAssetHashes(ctx context.Context, connectorID string, ids 
 }
 
 // RecordAssetDeletions upserts the proven deletions.
-func (r *PGRepo) RecordAssetDeletions(ctx context.Context, connectorID string, ids []string, at time.Time) error {
-	if err := r.q.RecordAssetDeletions(ctx, sqlcgen.RecordAssetDeletionsParams{
+func (r *PGRepo) RecordAssetDeletions(ctx context.Context, connectorID string, ids []string, at time.Time) ([]string, error) {
+	proven, err := r.q.RecordAssetDeletions(ctx, sqlcgen.RecordAssetDeletionsParams{
 		AssetIds: ids, ConnectorID: connectorID, DeletedAt: at,
-	}); err != nil {
-		return fmt.Errorf("RecordAssetDeletions: %w", err)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("RecordAssetDeletions: %w", err)
 	}
-	return nil
+	return proven, nil
 }
 
 // PruneAssetDeletions drops deletion records older than cutoff.

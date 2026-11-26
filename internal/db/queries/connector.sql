@@ -70,13 +70,19 @@ SELECT asset_id, hash, asset_type, region FROM connector_asset_hashes WHERE conn
 DELETE FROM connector_asset_hashes
 WHERE connector_id = $1 AND asset_id = ANY($2::text[]);
 
--- name: RecordAssetDeletions :exec
+-- name: RecordAssetDeletions :many
 -- Records the sync's proven deletions. Called with exactly
 -- the ids whose hashes the same complete sweep deleted.
 INSERT INTO asset_deletions (asset_id, connector_id, deleted_at)
-SELECT unnest(@asset_ids::text[]), @connector_id, @deleted_at
+SELECT candidate.asset_id, @connector_id, @deleted_at
+FROM unnest(@asset_ids::text[]) AS candidate(asset_id)
+WHERE NOT EXISTS (
+    SELECT 1 FROM connector_asset_hashes AS owner
+    WHERE owner.asset_id = candidate.asset_id AND owner.connector_id::text <> @connector_id
+)
 ON CONFLICT (asset_id) DO UPDATE
-    SET connector_id = EXCLUDED.connector_id, deleted_at = EXCLUDED.deleted_at;
+    SET connector_id = EXCLUDED.connector_id, deleted_at = EXCLUDED.deleted_at, retired_at = NULL
+RETURNING asset_id;
 
 -- name: PruneAssetDeletions :execrows
 -- Drops deletion records older than the asset rows they describe can live
@@ -84,7 +90,27 @@ ON CONFLICT (asset_id) DO UPDATE
 DELETE FROM asset_deletions WHERE deleted_at < @cutoff;
 
 -- name: GetAssetDeletions :many
-SELECT asset_id, deleted_at FROM asset_deletions WHERE asset_id = ANY(@asset_ids::text[]);
+SELECT d.asset_id, d.deleted_at FROM asset_deletions AS d
+WHERE d.asset_id = ANY(@asset_ids::text[])
+AND NOT EXISTS (
+    SELECT 1 FROM connector_asset_hashes AS owner
+    WHERE owner.asset_id = d.asset_id AND owner.connector_id::text <> d.connector_id
+);
+
+-- name: PendingAssetRetirements :many
+SELECT d.asset_id, d.deleted_at FROM asset_deletions AS d
+WHERE d.retired_at IS NULL
+AND NOT EXISTS (
+    SELECT 1 FROM connector_asset_hashes AS owner WHERE owner.asset_id = d.asset_id
+)
+ORDER BY d.deleted_at, d.asset_id
+LIMIT @batch_size;
+
+-- name: CompleteAssetRetirements :exec
+UPDATE asset_deletions SET retired_at = now()
+WHERE (asset_id, deleted_at) IN (
+    SELECT unnest(@asset_ids::text[]), unnest(@deleted_ats::timestamptz[])
+);
 
 -- name: RecordProvenCapability :exec
 -- Idempotent by design: ON CONFLICT DO NOTHING, because proof is monotonic

@@ -1,9 +1,12 @@
 package graphstore
 
-// NamedQuery is a pre-baked Cypher query exposed via POST /api/graph/cypher.
+// NamedQuery describes a read-only investigation served by RunNamedQuery.
+// Inventory entries use bounded inventory traversal; their Query text documents
+// the relationship pattern, and is not executable as raw Cypher.
 // These showcase patterns a native graph engine makes possible: enriched risk
 // scores, multi-hop IAM escalation chains, and cross-domain exposure correlation.
 type NamedQuery struct {
+	Inventory   bool `json:"-"`
 	Name        string
 	Description string
 	Query       string
@@ -144,6 +147,7 @@ LIMIT 30`,
 	},
 	{
 		Name:        "supply_chain_exposure",
+		Inventory:   true,
 		Description: "Internet-exposed assets running vulnerable packages (SBOM supply chain risk)",
 		Params:      []string{},
 		// RunsIn rel table (Package->Asset) is never populated —
@@ -229,6 +233,7 @@ LIMIT 30`,
 	},
 	{
 		Name:        "repo_package_dependencies",
+		Inventory:   true,
 		Description: "Repos and the packages they depend on (SBOM — DependsOn edges)",
 		Params:      []string{},
 		Query: `
@@ -247,6 +252,7 @@ LIMIT 50`,
 	// "@acme-corp/db-client"), not p.id, so one name covers every version.
 	{
 		Name:        "package_source_repos",
+		Inventory:   true,
 		Description: "Which repos pull in a package, by package name — the SBOM half of \"where is this package used\"",
 		Params:      []string{"name"},
 		Query: `
@@ -258,6 +264,7 @@ LIMIT 100`,
 	},
 	{
 		Name:        "package_running_workloads",
+		Inventory:   true,
 		Description: "Which live workloads (k8s pods, ECS services, Cloud Run services) run a package, by package name — the runtime half of \"where is this package used\" (workload -> image -> package)",
 		Params:      []string{"name"},
 		// Two explicit hops: workload -> image -> package. RunsImage is a loaded rel
@@ -275,6 +282,7 @@ LIMIT 100`,
 	},
 	{
 		Name:        "high_risk_package_dependents",
+		Inventory:   true,
 		Description: "Repos depending on packages that run on exposed high-risk assets",
 		Params:      []string{},
 		// RunsIn (Package->Asset) is never populated. Use RunsPackage (Asset->Package)
@@ -303,6 +311,7 @@ LIMIT 50`,
 	},
 	{
 		Name:        "workloads_with_kev_packages",
+		Inventory:   true,
 		Description: "Cloud assets running packages with known-exploited (KEV) vulnerabilities",
 		Params:      []string{},
 		// RunsIn (Package->Asset) is never populated. Use RunsPackage (Asset->Package)
@@ -574,6 +583,7 @@ LIMIT 50`,
 	},
 	{
 		Name:        "kev_packages_on_exposed_assets",
+		Inventory:   true,
 		Description: "Packages with CISA KEV CVEs running on internet-exposed assets, joined via our SBOM data",
 		Params:      []string{},
 		// Accesses is Asset->Asset only — Package cannot be its source.
@@ -735,7 +745,7 @@ LIMIT 30`,
 		Query: `
 MATCH (n:Asset)
 WHERE n.exposed = 1
-MATCH (n)-[:ExecutesAs|HasRole|ConnectedViaSG|DnsPointsTo|ProtectedBy|RunsPackage|RunsImage|Binds|Accesses|CanAssume|CanEscalateTo|AccessesSecret*1..3]->(m)
+MATCH (n)-[:ExecutesAs|HasRole|ConnectedViaSG|DnsPointsTo|ProtectedBy|RunsImage|Binds|Accesses|CanAssume|CanEscalateTo|AccessesSecret*1..3]->(m)
 WITH n, count(DISTINCT m) AS reach
 RETURN n
 ORDER BY reach DESC, n.id
@@ -746,7 +756,7 @@ LIMIT 20`,
 		Description: "Shortest attacker-movement path (up to 4 hops) from one node to another, by ID — empty when none exists",
 		Params:      []string{"src_id", "dst_id"},
 		Query: `
-MATCH p = (src {id: $src_id})-[:ExposedToInternet|ExecutesAs|HasRole|ConnectedViaSG|DnsPointsTo|ProtectedBy|RunsPackage|RunsImage|Binds|Accesses|CanAssume|CanEscalateTo|AccessesSecret* SHORTEST 1..4]->(dst {id: $dst_id})
+MATCH p = (src {id: $src_id})-[:ExposedToInternet|ExecutesAs|HasRole|ConnectedViaSG|DnsPointsTo|ProtectedBy|RunsImage|Binds|Accesses|CanAssume|CanEscalateTo|AccessesSecret* SHORTEST 1..4]->(dst {id: $dst_id})
 RETURN p`,
 	},
 	{

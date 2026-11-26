@@ -81,9 +81,9 @@ func TestEdgeSyncResultReachComplete(t *testing.T) {
 	require.False(t, EdgeSyncResult{
 		TruncatedTypes: map[string]bool{"runs_image": true},
 	}.ReachComplete(), "a truncated containment type is incomplete")
-	require.False(t, EdgeSyncResult{
+	require.True(t, EdgeSyncResult{
 		TruncatedTypes: map[string]bool{"runs_package": true},
-	}.ReachComplete(), "a truncated containment type is incomplete")
+	}.ReachComplete(), "on-demand memberships do not enter resident reach")
 
 	// The containment types are critical-tier alongside the reach
 	// types (graphschema.TestReachAndInheritTypesAreCritical enforces it), so a

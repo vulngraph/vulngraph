@@ -330,6 +330,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	assetSvc := asset.NewService(assetCHRepo)
 	connectorSvc := connector.NewService(connector.NewPGRepo(pool), cipher).WithOrgDiscoverer(newAWSOrgDiscoverer()).
 		WithAudit(adminAudit)
+	assetSvc.WithDeletionProofs(connectorSvc)
 	findingSvc := finding.NewService(finding.NewCHRepo(ch)).
 		// A resolve ends the finding's alert episode, so a regression re-alerts.
 		WithResolveObserver(enrichcache.NewService(enrichcache.NewPGRepo(pool))).
@@ -361,6 +362,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		return fmt.Errorf("serve: %w", err)
 	}
 	if serveLadybug != nil {
+		serveLadybug.WithPackageInventory(explore.NewCHRepo(ch), assetSvc)
 		serveSnapPath := getenv("SERVE_LADYBUG_SNAPSHOT_PATH")
 		// Same recorder as the worker, so a rebuild here shows on THIS pod's
 		// /metrics. Without it the serve replica could rebuild unobserved.
@@ -703,7 +705,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 			h := explore.NewHandler(exploreSvc, cypherRunner)
 			qs := make([]explore.NamedQueryEntry, len(graphstore.NamedQueries))
 			for i, q := range graphstore.NamedQueries {
-				qs[i] = explore.NamedQueryEntry{Name: q.Name, Query: q.Query, Params: q.Params}
+				qs[i] = explore.NamedQueryEntry{Name: q.Name, Query: q.Query, Params: q.Params, Inventory: q.Inventory}
 			}
 			return h.WithNamedQueries(qs).WithNodeStats(graphStats)
 		}(),

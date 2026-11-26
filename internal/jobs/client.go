@@ -425,6 +425,7 @@ func registerRealWorkers(workers *river.Workers, pool *pgxpool.Pool, deps Deps) 
 	// that is wired everywhere except its constructor is indistinguishable from no
 	// instrumentation, which is the failure this metric exists to catch.
 	river.AddWorker(workers, &DanglingSweepWorker{findings: deps.Findings, assets: deps.Assets, metrics: deps.Metrics})
+	river.AddWorker(workers, &InventoryRetirementWorker{proofs: deps.Connectors, assets: deps.Assets, findings: deps.Findings})
 	river.AddWorker(workers, &OptimizeAssetsWorker{assets: deps.Assets})
 	river.AddWorker(workers, &RespondWorker{respond: deps.Respond})
 	river.AddWorker(workers, &KEVWorker{fetcher: deps.KEVFetcher, findings: deps.Findings, additions: deps.KEVAdditions})

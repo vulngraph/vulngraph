@@ -26,6 +26,9 @@ func namedQueryRelTables(t *testing.T) map[string]struct{} {
 	t.Helper()
 	out := map[string]struct{}{}
 	for _, q := range NamedQueries {
+		if q.Inventory {
+			continue
+		} // exercised through the bounded inventory backend
 		for _, m := range relTokenRE.FindAllStringSubmatch(q.Query, -1) {
 			for _, tok := range splitAlternation(m[1]) {
 				out[tok] = struct{}{}

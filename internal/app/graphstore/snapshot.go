@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
+	"github.com/vulngraph/vulngraph/internal/graphschema"
 )
 
 // GraphSnapshot is the on-disk representation of a topology snapshot.
@@ -112,10 +113,8 @@ func ReadSnapshot(path, schemaVersion string) (GraphSnapshot, error) {
 // never seed the served GRAPH — that still goes through ReadSnapshot, whose
 // version check stands: there is no in-place Ladybug migration.
 //
-// A SchemaVersion bump gates Ladybug's DDL or loading set, not the ClickHouse row
-// counts Layer 2 compares, so the previous build's shape is usually still a
-// valid comparison point straight through the bump; using it costs at most one
-// late-published sweep under acceptOnRepeat, never a false publish.
+// The old shape is projected onto the current loading set before comparison.
+// Deliberately moved inventory does not count as missing resident topology.
 //
 // Returns (_, false) on anything that stops it being a trustworthy shape: no
 // file, or a decode error (a gob-incompatible struct change between
@@ -125,7 +124,22 @@ func ReadSnapshotShapeAnyVersion(path string) (fidelityShape, bool) {
 	if err != nil {
 		return fidelityShape{}, false
 	}
-	return shapeOf(snap.Assets, snap.Edges), true
+	// Compare the resident projection across loading-set upgrades. Inventory
+	// memberships intentionally moved out of Ladybug must not look like a
+	// failed fetch, while the remaining topology still arms the fidelity gate.
+	coreEdges := snap.Edges[:0]
+	for _, e := range snap.Edges {
+		if !graphschema.IsOnDemandEdge(e.EdgeType) {
+			coreEdges = append(coreEdges, e)
+		}
+	}
+	coreAssets := snap.Assets[:0]
+	for _, a := range snap.Assets {
+		if !neverKeepTypes[a.Type] {
+			coreAssets = append(coreAssets, a)
+		}
+	}
+	return shapeOf(coreAssets, coreEdges), true
 }
 
 // decodeSnapshotFile does the gzip+gob decode shared by ReadSnapshot (which then

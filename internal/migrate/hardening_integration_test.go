@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
+	"os"
 	"testing"
 	"time"
 
@@ -27,7 +28,11 @@ func isolatedMigrationDB(t *testing.T) (context.Context, *sql.DB, *goose.Provide
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	t.Cleanup(cancel)
-	admin, err := sql.Open("pgx", pgDSN)
+	baseDSN := os.Getenv("TEST_DATABASE_URL")
+	if baseDSN == "" {
+		baseDSN = pgDSN
+	}
+	admin, err := sql.Open("pgx", baseDSN)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close() })
 	schema := fmt.Sprintf("migration_hardening_%d", time.Now().UnixNano())
@@ -40,7 +45,7 @@ func isolatedMigrationDB(t *testing.T) (context.Context, *sql.DB, *goose.Provide
 		_, err := admin.ExecContext(cleanup, "DROP SCHEMA "+quoted+" CASCADE")
 		require.NoError(t, err)
 	})
-	u, err := url.Parse(pgDSN)
+	u, err := url.Parse(baseDSN)
 	require.NoError(t, err)
 	query := u.Query()
 	query.Set("search_path", schema)

@@ -21,6 +21,8 @@ import (
 // hold is unmeasured and grows with the loaded node count; a hold over 200ms is
 // logged with lock_held.
 func (s *Service) RefreshSignals(ctx context.Context, signals SignalSource) error {
+	s.writerMu.Lock()
+	defer s.writerMu.Unlock()
 	if signals == nil || !s.synced.Load() {
 		return nil
 	}
@@ -45,44 +47,53 @@ func (s *Service) applySignals(ctx context.Context, sigByResource map[string]Nod
 	logger := log.FromContext(ctx)
 	start := time.Now()
 
-	ov, _, nodeIDs := s.lastReach()
-	rows := signalRows(sigByResource, ov, nodeIDs)
+	ov, _, _ := s.lastReach()
+	rows, count, err := s.changedSignalRows(sigByResource, ov)
+	if err != nil {
+		s.signalsDirty = true
+		s.rebaseSignalsDigest(0, false)
+		return fmt.Errorf("RefreshSignals: %w", err)
+	}
+	s.lastSignalRows.Store(int64(count))
+	s.lastSignalLockNS.Store(0)
 
-	// Apply signal column updates on the live DB under the write lock so readers
-	// never observe a partially-updated node. The lock is held across one UNWIND SET
-	// per label — blocking all withRead callers for their duration. lockElapsed in
-	// the log below measures the actual cost. If it exceeds 500ms at scale, consider
-	// moving to the off-side-DB pattern used by SyncFromSources (rebuild a new DB
-	// with refreshed signals, swap atomically) at the cost of more memory during the
-	// rebuild window.
-	lockStart := time.Now()
+	// Prepare deltas before taking the read-blocking lock, then write only the
+	// changed nodes to their actual labels. writerMu keeps this baseline stable.
 	s.mu.Lock()
+	lockStart := time.Now()
 	if s.db == nil {
 		s.mu.Unlock()
 		return ErrLadybugUnavailable
 	}
-	wc, err := s.db.newWriteConn()
-	if err != nil {
-		s.mu.Unlock()
-		return fmt.Errorf("RefreshSignals: write conn: %w", err)
-	}
-	// One UNWIND per label that carries signal columns, derived from the label set
-	// rather than hardcoded: a label missing here (e.g. :K8sWorkload or :Package)
-	// would keep serving whatever the last full rebuild wrote instead of the
-	// refreshed values — the same class of omission bfsScoreLabels guards against.
 	var writeErrs []error
-	for _, label := range signalRefreshLabels() {
-		if _, uErr := unwindInsert(wc, signalRefreshQuery(label), rows); uErr != nil {
-			writeErrs = append(writeErrs, fmt.Errorf("%s: %w", label, uErr))
+	if count > 0 {
+		wc, err := s.db.newWriteConn()
+		if err != nil {
+			writeErrs = append(writeErrs, err)
+		} else {
+			for _, label := range signalRefreshLabels() {
+				if len(rows[label]) == 0 {
+					continue
+				}
+				if err := ctx.Err(); err != nil {
+					writeErrs = append(writeErrs, err)
+					break
+				}
+				if _, uErr := unwindInsert(wc, signalRefreshQuery(label), rows[label]); uErr != nil {
+					writeErrs = append(writeErrs, fmt.Errorf("%s: %w", label, uErr))
+				}
+			}
+			wc.Close()
 		}
 	}
-	wc.Close()
 	lockElapsed := time.Since(lockStart)
 	s.mu.Unlock()
+	s.lastSignalLockNS.Store(int64(lockElapsed))
 	if lockElapsed > 200*time.Millisecond {
 		logger.Warn().Dur("lock_held", lockElapsed).Msg("graphstore: RefreshSignals write lock held longer than expected")
 	}
 	if len(writeErrs) > 0 {
+		s.signalsDirty = true
 		s.rebaseSignalsDigest(0, false)
 		return fmt.Errorf("RefreshSignals: label write: %w", errors.Join(writeErrs...))
 	}
@@ -92,43 +103,19 @@ func (s *Service) applySignals(ctx context.Context, sigByResource map[string]Nod
 	// Topology (and thus reach) is unchanged here, so prewarmSignalCache overlays
 	// the reach map stashed by the last topology build rather than the poisoned
 	// zero-value InternetHops from the signal rollup.
-	s.prewarmSignalCache(sigByResource)
+	if s.signalsDirty {
+		s.prewarmSignalCache(sigByResource)
+	} else {
+		s.refreshSignalCache(sigByResource)
+	}
+	s.resetSignalBaseline(sigByResource)
 
 	logger.Info().
 		Dur("elapsed", time.Since(start)).
 		Int("signals", len(sigByResource)).
-		Int("rows", len(rows)).
+		Int("rows", count).
 		Msg("graphstore: signals refreshed (no topology rebuild)")
 	return nil
-}
-
-// signalRows builds the UNWIND rows for a signal refresh: one per rollup entry,
-// plus a zero row for every loaded node the rollup no longer names.
-//
-// The zero rows are what clears a resource whose findings all resolved. The rollup
-// only carries resources with open findings, so without them an UNWIND ... MATCH
-// ... SET never touches that node and it keeps has_kev/exploitable/max_score from
-// its last finding — while prewarmSignalCache, which zeroes every absent node,
-// tells enrich the opposite. A full rebuild loads the same node with NodeSignals{},
-// so this is also what keeps the cheap path equal to a rebuild.
-//
-// exposed and internet_hops are topology-derived and are NOT written here — a
-// signal refresh has no edges, so the rollup carries their zero values and
-// writing them would assert "not exposed / not reachable" for everything.
-// toxic_combo is ALSO topology-derived (exposed && privesc_count > 0); it is
-// recomputed from the exposure set stashed by the last topology build.
-func signalRows(sigByResource map[string]NodeSignals, ov reachOverlay, nodeIDs []string) []map[string]any {
-	rows := make([]map[string]any, 0, len(sigByResource)+len(nodeIDs))
-	for id, sig := range sigByResource {
-		rows = append(rows, signalRow(id, sig, ov.exposed[id]))
-	}
-	for _, id := range nodeIDs {
-		if _, ok := sigByResource[id]; ok {
-			continue
-		}
-		rows = append(rows, signalRow(id, NodeSignals{}, ov.exposed[id]))
-	}
-	return rows
 }
 
 func signalRow(id string, sig NodeSignals, exposed bool) map[string]any {

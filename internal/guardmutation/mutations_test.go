@@ -375,8 +375,8 @@ var mutations = []Mutation{
 	{
 		Guard: "TestGraphEdgesReadersApplyFreshness", Pkg: "./internal/graphschema",
 		File: "internal/app/finding/risk.go",
-		Old:  "WHERE edge_type = 'runs_in' AND ` + graphschema.EdgeFreshnessCond + `\n",
-		New:  "WHERE edge_type = 'runs_in'\n",
+		Old:  "WHERE e.edge_type = 'runs_package' AND ` + graphschema.EdgeFreshnessCond + `\n",
+		New:  "WHERE e.edge_type = 'runs_package'\n",
 		Why: "a graph_edges reader that drops the freshness filter resurrects topology that no longer exists " +
 			"(edges are never deleted, only left un-restamped until TTL)",
 	},
@@ -2665,10 +2665,29 @@ var mutations = []Mutation{
 	{
 		Guard: "TestPackageDeployExposure_CapsWorkloadFanout", Pkg: "./internal/app/enrich",
 		File: "internal/app/enrich/sources_supply_chain.go",
-		Old: "\tif truncated {\n" +
-			"\t\tworkloadIDs = workloadIDs[:maxSupplyChainWorkloads]\n" +
-			"\t}\n\n\texposed, unknown",
-		New: "\n\texposed, unknown",
+		Old: `	repoOut, truncated, err := s.Graph.LineageTargets(ctx, repoIDs, "deploys_to", maxSupplyChainWorkloads)
+	if err != nil {
+		return deployExposure{}, err
+	}
+	workloadIDs := dstIDsOfType(repoOut, "deploys_to")
+	if len(workloadIDs) == 0 {
+		return deployExposure{lineage: true}, nil // shipped but no deployed workload found
+	}
+	truncated = truncated || len(workloadIDs) > maxSupplyChainWorkloads
+	if truncated {
+		workloadIDs = workloadIDs[:min(len(workloadIDs), maxSupplyChainWorkloads)]
+	}
+`,
+		New: `	repoOut, truncated, err := s.Graph.LineageTargets(ctx, repoIDs, "deploys_to", maxSupplyChainWorkloads+50)
+	if err != nil {
+		return deployExposure{}, err
+	}
+	workloadIDs := dstIDsOfType(repoOut, "deploys_to")
+	if len(workloadIDs) == 0 {
+		return deployExposure{lineage: true}, nil // shipped but no deployed workload found
+	}
+	truncated = truncated || len(workloadIDs) > maxSupplyChainWorkloads
+`,
 		Why: "removes the workloadIDs cap reposDeployExposure's second hop needs — " +
 			"maxSupplyChainRepos only bounds the FIRST hop's input, so one repo's deploys_to fanning out " +
 			"to many CI/CD environments/regions can still put several thousand ids into an unbounded CHIn, " +
@@ -5205,6 +5224,7 @@ var mutations = []Mutation{
 // Keep it truthful. A harness claiming full coverage while actually testing
 // half is the same class of lie as the guards it audits.
 var exempt = map[string]string{
+	"TestConnectorSyncThroughput": "reads measured API fixture JSON to exercise real storage, not repository source; behavioral database test",
 	// Asserts go.mod text. The only mutation that would make it fail is deleting
 	// the ldapserver replace, which changes module resolution for the whole build
 	// (go.sum carries no hash for the upstream GPL module), so the harness would

@@ -69,6 +69,12 @@ func buildBlastAdjacency(assets []asset.Asset, edges []asset.Edge) *blastAdjacen
 	meta := make(map[string]blastNodeMeta, len(assets))
 	for i := range assets {
 		a := &assets[i]
+		if nodeIDs[a.ID] || !csvSafeID(a.ID) {
+			continue
+		}
+		if _, loaded := nodeUnwindQ[NodeLabelFor(a.Type)]; !loaded {
+			continue
+		}
 		nodeIDs[a.ID] = true
 		meta[a.ID] = blastNodeMeta{
 			name:      a.Name,

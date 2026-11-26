@@ -33,7 +33,8 @@ var cloudSDKPrefixes = []string{
 // "<file path as walked from this directory>:<method>". Each entry must say why
 // it is not a cloud mutation; a new entry is a review decision.
 var mutationAllowlist = map[string]string{
-	"awsdisk/blocksource.go:SetLimit": "errgroup.Group.SetLimit bounds local goroutines",
+	"../../collect/azure/vms.go:SetLimit": "errgroup.Group.SetLimit bounds local NIC lookup goroutines",
+	"awsdisk/blocksource.go:SetLimit":     "errgroup.Group.SetLimit bounds local goroutines",
 }
 
 type parsedFile struct {

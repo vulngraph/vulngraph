@@ -60,7 +60,7 @@ func (c *Collector) collectAll(ctx context.Context, cfg map[string]string) (coll
 	// don't undermine this claim. Scope is subscription-wide, matching the
 	// real enumeration unit: unlike AWS, Azure Compute is not region-partitioned
 	// API-side (one ListAll call already spans every region).
-	vms, vmEdges, err := collectVMs(ctx, cred, subscriptionID, now)
+	vms, vmEdges, err := collectVMs(ctx, cred, subscriptionID, now, readOnlyARM())
 	if err != nil {
 		return collect.Result{}, fmt.Errorf("collectAll: %w", err)
 	}

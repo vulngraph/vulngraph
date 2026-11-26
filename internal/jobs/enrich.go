@@ -625,7 +625,7 @@ const enrichSweepPriority = river.PriorityDefault + 1
 // enqueueEnrichPriority is enqueueEnrich with an explicit River priority
 // (1=highest/default, 4=lowest — see river.InsertOpts.Priority). Queue and
 // UniqueOpts still come from EnrichArgs.InsertOpts() regardless of priority;
-// river.Client.Insert merges per-call opts with the args-level opts
+// river.Client.InsertMany merges per-call opts with the args-level opts
 // field-by-field (cmp.Or), it does not replace them wholesale.
 func enqueueEnrichPriority(ctx context.Context, found []finding.Finding, priority int) {
 	if len(found) == 0 {
@@ -639,12 +639,7 @@ func enqueueEnrichPriority(ctx context.Context, found []finding.Finding, priorit
 		log.FromContext(ctx).Error().Err(err).Msg("enqueue enrich: no river client in context")
 		return
 	}
-	opts := &river.InsertOpts{Priority: priority}
-	for _, f := range found {
-		if _, err := client.Insert(ctx, EnrichArgs{FindingID: f.ID}, opts); err != nil {
-			log.FromContext(ctx).Error().Err(err).Str("finding_id", f.ID).Msg("enqueue enrich failed")
-		}
-	}
+	insertEnrichBatches(ctx, client, found, priority)
 }
 
 // respondQueueMax caps the number of pending decide jobs. When the respond

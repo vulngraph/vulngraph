@@ -116,6 +116,7 @@ func (c *Collector) Collect(ctx context.Context, cfg map[string]string) (collect
 	// after it, so a `binds` edge is never emitted to a ServiceAccount the collector
 	// proved does not exist. The loop must therefore run before ListClusterRoleBindings.
 	known := newSAInventory(namespaces)
+	seenImages := map[[2]string]bool{}
 
 	// Cluster-wide admission policy engines, stamped on every namespace asset.
 	// Best effort: an unread list leaves the key off (admission_engines.go).
@@ -219,7 +220,19 @@ func (c *Collector) Collect(ctx context.Context, cfg map[string]string) (collect
 				}
 			}
 			result.Assets = append(result.Assets, a)
-			result.Assets = append(result.Assets, extraAssets...)
+			for _, extra := range extraAssets {
+				// A shared digest/ref has the same cluster metadata for every pod.
+				// Keep distinct refs (they may need different registry credentials)
+				// and every pod edge, but emit an identical image record once.
+				if extra.Type == "container_image" {
+					key := [2]string{extra.ID, extra.Metadata["image_ref"]}
+					if seenImages[key] {
+						continue
+					}
+					seenImages[key] = true
+				}
+				result.Assets = append(result.Assets, extra)
+			}
 			result.Edges = append(result.Edges, edges...)
 		}
 

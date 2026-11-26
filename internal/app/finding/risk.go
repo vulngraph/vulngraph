@@ -52,7 +52,7 @@ type ResourceSignals struct {
 // Two signal sources are unioned:
 //  1. Direct: finding.resource_id → asset (CSPM, nuclei, CIEM)
 //  2. Package rollup: supply-chain findings on package purls are propagated to the
-//     assets that run those packages via graph_edges (runs_in: pkg → asset).
+//     assets that run those packages via graph_edges (runner → runs_package → pkg).
 //     This surfaces KEV/exploitable signals on assets from their dependencies.
 //
 // cve_id is the check_id of the highest-scoring supply-chain finding per resource
@@ -107,17 +107,18 @@ FROM (
 GROUP BY resource_id
 UNION ALL
 -- Package rollup: propagate supply-chain KEV/score to the asset that runs the package.
--- graph_edges with edge_type='runs_in' maps package purl (src_id) → asset id (dst_id).
-SELECT e.dst_id                       AS resource_id,
+-- Inventory producers write runner (src_id) → package purl (dst_id).
+SELECT e.src_id                       AS resource_id,
     max(f.score)                      AS max_score,
     max(f.known_exploited)            AS has_kev,
     toUInt64(0)                       AS privesc_count,
     toUInt64(0)                       AS exploitable_count,
     ''                                AS cve_id
-FROM (
+FROM graph_edges e
+INNER JOIN (
     SELECT legacy.resource_id AS resource_id,
-        fe.score AS score,
-        fe.known_exploited AS known_exploited
+        max(fe.score) AS score,
+        max(fe.known_exploited) AS known_exploited
     FROM (
         SELECT id, resource_id
         FROM findings
@@ -131,20 +132,13 @@ FROM (
             argMax(known_exploited, enriched_at) AS known_exploited
         FROM finding_enrichment GROUP BY id
     ) fe ON legacy.id = fe.id
-) f
-JOIN (
-    -- Every asset that runs the package, not just one. A package (src_id) runs in
-    -- N workloads (dst_id) — N rows in graph_edges. The previous argMax(dst_id)
-    -- collapsed those to a single asset, so a KEV package on 50 hosts propagated
-    -- its exploit signal to only one of them. DISTINCT keeps all (package→asset)
-    -- pairs so the signal reaches every affected workload. (No FINAL per house
-    -- rule; a lingering stale edge over-propagates until TTL, which is fail-safe.)
-    SELECT DISTINCT src_id, dst_id
-    FROM graph_edges
-    WHERE edge_type = 'runs_in' AND ` + graphschema.EdgeFreshnessCond + `
-) e ON f.resource_id = e.src_id
-WHERE f.known_exploited = 1
-GROUP BY e.dst_id
+    WHERE fe.known_exploited = 1
+    GROUP BY legacy.resource_id
+) f ON e.dst_id = f.resource_id
+-- Repeated edge versions cannot change max(). Aggregate the small package side
+-- before joining; DISTINCT over every membership would build millions of groups.
+WHERE e.edge_type = 'runs_package' AND ` + graphschema.EdgeFreshnessCond + `
+GROUP BY e.src_id
 UNION ALL
 -- Supply-chain CVE rollup: per package purl (resource_id), pick the check_id of
 -- the highest-scoring CVE finding. This populates the Package node's cve_id column

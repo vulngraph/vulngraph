@@ -287,9 +287,7 @@ func (w *ReenrichWorker) enqueue(ctx context.Context, ids []string) int {
 		return 0
 	}
 	params := reenrichInsertParams(ids)
-	// InsertMany rather than one Insert per finding: the existing enqueueEnrich does
-	// the latter, which is fine for a handful at ingest but would be reenrichChunk
-	// sequential round-trips here.
+	// One bounded InsertMany avoids a round trip per finding.
 	inserted, err := client.InsertMany(ctx, params)
 	if err != nil {
 		log.FromContext(ctx).Error().Err(err).Int("batch", len(ids)).

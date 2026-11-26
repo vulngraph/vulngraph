@@ -56,7 +56,7 @@ func (s SupplyChainExposure) AlertCarrier(ctx context.Context, f finding.Finding
 		}
 		return fmt.Sprintf("vm_vuln fleet findings (%d instances)", cov.instances), nil
 	}
-	if len(r.repos) > 0 || len(r.vms) > 0 || len(r.images) == 0 || !isBaseLayerPackage(f) {
+	if r.truncated || len(r.repos) > 0 || len(r.images) == 0 || len(r.vms) > 0 || !isBaseLayerPackage(f) {
 		return "", nil
 	}
 	covering, err := s.baseImageRootCauses(ctx)

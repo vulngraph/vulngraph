@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -112,22 +113,22 @@ func (c *Collector) collectBranchProtection(ctx context.Context, baseURL, token 
 	return result
 }
 
-// branchProtectionSplit reads one batch, halving and retrying on a query-level
-// rejection until the pieces are small enough to be accepted.
-//
-// A rejected query is rejected for a reason that scales with its size
-// (complexity, execution timeout, secondary rate limit), so the same repositories
-// asked about in smaller groups succeed. Halving rather than dropping to one repo
-// at a time keeps the cost near the batched ideal — a single oversized batch
-// costs log2(100) ≈ 7 extra round trips, not 100 — and the recursion is bounded
-// by the batch size because each level strictly halves.
-//
-// A single repository that still fails is genuinely unobservable: it is logged
-// and its key omitted, never guessed at.
+// branchProtectionSplit halves a batch only for an explicit GraphQL complexity,
+// node-count or execution-time rejection. HTTP, permission and rate-limit failures
+// stay unknown without multiplying requests. Recursion is bounded by batch size;
+// repeated failures can still cost up to twice the number of repositories.
 func (c *Collector) branchProtectionSplit(ctx context.Context, baseURL, token string, batch []repo, drops map[string]int) map[string]string {
 	states, err := c.branchProtectionBatch(ctx, baseURL, token, batch, drops)
 	if err == nil {
 		return states
+	}
+	// Shrinking a query cannot repair a rejected credential, exhausted rate
+	// limit, transport failure or cancelled context. Only a GraphQL query-level
+	// rejection can benefit from splitting; HTTP retries already ran in doJSON.
+	var splitErr *protectionSplitError
+	if !errors.As(err, &splitErr) {
+		drops["query_rejected"] += len(batch)
+		return nil
 	}
 	if len(batch) == 1 {
 		// Never a state — a failed read must not become "disabled".
@@ -152,10 +153,17 @@ func (c *Collector) branchProtectionSplit(ctx context.Context, baseURL, token st
 // than one aliased repository. Both signals matter: `data: null` means nothing
 // was resolved, and an error without a `path` is by definition not about a single
 // alias.
+type protectionSplitError struct{ error }
+
 func queryLevelError(out bpResponse) error {
 	for _, e := range out.Errors {
 		if len(e.Path) == 0 {
-			return fmt.Errorf("query rejected: %s", e.Message)
+			err := fmt.Errorf("query rejected: %s", e.Message)
+			message := strings.ToLower(e.Type + " " + e.Message)
+			if strings.Contains(message, "complexity") || strings.Contains(message, "timeout") || strings.Contains(message, "timed out") || strings.Contains(message, "max_node_limit") {
+				return &protectionSplitError{err}
+			}
+			return err
 		}
 	}
 	if out.Data == nil {

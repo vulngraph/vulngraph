@@ -59,3 +59,15 @@ func TestBudgetedSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestNestedQuerySettingsPreserveTracingWithoutMutatingParent(t *testing.T) {
+	ch := &CH{}
+	original := map[string]any{"log_comment": "fixture", "max_execution_time": 10}
+	parent := ch.WithQuerySettings(context.Background(), original)
+	child := ch.WithQuerySettings(parent, map[string]any{"max_execution_time": 5, "max_memory_usage": 128 << 20})
+	original["log_comment"] = "changed"
+	require.Equal(t, "fixture", budgetedSettings(child, querybudget.Budget{})["log_comment"])
+	require.Equal(t, 5, budgetedSettings(child, querybudget.Budget{})["max_execution_time"])
+	require.Equal(t, 10, budgetedSettings(parent, querybudget.Budget{})["max_execution_time"])
+	require.NotContains(t, budgetedSettings(parent, querybudget.Budget{}), "max_memory_usage")
+}

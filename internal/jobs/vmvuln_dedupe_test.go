@@ -39,6 +39,26 @@ func (l edgeLineage) EdgesOutBatch(_ context.Context, ids []string, edgeType str
 	return out, nil
 }
 
+func (l edgeLineage) LineageSources(ctx context.Context, ids []string, typ string, limit int) ([]asset.Edge, bool, error) {
+	var out []asset.Edge
+	for _, id := range ids {
+		edges, err := l.EdgesInto(ctx, id, typ)
+		if err != nil {
+			return nil, false, err
+		}
+		out = append(out, edges...)
+	}
+	return out[:min(len(out), limit)], len(out) > limit, nil
+}
+func (l edgeLineage) LineageTargets(ctx context.Context, ids []string, typ string, limit int) ([]asset.Edge, bool, error) {
+	out, err := l.EdgesOutBatch(ctx, ids, typ)
+	return out[:min(len(out), limit)], len(out) > limit, err
+}
+func (l edgeLineage) AnyConfirmedExposure(ctx context.Context, ids []string) (bool, error) {
+	out, err := l.EdgesOutBatch(ctx, ids, "exposed_to_internet")
+	return len(out) > 0, err
+}
+
 // recordedFleets lists the fleet findings a pass recorded, as finding.Service
 // would after RecordObserved.
 type recordedFleets struct{ fs *fakeVMVulnFindings }

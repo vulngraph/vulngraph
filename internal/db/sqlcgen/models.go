@@ -91,25 +91,26 @@ type AwsOrgAccount struct {
 }
 
 type Connector struct {
-	ID                string
-	Type              string
-	Name              string
-	ConfigEnc         []byte
-	Enabled           bool
-	EventSource       string
-	SyncStatus        string
-	SyncError         string
-	LastSyncedAt      pgtype.Timestamptz
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	SyncFingerprint   string
-	Mode              string
-	LastSuccessAt     pgtype.Timestamptz
-	SyncStreak        int32
-	PartialStreak     int32
-	DiskScanMode      string
-	DiskScanEnabledBy string
-	DiskScanEnabledAt pgtype.Timestamptz
+	ID                 string
+	Type               string
+	Name               string
+	ConfigEnc          []byte
+	Enabled            bool
+	EventSource        string
+	SyncStatus         string
+	SyncError          string
+	LastSyncedAt       pgtype.Timestamptz
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	SyncFingerprint    string
+	Mode               string
+	LastSuccessAt      pgtype.Timestamptz
+	SyncStreak         int32
+	PartialStreak      int32
+	DiskScanMode       string
+	DiskScanEnabledBy  string
+	DiskScanEnabledAt  pgtype.Timestamptz
+	DeletionObservedAt pgtype.Timestamptz
 }
 
 type ConnectorAssetHash struct {
@@ -125,6 +126,13 @@ type ConnectorAssetHash struct {
 	ChangeCount   int32
 	AssetType     string
 	Region        string
+}
+
+type ConnectorDeletionCandidate struct {
+	ConnectorID    string
+	AssetID        string
+	FirstMissingAt time.Time
+	LastMissingAt  time.Time
 }
 
 type ConnectorProvenCapability struct {

@@ -15,8 +15,11 @@ import (
 // fakeRepo stores connectors with their config still encrypted, like the real
 // repo — so tests exercise the true encrypt-on-write / decrypt-on-read path.
 type fakeRepo struct {
-	rows   map[string]storedConnector
-	nextID int
+	rows          map[string]storedConnector
+	nextID        int
+	getCalls      int
+	orgBatchCalls int
+	orgBatchErr   error
 	// provenCapabilities mirrors the real (connector_id, capability) primary
 	// key: a map keyed on connector id, of sets of capability, so recording
 	// the same capability twice is naturally idempotent like the real
@@ -79,6 +82,7 @@ func (f *fakeRepo) ResealConfig(_ context.Context, id string, old, sealed []byte
 }
 
 func (f *fakeRepo) Get(_ context.Context, id string) (storedConnector, error) {
+	f.getCalls++
 	sc, ok := f.rows[id]
 	if !ok {
 		return storedConnector{}, ErrNotFound
@@ -163,6 +167,10 @@ func (f *fakeRepo) UpsertAssetHashEntries(_ context.Context, _ string, _ []Asset
 
 func (f *fakeRepo) DeleteAssetHashes(_ context.Context, _ string, _ []string) error {
 	return nil
+}
+
+func (f *fakeRepo) ObserveDeletionCandidates(_ context.Context, _ string, _ []string, _, _ time.Time, _ int) ([]string, error) {
+	return nil, nil
 }
 
 func (f *fakeRepo) RecordAssetDeletions(_ context.Context, _ string, ids []string, _ time.Time) ([]string, error) {

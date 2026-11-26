@@ -71,9 +71,10 @@ pressure. Both configurations use two query threads and two loader threads.
 That buffer pool is not a cap on total process memory. Budget additional host
 memory for Go, Ladybug and Docker. Run one profile at a time.
 
-The PR workflow runs `smoke` and uploads the report, including on failure. It
+The PR workflow runs `smoke`, connector fixtures up to 1,000 resources, and the real
+sync worker over those results. It uploads reports, including on failure, and
 requires exact resident counts, public/private reachability, expected sync paths,
-five graph-source queries per refresh, and a read-row budget of six times the
+five graph-source queries per refresh, and a read-row budget of three times the
 physical fixture size. The query/read budgets must be reviewed when intentionally
 changing the pipeline. Timing and memory are reported without a flaky shared-runner
 latency threshold. `workflow_dispatch` also supports `medium`.
@@ -81,8 +82,62 @@ latency threshold. `workflow_dispatch` also supports `medium`.
 For comparisons, use the same fixture version, machine, container limits, build
 settings and database versions. Repeat at least three fresh runs and compare
 medians plus the slowest run. A single local result is not a production capacity
-claim. This harness does not measure connector APIs, correlation/enrichment job
-throughput, deletion-backlog draining, concurrent user traffic, or every query
-shape. IDs are highly compressible and metadata is deliberately small; production
-payload sizes and distributions can cost substantially more. Those cases need
-separate scenarios and correctness assertions.
+claim. The graph scenarios do not measure concurrent user traffic or queued
+correlation/enrichment execution. IDs are highly compressible and metadata is
+small; production payload sizes and distributions can cost substantially more.
+
+The report also records signal-refresh native write counts and lock time, bounded
+supply-chain lineage query costs, and deletion confirmation at 1,106 hashes for
+small profiles and 548,000 for large profiles. The latter verifies two disjoint
+5,000-ID batches; it does not claim a timed full drain of 548,000 resources. Separate
+real-worker tests verify complete retirement, shared ownership, partial results,
+and reappearing resources. Migration tests cover upgrade from existing rows,
+rollback, replay and candidate cleanup through foreign keys.
+
+## Connector and sync measurements
+
+```sh
+scripts/benchmark-connectors.sh /tmp/vulngraph-connectors
+PERF_REQUEST_DELAY_MS=1 scripts/benchmark-connectors.sh /tmp/vulngraph-connectors-latency
+PERF_CONNECTOR_MAX=1000 scripts/benchmark-connectors.sh /tmp/vulngraph-connectors-small
+```
+
+The default measures 100, 1,000 and 10,000 primary resources three times each.
+`PERF_CONNECTOR_MAX` accepts 100, 1000 or 10000. Demo uses its built-in fixed estate.
+No cloud credentials are needed: HTTP transports/client interfaces serve local
+fixtures. Optional per-request delay is simulated latency, not a live API result.
+
+| Connector | Measured collection path |
+| --- | --- |
+| AWS | Paginated EC2 collection through the real collector |
+| GCP | Compute inventory; unavailable auxiliary families explicitly mark the result partial |
+| Azure | ARM SDK VM pages, NIC reads, shared subnet enrichment |
+| Kubernetes | Namespaces, pods, application/sidecar/init containers and resolved images |
+| GitHub | Repository pagination, SBOM, branch protection, CODEOWNERS and empty trees; successful and denied GraphQL |
+| Okta | Users, factors, groups, membership and policy listings |
+| Google Workspace | OAuth signing, user pages and MFA metadata |
+| Demo | Built-in fixture collection |
+| AWS Organizations | Real Postgres reconciliation, child creation, unchanged passes and failed discovery |
+
+Collection JSON records counts, allocations, elapsed time, request counts where
+instrumented, and partial status. Kubernetes uses a client-interface fixture, so
+its zero HTTP count is not a measurement of Kubernetes API requests.
+
+The largest successful fixture for each connector then runs through the real sync
+worker, checks, encrypted connector storage, Postgres hashes, ClickHouse writes and
+River insertion. Initial, unchanged, 1% changed, unchanged-again and partial runs
+assert fingerprint behavior and preservation of omitted resources. `sync.json`
+records per-phase timing, allocations, queued jobs and ClickHouse query/read/memory counts.
+The insert-only queue is emptied before each measurement so saturation from a
+previous connector cannot hide enqueue costs. Native inventory/finding writes
+use at most 2,000 rows and a 4 MiB estimated payload per batch; a single oversized
+row is sent alone. Wide, escaped metadata has a separate storage regression test.
+Queued enrichment and scanning jobs are inserted but are not executed by this
+benchmark. `aws_org.json` measures account reconciliation separately.
+
+CI gates cardinality, safety, API request budgets, query counts, result bounds and
+signal write counts rather than wall-clock thresholds. Manual workflow runs use
+10,000-resource connector fixtures. These representative scenarios cover every
+connector type, but not every service family, API quota, throttling pattern or
+production payload. Full-suite connector correctness tests remain separate from
+performance measurements.

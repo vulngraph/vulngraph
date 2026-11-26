@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/vulngraph/vulngraph/internal/db"
+	dbutil "github.com/vulngraph/vulngraph/pkg/db"
 )
 
 // recordEnriched writes findings via Record AND dual-writes their enrichment
@@ -666,7 +667,7 @@ func TestCHRepo_Upsert_ChunksLargeFindingSets(t *testing.T) {
 		_ = ch.Exec(ctx, "ALTER TABLE findings DELETE WHERE resource_id = ?", res)
 	})
 
-	const n = findingBatchSize + 137 // spans 2 batches, second one partial — stays under ByResourceIDs' 1000-row cap
+	const n = dbutil.CHWriteMaxRows + 137 // spans two native inserts
 	findings := make([]Finding, n)
 	for i := range n {
 		findings[i] = Finding{
@@ -681,7 +682,7 @@ func TestCHRepo_Upsert_ChunksLargeFindingSets(t *testing.T) {
 	// so it can actually confirm all n rows, not just the first page.
 	got, err := repo.ByResourceIDs(ctx, []string{res})
 	require.NoError(t, err)
-	require.Len(t, got, n, "every finding across all 3 batches must land, none dropped by the chunking loop")
+	require.Len(t, got, n, "every finding across both batches must land, none dropped by the chunking loop")
 }
 
 func TestCHRepo_CostAtRisk(t *testing.T) {

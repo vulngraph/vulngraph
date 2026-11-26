@@ -32,7 +32,7 @@ const (
 
 // maxPages bounds the paginated Workspace user list at 10,000 users
 // (maxResults * maxPages) — generous, but a hard ceiling: a domain larger
-// than that silently truncates past it. GOOGLE_MAX_PAGES overrides.
+// than that fails explicitly. GOOGLE_MAX_PAGES overrides.
 var maxPages = envIntOr("GOOGLE_MAX_PAGES", 20)
 
 func envIntOr(key string, fallback int) int {
@@ -158,8 +158,11 @@ func (c *Collector) listUsers(ctx context.Context, bearerToken string) ([]wsUser
 		if err != nil {
 			return nil, fmt.Errorf("listUsers: %w", err)
 		}
-		body, _ := io.ReadAll(resp.Body)
+		body, readErr := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("listUsers: read: %w", readErr)
+		}
 
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 			return nil, fmt.Errorf("%w: google returned %d: %s", collect.ErrPermanent, resp.StatusCode, string(body))
@@ -177,11 +180,11 @@ func (c *Collector) listUsers(ctx context.Context, bearerToken string) ([]wsUser
 		}
 		all = append(all, page.Users...)
 		if page.NextPageToken == "" {
-			break
+			return all, nil
 		}
 		pageToken = page.NextPageToken
 	}
-	return all, nil
+	return nil, fmt.Errorf("listUsers: page limit %d reached with more users unread", maxPages)
 }
 
 // serviceAccountToken exchanges a service account key for an OAuth2 access

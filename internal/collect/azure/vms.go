@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
+
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v6"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v6"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
 	"github.com/vulngraph/vulngraph/pkg/log"
@@ -36,21 +40,23 @@ type nicNSGs struct {
 // collectVMs pulls all Virtual Machines in the subscription, resolves every
 // NIC to find public and private IPs and the NIC + subnet NSGs guarding it,
 // and emits protected_by edges to those NSGs.
-func collectVMs(ctx context.Context, cred azcore.TokenCredential, subscriptionID string, now time.Time) ([]asset.Asset, []asset.Edge, error) {
-	vmClient, err := armcompute.NewVirtualMachinesClient(subscriptionID, cred, readOnlyARM())
+func collectVMs(ctx context.Context, cred azcore.TokenCredential, subscriptionID string, now time.Time, opts *arm.ClientOptions) ([]asset.Asset, []asset.Edge, error) {
+	vmClient, err := armcompute.NewVirtualMachinesClient(subscriptionID, cred, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("collectVMs: vm client: %w", err)
 	}
-	nicClient, err := armnetwork.NewInterfacesClient(subscriptionID, cred, readOnlyARM())
+	nicClient, err := armnetwork.NewInterfacesClient(subscriptionID, cred, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("collectVMs: nic client: %w", err)
 	}
-	subnetClient, err := armnetwork.NewSubnetsClient(subscriptionID, cred, readOnlyARM())
+	subnetClient, err := armnetwork.NewSubnetsClient(subscriptionID, cred, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("collectVMs: subnet client: %w", err)
 	}
 	subnetNSG := subnetNSGResolver(func(rg, vnet, name string) (*armnetwork.Subnet, error) {
-		resp, err := subnetClient.Get(ctx, rg, vnet, name, nil)
+		readCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		resp, err := subnetClient.Get(readCtx, rg, vnet, name, nil)
 		if err != nil {
 			log.FromContext(ctx).Warn().Err(err).Str("resource_group", rg).Str("vnet", vnet).Str("subnet", name).
 				Msg("azure subnet unreadable; its NSG is unknown for the VMs in it, whose exposure is then possible, through the NIC NSG or on every port without one")
@@ -63,7 +69,9 @@ func collectVMs(ctx context.Context, cred azcore.TokenCredential, subscriptionID
 	// $expand query key itself; this is only its value.
 	expandPIP := "ipConfigurations/publicIPAddress"
 	getNIC := func(nicID string) (*armnetwork.Interface, error) {
-		nic, err := nicClient.Get(ctx, resourceGroup(nicID), nicName(nicID),
+		readCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		nic, err := nicClient.Get(readCtx, resourceGroup(nicID), nicName(nicID),
 			&armnetwork.InterfacesClientGetOptions{Expand: &expandPIP})
 		if err != nil {
 			return nil, fmt.Errorf("get nic: %w", err)
@@ -80,13 +88,37 @@ func collectVMs(ctx context.Context, cred azcore.TokenCredential, subscriptionID
 		if err != nil {
 			return nil, nil, fmt.Errorf("collectVMs: list: %w", err)
 		}
-		for _, vm := range page.Value {
-			if vm.ID == nil {
+		// NIC reads are independent. Keep output in pager order while bounding
+		// in-flight API work; a failed/panicking mapping aborts this enumeration.
+		pageAssets := make([]asset.Asset, len(page.Value))
+		pageEdges := make([][]asset.Edge, len(page.Value))
+		var group errgroup.Group
+		group.SetLimit(8)
+		for i, vm := range page.Value {
+			if vm == nil || vm.ID == nil {
 				continue
 			}
-			vmAsset, vmEdges := vmAssetWithNICs(ctx, vm, subscriptionID, now, getNIC, subnetNSG)
-			assets = append(assets, vmAsset)
-			edges = append(edges, vmEdges...)
+			group.Go(func() (err error) {
+				defer func() {
+					if p := recover(); p != nil {
+						err = fmt.Errorf("collectVMs: mapping panic: %v", p)
+					}
+				}()
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				pageAssets[i], pageEdges[i] = vmAssetWithNICs(ctx, vm, subscriptionID, now, getNIC, subnetNSG)
+				return ctx.Err()
+			})
+		}
+		if err := group.Wait(); err != nil {
+			return nil, nil, fmt.Errorf("collectVMs: map page: %w", err)
+		}
+		for i, a := range pageAssets {
+			if a.ID != "" {
+				assets = append(assets, a)
+				edges = append(edges, pageEdges[i]...)
+			}
 		}
 	}
 	return assets, edges, nil
@@ -296,27 +328,22 @@ func applyNICs(vm *asset.Asset, nics []*armnetwork.Interface, subnetNSG func(sub
 // when the subnet could not be read (get logs it): its NSG is then unknown, not
 // absent, and reachability treats the NIC as possibly exposed rather than closed.
 func subnetNSGResolver(get func(rg, vnet, name string) (*armnetwork.Subnet, error)) func(string) (nsgID string, known bool) {
-	type entry struct {
-		id    string
-		known bool
-	}
-	cache := map[string]entry{}
+	var cache sync.Map
 	return func(subnetID string) (string, bool) {
 		key := strings.ToLower(subnetID)
-		if v, ok := cache[key]; ok {
-			return v.id, v.known
-		}
-		var e entry
-		if rg, vnet, name, ok := subnetParts(subnetID); ok {
-			if sn, err := get(rg, vnet, name); err == nil && sn.Properties != nil {
-				e.known = true
-				if sn.Properties.NetworkSecurityGroup != nil {
-					e.id = strVal(sn.Properties.NetworkSecurityGroup.ID)
+		read := sync.OnceValues(func() (string, bool) {
+			if rg, vnet, name, ok := subnetParts(subnetID); ok {
+				if sn, err := get(rg, vnet, name); err == nil && sn != nil && sn.Properties != nil {
+					if sn.Properties.NetworkSecurityGroup != nil {
+						return strVal(sn.Properties.NetworkSecurityGroup.ID), true
+					}
+					return "", true
 				}
 			}
-		}
-		cache[key] = e
-		return e.id, e.known
+			return "", false
+		})
+		cached, _ := cache.LoadOrStore(key, read)
+		return cached.(func() (string, bool))()
 	}
 }
 

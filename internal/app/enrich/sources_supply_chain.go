@@ -42,8 +42,9 @@ const maxSupplyChainWorkloads = 200
 // (~1k each), so an untyped read of 200 VMs to find one exposed_to_internet edge
 // pulled ~200k rows per package finding.
 type LineageProvider interface {
-	EdgesInto(ctx context.Context, dstID, edgeType string) ([]asset.Edge, error)
-	EdgesOutBatch(ctx context.Context, srcIDs []string, edgeType string) ([]asset.Edge, error)
+	LineageSources(context.Context, []string, string, int) ([]asset.Edge, bool, error)
+	LineageTargets(context.Context, []string, string, int) ([]asset.Edge, bool, error)
+	AnyConfirmedExposure(context.Context, []string) (bool, error)
 }
 
 // deployExposure is what one lineage walk established. truncated reports that a
@@ -184,7 +185,7 @@ func (s SupplyChainExposure) packageDeployExposure(ctx context.Context, packageI
 
 	// One runs_package read serves both runtime lineages: a VM source is a host
 	// whose exposure is its own, an image source is reached through its pods.
-	runEdges, err := s.Graph.EdgesInto(ctx, packageID, "runs_package")
+	runEdges, truncated, err := s.Graph.LineageSources(ctx, []string{packageID}, "runs_package", maxSupplyChainImages+maxSupplyChainVMs)
 	if err != nil {
 		return deployExposure{}, err
 	}
@@ -205,7 +206,7 @@ func (s SupplyChainExposure) packageDeployExposure(ctx context.Context, packageI
 		lineage:   repo.lineage || img.lineage || vm.lineage,
 		deployed:  repo.deployed || img.deployed || vm.deployed,
 		exposed:   vm.exposed,
-		truncated: repo.truncated || img.truncated || vm.truncated,
+		truncated: truncated || repo.truncated || img.truncated || vm.truncated,
 	}, nil
 }
 
@@ -213,7 +214,7 @@ func (s SupplyChainExposure) packageDeployExposure(ctx context.Context, packageI
 // deploys_to → workload → exposed_to_internet.
 func (s SupplyChainExposure) repoDeployExposure(ctx context.Context, packageID string) (deployExposure, error) {
 	// Step 1: package ← repo (depends_on edges always from CH — not in Ladybug).
-	depEdges, err := s.Graph.EdgesInto(ctx, packageID, "depends_on")
+	depEdges, truncated, err := s.Graph.LineageSources(ctx, []string{packageID}, "depends_on", maxSupplyChainRepos)
 	if err != nil {
 		return deployExposure{}, err
 	}
@@ -221,9 +222,9 @@ func (s SupplyChainExposure) repoDeployExposure(ctx context.Context, packageID s
 	if len(repoIDs) == 0 {
 		return deployExposure{}, nil // package not linked to any repo — no lineage signal
 	}
-	truncated := len(repoIDs) > maxSupplyChainRepos
+	truncated = truncated || len(repoIDs) > maxSupplyChainRepos
 	if truncated {
-		repoIDs = repoIDs[:maxSupplyChainRepos]
+		repoIDs = repoIDs[:min(len(repoIDs), maxSupplyChainRepos)]
 	}
 
 	// Steps 2+3: repos → workloads → internet.
@@ -248,7 +249,7 @@ func (s SupplyChainExposure) reposDeployExposure(ctx context.Context, repoIDs []
 	}
 
 	// CH fallback: steps 2+3 as typed reads.
-	repoOut, err := s.Graph.EdgesOutBatch(ctx, repoIDs, "deploys_to")
+	repoOut, truncated, err := s.Graph.LineageTargets(ctx, repoIDs, "deploys_to", maxSupplyChainWorkloads)
 	if err != nil {
 		return deployExposure{}, err
 	}
@@ -256,9 +257,9 @@ func (s SupplyChainExposure) reposDeployExposure(ctx context.Context, repoIDs []
 	if len(workloadIDs) == 0 {
 		return deployExposure{lineage: true}, nil // shipped but no deployed workload found
 	}
-	truncated := len(workloadIDs) > maxSupplyChainWorkloads
+	truncated = truncated || len(workloadIDs) > maxSupplyChainWorkloads
 	if truncated {
-		workloadIDs = workloadIDs[:maxSupplyChainWorkloads]
+		workloadIDs = workloadIDs[:min(len(workloadIDs), maxSupplyChainWorkloads)]
 	}
 
 	exposed, unknown, err := s.workloadExposure(ctx, workloadIDs)
@@ -284,33 +285,15 @@ func (s SupplyChainExposure) imageDeployExposure(ctx context.Context, imgEdges [
 		imageIDs = imageIDs[:maxSupplyChainImages]
 	}
 
-	// Step 2: image ← workload (runs_image edges from the kubernetes, ECS and
-	// Cloud Run collectors). Stopping at the pod cap with images or edges still
-	// unvisited marks the walk truncated — conservatively, since an unvisited
-	// pod may be a duplicate, but never the other way round.
-	seen := map[string]struct{}{}
-	var podIDs []string
-	for _, img := range imageIDs {
-		if len(podIDs) >= maxSupplyChainImages {
-			truncated = true
-			break
-		}
-		podEdges, pErr := s.Graph.EdgesInto(ctx, img, "runs_image")
-		if pErr != nil {
-			return deployExposure{lineage: true}, pErr
-		}
-		for _, e := range podEdges {
-			if _, ok := seen[e.SrcID]; ok || e.SrcID == "" {
-				continue
-			}
-			if len(podIDs) >= maxSupplyChainImages {
-				truncated = true
-				break
-			}
-			seen[e.SrcID] = struct{}{}
-			podIDs = append(podIDs, e.SrcID)
-		}
+	// One batched read covers all selected images and deduplicates workloads
+	// in storage. Shared pods cannot consume the cap once per image.
+	podEdges, podTruncated, err := s.Graph.LineageSources(ctx, imageIDs, "runs_image", maxSupplyChainWorkloads)
+	if err != nil {
+		return deployExposure{lineage: true}, err
 	}
+	podIDs := uniqueSrcIDs(podEdges)
+	truncated = truncated || podTruncated
+
 	if len(podIDs) == 0 {
 		return deployExposure{lineage: true}, nil // image exists but no live pod runs it
 	}

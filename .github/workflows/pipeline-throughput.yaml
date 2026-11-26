@@ -25,7 +25,7 @@ jobs:
   pipeline:
     name: Real pipeline contracts and costs
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -37,17 +37,30 @@ jobs:
       - name: Fetch pinned LadybugDB
         run: scripts/fetch-ladybug.sh linux-amd64
       - name: Validate benchmark code
-        run: go vet -tags=integration ./internal/throughput
+        run: go vet -tags=integration ./internal/throughput ./internal/jobs ./internal/app/asset ./internal/app/finding ./internal/app/connector ./internal/migrate
+      - name: Measure connector API fixtures
+        env:
+          PERF_CONNECTORS: "1"
+          PERF_CONNECTOR_MAX: ${{ github.event_name == 'workflow_dispatch' && '10000' || '1000' }}
+          PERF_CONNECTOR_DIR: ${{ runner.temp }}/connector-throughput
+          GOMAXPROCS: "4"
+        run: |
+          mkdir -p "$PERF_CONNECTOR_DIR"
+          go test -p 1 ./internal/collect/... -run '^TestConnectorScale$' -count=1 -timeout=15m -v 2>&1 | tee "$PERF_CONNECTOR_DIR/collect.log"
       - name: Run isolated pipeline
         env:
           PERF_PROFILE_INPUT: ${{ inputs.profile }}
           PERF_CH_MEMORY: 3g
           PERF_CH_CPUS: "2"
+          PERF_CONNECTOR_MAX: ${{ github.event_name == 'workflow_dispatch' && '10000' || '1000' }}
+          PERF_CONNECTOR_DIR: ${{ runner.temp }}/connector-throughput
         run: scripts/benchmark-pipeline.sh "$PERF_PROFILE_INPUT" "$RUNNER_TEMP/pipeline-throughput"
       - name: Upload measurements and failure logs
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pipeline-throughput
-          path: ${{ runner.temp }}/pipeline-throughput/
+          path: |
+            ${{ runner.temp }}/pipeline-throughput/
+            ${{ runner.temp }}/connector-throughput/
           retention-days: 14

@@ -23,40 +23,44 @@ import (
 )
 
 type measurement struct {
-	Scenario       string             `json:"scenario"`
-	Path           string             `json:"sync_path"`
-	Seconds        float64            `json:"seconds"`
-	Phases         map[string]float64 `json:"phase_seconds"`
-	Nodes          int64              `json:"resident_nodes"`
-	Edges          int64              `json:"resident_edges"`
-	EdgesPerSecond float64            `json:"resident_edges_per_second"`
-	HeapBytes      uint64             `json:"go_heap_bytes_after"`
-	AllocatedBytes uint64             `json:"go_allocated_bytes"`
-	PeakRSSBytes   int64              `json:"process_peak_rss_bytes"`
-	Queries        []queryCost        `json:"queries"`
-	ReadRows       uint64             `json:"read_rows"`
-	ReadBytes      uint64             `json:"read_bytes"`
-	MaxQueryMemory uint64             `json:"max_query_memory_bytes"`
-	Error          string             `json:"error,omitempty"`
+	Scenario          string             `json:"scenario"`
+	Path              string             `json:"sync_path"`
+	Seconds           float64            `json:"seconds"`
+	Phases            map[string]float64 `json:"phase_seconds"`
+	Nodes             int64              `json:"resident_nodes"`
+	Edges             int64              `json:"resident_edges"`
+	EdgesPerSecond    float64            `json:"resident_edges_per_second"`
+	HeapBytes         uint64             `json:"go_heap_bytes_after"`
+	AllocatedBytes    uint64             `json:"go_allocated_bytes"`
+	PeakRSSBytes      int64              `json:"process_peak_rss_bytes"`
+	SignalRows        int64              `json:"signal_rows_written"`
+	SignalLockSeconds float64            `json:"signal_write_lock_seconds"`
+	Queries           []queryCost        `json:"queries"`
+	ReadRows          uint64             `json:"read_rows"`
+	ReadBytes         uint64             `json:"read_bytes"`
+	MaxQueryMemory    uint64             `json:"max_query_memory_bytes"`
+	Error             string             `json:"error,omitempty"`
 }
 
 func (*measurement) ObserveLadybugSync(_ string, _ float64)              {}
 func (m *measurement) ObserveLadybugPhase(phase string, seconds float64) { m.Phases[phase] += seconds }
 
 type report struct {
-	Passed          bool           `json:"passed"`
-	Version         int            `json:"format_version"`
-	FixtureVersion  int            `json:"fixture_version"`
-	Commit          string         `json:"commit"`
-	GoVersion       string         `json:"go_version"`
-	Platform        string         `json:"platform"`
-	GoMaxProcs      int            `json:"gomaxprocs"`
-	LadybugBufferMB int            `json:"ladybug_buffer_mb"`
-	Started         time.Time      `json:"started_at"`
-	Profile         profile        `json:"profile"`
-	SeedSeconds     float64        `json:"seed_seconds"`
-	Rows            rowCounts      `json:"rows"`
-	Measurements    []*measurement `json:"measurements"`
+	Passed          bool                  `json:"passed"`
+	Version         int                   `json:"format_version"`
+	FixtureVersion  int                   `json:"fixture_version"`
+	Commit          string                `json:"commit"`
+	GoVersion       string                `json:"go_version"`
+	Platform        string                `json:"platform"`
+	GoMaxProcs      int                   `json:"gomaxprocs"`
+	LadybugBufferMB int                   `json:"ladybug_buffer_mb"`
+	Started         time.Time             `json:"started_at"`
+	Profile         profile               `json:"profile"`
+	SeedSeconds     float64               `json:"seed_seconds"`
+	Rows            rowCounts             `json:"rows"`
+	Measurements    []*measurement        `json:"measurements"`
+	Lineage         []lineageMeasurement  `json:"lineage"`
+	Deletion        []deletionMeasurement `json:"deletion"`
 }
 
 // This adapter changes only the result shape. The expensive rollup is the real
@@ -113,6 +117,7 @@ func TestPipelineThroughput(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 	defer cancel()
+	require.NoError(t, waitForStores(ctx, pgDSN, chDSN))
 	require.NoError(t, migrate.Run(ctx, pgDSN, chDSN))
 	ch, err := db.NewCH(ctx, chDSN, 4)
 	require.NoError(t, err)
@@ -164,6 +169,11 @@ func TestPipelineThroughput(t *testing.T) {
 			m.PeakRSSBytes *= 1024
 		}
 		m.Path, m.Nodes = svc.LastSyncPath(), svc.NodeCount()
+		if m.Path == "signals" {
+			var held time.Duration
+			m.SignalRows, held = svc.SignalRefreshStats()
+			m.SignalLockSeconds = held.Seconds()
+		}
 		var dropped, missing int64
 		m.Edges, dropped, missing = svc.EdgeLoadStats()
 		if m.Path == "full" && syncErr == nil {
@@ -186,10 +196,9 @@ func TestPipelineThroughput(t *testing.T) {
 		// One asset read, critical/bulk edge reads, package risk, and findings.
 		// A new read must be reviewed explicitly rather than hiding N+1 growth.
 		require.Len(t, m.Queries, 5, "graph refresh query count changed")
-		// Current profiles read roughly four rows for each stored row across the
-		// five queries. Leave room for merge/index granularity without accepting
-		// a second broad scan in every branch. This is a work budget, not a timer.
-		require.LessOrEqual(t, m.ReadRows, 6*(r.Rows.AssetVersions+r.Rows.EdgeVersions), "read amplification exceeded fixture budget")
+		// Bound storage work independently of timing. The edge-type index must
+		// keep package rows out of unrelated topology scans.
+		require.LessOrEqual(t, m.ReadRows, 3*(r.Rows.AssetVersions+r.Rows.EdgeVersions), "read amplification exceeded fixture budget")
 		require.Equal(t, scenario.path, m.Path)
 		require.EqualValues(t, p.coreNodes(), m.Nodes, "packages must stay outside the resident graph")
 		require.EqualValues(t, p.coreEdges(), m.Edges, "every core edge must survive the load")
@@ -202,8 +211,11 @@ func TestPipelineThroughput(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, graphstore.ReachNone, private.InternetHops)
 		if scenario.name == "finding_update" {
+			require.EqualValues(t, 1, m.SignalRows, "one changed finding must write only its affected native node")
 			require.True(t, public.HasKEV)
 		}
 	}
+	r.Lineage = measureLineage(t, ctx, ch, inv, svc, p)
+	r.Deletion = measureDeletion(t, ctx, pgDSN, p)
 	r.Passed = true
 }

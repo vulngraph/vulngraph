@@ -25,6 +25,8 @@ import (
 // decided to do a full rebuild; stored so the next sync call can skip a full rebuild
 // if the version hasn't changed. Pass 0 to disable version tracking.
 func (s *Service) SyncFromSources(ctx context.Context, topoVersion uint64, assets AssetSource, edges EdgeSource, signals SignalSource) error {
+	s.writerMu.Lock()
+	defer s.writerMu.Unlock()
 	logger := log.FromContext(ctx)
 	start := time.Now()
 	phases := newSyncPhases(s.syncRecorder, start)
@@ -220,9 +222,9 @@ func (s *Service) SyncFromSources(ctx context.Context, topoVersion uint64, asset
 		logger.Warn().Err(digErr).Msg("graphstore: load digest failed — falling through to full rebuild")
 	} else if prev := s.lastDigest.Load(); prev != nil && s.synced.Load() && prev.Topo == dig.Topo {
 		if prev.Signals == dig.Signals && prev.Scores == dig.Scores {
+			s.blastRadiusCache.Range(func(k, _ any) bool { s.blastRadiusCache.Delete(k); return true })
 			// Nothing to do. lastBuiltAt IS stamped: a correctly-skipped sweep means
 			// the graph is current, and the freshness gauge must not read as stale.
-			s.prewarmSignalCache(sigByResource)
 			s.lastBuiltAt.Store(time.Now().UnixNano())
 			s.emptyConfirmed.Store(s.nodeCount.Load() == 0)
 			// The live graph holds this shape (topo digest matched), so it is a valid
@@ -329,6 +331,7 @@ func (s *Service) SyncFromSources(ctx context.Context, topoVersion uint64, asset
 	s.setLastHops(ov, reachComplete, assetIDs(allAssets))
 	s.prewarmSignalCache(sigByResource)
 	s.blastAdj.Store(buildBlastAdjacency(allAssets, allEdges))
+	s.resetSignalBaseline(sigByResource)
 	logger.Debug().Int("finding_bearing", len(sigByResource)).Int("nodes_loaded", len(allAssets)).
 		Msg("graphstore: nodeSignalsCache pre-warmed for every loaded node")
 

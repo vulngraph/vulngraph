@@ -32,7 +32,7 @@ func (q *Queries) CompleteAssetRetirements(ctx context.Context, arg CompleteAsse
 const createConnector = `-- name: CreateConnector :one
 INSERT INTO connectors (type, name, config_enc, enabled, event_source)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, type, name, config_enc, enabled, event_source, sync_status, sync_error, last_synced_at, created_at, updated_at, sync_fingerprint, mode, last_success_at, sync_streak, partial_streak, disk_scan_mode, disk_scan_enabled_by, disk_scan_enabled_at
+RETURNING id, type, name, config_enc, enabled, event_source, sync_status, sync_error, last_synced_at, created_at, updated_at, sync_fingerprint, mode, last_success_at, sync_streak, partial_streak, disk_scan_mode, disk_scan_enabled_by, disk_scan_enabled_at, deletion_observed_at
 `
 
 type CreateConnectorParams struct {
@@ -72,6 +72,7 @@ func (q *Queries) CreateConnector(ctx context.Context, arg CreateConnectorParams
 		&i.DiskScanMode,
 		&i.DiskScanEnabledBy,
 		&i.DiskScanEnabledAt,
+		&i.DeletionObservedAt,
 	)
 	return i, err
 }
@@ -152,7 +153,7 @@ func (q *Queries) GetAssetDeletions(ctx context.Context, assetIds []string) ([]G
 }
 
 const getConnector = `-- name: GetConnector :one
-SELECT id, type, name, config_enc, enabled, event_source, sync_status, sync_error, last_synced_at, created_at, updated_at, sync_fingerprint, mode, last_success_at, sync_streak, partial_streak, disk_scan_mode, disk_scan_enabled_by, disk_scan_enabled_at FROM connectors WHERE id = $1
+SELECT id, type, name, config_enc, enabled, event_source, sync_status, sync_error, last_synced_at, created_at, updated_at, sync_fingerprint, mode, last_success_at, sync_streak, partial_streak, disk_scan_mode, disk_scan_enabled_by, disk_scan_enabled_at, deletion_observed_at FROM connectors WHERE id = $1
 `
 
 func (q *Queries) GetConnector(ctx context.Context, id string) (Connector, error) {
@@ -178,6 +179,7 @@ func (q *Queries) GetConnector(ctx context.Context, id string) (Connector, error
 		&i.DiskScanMode,
 		&i.DiskScanEnabledBy,
 		&i.DiskScanEnabledAt,
+		&i.DeletionObservedAt,
 	)
 	return i, err
 }
@@ -292,7 +294,7 @@ func (q *Queries) ListAWSOrgAccounts(ctx context.Context, orgConnectorID string)
 }
 
 const listConnectors = `-- name: ListConnectors :many
-SELECT id, type, name, config_enc, enabled, event_source, sync_status, sync_error, last_synced_at, created_at, updated_at, sync_fingerprint, mode, last_success_at, sync_streak, partial_streak, disk_scan_mode, disk_scan_enabled_by, disk_scan_enabled_at FROM connectors ORDER BY type, name
+SELECT id, type, name, config_enc, enabled, event_source, sync_status, sync_error, last_synced_at, created_at, updated_at, sync_fingerprint, mode, last_success_at, sync_streak, partial_streak, disk_scan_mode, disk_scan_enabled_by, disk_scan_enabled_at, deletion_observed_at FROM connectors ORDER BY type, name
 `
 
 func (q *Queries) ListConnectors(ctx context.Context) ([]Connector, error) {
@@ -324,6 +326,7 @@ func (q *Queries) ListConnectors(ctx context.Context) ([]Connector, error) {
 			&i.DiskScanMode,
 			&i.DiskScanEnabledBy,
 			&i.DiskScanEnabledAt,
+			&i.DeletionObservedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -366,7 +369,7 @@ func (q *Queries) ListConnectorsCollectingAsset(ctx context.Context, assetID str
 }
 
 const listEnabledConnectors = `-- name: ListEnabledConnectors :many
-SELECT id, type, name, config_enc, enabled, event_source, sync_status, sync_error, last_synced_at, created_at, updated_at, sync_fingerprint, mode, last_success_at, sync_streak, partial_streak, disk_scan_mode, disk_scan_enabled_by, disk_scan_enabled_at FROM connectors WHERE enabled = true ORDER BY type, name
+SELECT id, type, name, config_enc, enabled, event_source, sync_status, sync_error, last_synced_at, created_at, updated_at, sync_fingerprint, mode, last_success_at, sync_streak, partial_streak, disk_scan_mode, disk_scan_enabled_by, disk_scan_enabled_at, deletion_observed_at FROM connectors WHERE enabled = true ORDER BY type, name
 `
 
 func (q *Queries) ListEnabledConnectors(ctx context.Context) ([]Connector, error) {
@@ -398,6 +401,7 @@ func (q *Queries) ListEnabledConnectors(ctx context.Context) ([]Connector, error
 			&i.DiskScanMode,
 			&i.DiskScanEnabledBy,
 			&i.DiskScanEnabledAt,
+			&i.DeletionObservedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -725,6 +729,60 @@ func (q *Queries) UpsertAWSOrgAccount(ctx context.Context, arg UpsertAWSOrgAccou
 		arg.ChildConnectorID,
 		arg.SeenAt,
 		arg.LastSeenAt,
+	)
+	return err
+}
+
+const upsertAWSOrgAccounts = `-- name: UpsertAWSOrgAccounts :exec
+INSERT INTO aws_org_accounts
+    (org_connector_id, account_id, name, email, aws_state, ou_path, status, status_detail,
+     child_connector_id, first_seen_at, last_seen_at, status_changed_at)
+SELECT $1, unnest($2::text[]), unnest($3::text[]), unnest($4::text[]),
+       unnest($5::text[]), unnest($6::text[]), unnest($7::text[]), unnest($8::text[]),
+       NULLIF(unnest($9::text[]), '')::uuid, $10, unnest($11::timestamptz[]), $10
+ON CONFLICT (org_connector_id, account_id) DO UPDATE SET
+    name               = EXCLUDED.name,
+    email              = EXCLUDED.email,
+    aws_state          = EXCLUDED.aws_state,
+    ou_path            = EXCLUDED.ou_path,
+    status_detail      = EXCLUDED.status_detail,
+    child_connector_id = EXCLUDED.child_connector_id,
+    last_seen_at       = EXCLUDED.last_seen_at,
+    status_changed_at  = CASE WHEN aws_org_accounts.status <> EXCLUDED.status
+                              THEN EXCLUDED.status_changed_at
+                              ELSE aws_org_accounts.status_changed_at END,
+    status             = EXCLUDED.status
+`
+
+type UpsertAWSOrgAccountsParams struct {
+	OrgConnectorID string
+	AccountIds     []string
+	Names          []string
+	Emails         []string
+	AwsStates      []string
+	OuPaths        []string
+	Statuses       []string
+	StatusDetails  []string
+	ChildIds       []string
+	SeenAt         time.Time
+	LastSeenAts    []time.Time
+}
+
+// status_changed_at moves only when the status does; last_seen_at is the
+// caller's (the last discovery that listed the account).
+func (q *Queries) UpsertAWSOrgAccounts(ctx context.Context, arg UpsertAWSOrgAccountsParams) error {
+	_, err := q.db.Exec(ctx, upsertAWSOrgAccounts,
+		arg.OrgConnectorID,
+		arg.AccountIds,
+		arg.Names,
+		arg.Emails,
+		arg.AwsStates,
+		arg.OuPaths,
+		arg.Statuses,
+		arg.StatusDetails,
+		arg.ChildIds,
+		arg.SeenAt,
+		arg.LastSeenAts,
 	)
 	return err
 }

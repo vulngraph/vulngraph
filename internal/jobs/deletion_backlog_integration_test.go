@@ -35,7 +35,11 @@ func TestDeletionBacklogRequiresConfirmationAndDrains(t *testing.T) {
 	require.NoError(t, err)
 	conns := connector.NewService(connector.NewPGRepo(pool), cipher)
 	inv := asset.NewService(asset.NewCHRepo(ch))
-	findings := finding.NewService(finding.NewCHRepo(ch))
+	// The confirmed absence below represents hours passing. Seed the finding
+	// before that window as well: synced_at has second precision, so immediate
+	// seed/resolve writes can tie and make argMax choose either version.
+	findingWriteAt := time.Now().Add(-3 * time.Hour)
+	findings := finding.NewService(finding.NewCHRepo(ch, finding.WithClock(func() time.Time { return findingWriteAt })))
 	prefix := "backlog-" + time.Now().Format("150405.000000000") + "-"
 	create := func(name string) connector.Connector {
 		c, err := conns.Create(ctx, connector.TypeGitHub, name+prefix, map[string]string{"app_id": "1", "installation_id": "2", "private_key_pem": "k"}, "")
@@ -59,8 +63,9 @@ func TestDeletionBacklogRequiresConfirmationAndDrains(t *testing.T) {
 	require.NoError(t, inv.Ingest(ctx, assets, nil))
 	require.NoError(t, conns.UpsertAssetHashEntries(ctx, c.ID, hashes))
 	require.NoError(t, conns.UpsertAssetHashEntries(ctx, other.ID, hashes[2:3]))
-	f := finding.Finding{ID: prefix + "finding", Source: "synthetic", ResourceID: ids[3], ResourceType: "ec2_instance", DetectedAt: time.Now()}
+	f := finding.Finding{ID: prefix + "finding", Source: "synthetic", ResourceID: ids[3], ResourceType: "ec2_instance", DetectedAt: findingWriteAt}
 	require.NoError(t, findings.Record(ctx, []finding.Finding{f}))
+	findingWriteAt = time.Now()
 	t.Cleanup(func() {
 		_ = ch.Exec(ctx, "ALTER TABLE assets DELETE WHERE startsWith(id,?) SETTINGS mutations_sync=1", prefix)
 		_ = ch.Exec(ctx, "ALTER TABLE findings DELETE WHERE startsWith(id,?) SETTINGS mutations_sync=1", prefix)

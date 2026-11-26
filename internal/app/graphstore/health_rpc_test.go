@@ -50,18 +50,18 @@ func TestInternalHealth_RoundTripsThroughRPCRepo(t *testing.T) {
 	require.NoError(t, err)
 	require.Positive(t, nAssets)
 
-	// An oversized table crosses the RPC on both the health read and every
-	// Cypher answer.
+	// The upgraded worker must not send legacy incomplete warnings just
+	// because a table spans more than one storage node group.
 	svc.mu.Lock()
-	svc.publishNodeTableRows(ctx, map[string]int64{NodePackage: LadybugNodeGroupRows + 1})
+	svc.publishNodeTableRows(map[string]int64{NodePackage: LadybugNodeGroupRows + 1})
 	svc.mu.Unlock()
 	hl, err = rpc.GraphHealth(ctx)
 	require.NoError(t, err)
 	incomplete, known = hl.MultiHopMayBeIncomplete()
 	require.True(t, known)
-	require.True(t, incomplete)
-	require.Equal(t, map[string]int64{NodePackage: LadybugNodeGroupRows + 1}, hl.OversizedNodeTables)
+	require.False(t, incomplete)
+	require.Empty(t, hl.OversizedNodeTables)
 	res, err := rpc.RunCypher(ctx, `MATCH (n:Asset) RETURN n LIMIT 1`, 10, 10)
 	require.NoError(t, err)
-	require.True(t, res.MultiHopMayBeIncomplete)
+	require.False(t, res.MultiHopMayBeIncomplete)
 }

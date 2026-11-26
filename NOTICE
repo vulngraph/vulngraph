@@ -24,7 +24,7 @@ The library bundles LadybugDB's own third-party C++ dependencies (DuckDB-derived
 code, {fmt}, ANTLR and the openCypher grammar, zstd, mbedtls, re2, utf8proc
 and others), each under its own license. They are listed in the upstream
 repository at the pinned tag:
-https://github.com/LadybugDB/ladybug/tree/v0.21.2/third_party. The library links
+https://github.com/LadybugDB/ladybug/tree/v0.22.3/third_party. The library links
 OpenSSL 3 dynamically; it is provided by the operating system (Debian libssl3t64),
 not shipped by this project.
 

@@ -606,11 +606,8 @@ groups:
             relationship poisoning the calculation), not that the environment genuinely
             became more exposed all at once.
 
-      # ladybug#1341: the pinned engine release can miss relationships in multi-hop
-      # and variable-length matches once a node table exceeds one node group
-      # (graphstore/node_group_guard.go). Steady state is 0; 1 lasts until the
-      # tables shrink or the pin moves to a release with the fix.
-      # 30m: absent, not 0, until the first post-restart Ladybug build publishes.
+      # Retain the legacy alert for workers not yet upgraded to the fixed engine.
+      # New workers emit 0 after loading; before the first load the signal is absent.
       - alert: GraphLadybugMultiHopMayBeIncomplete
         expr: max by (namespace) (max_over_time(graph_ladybug_multihop_may_be_incomplete{namespace="__NAMESPACE__", component="worker"}[30m])) > 0
         for: 30m
@@ -621,13 +618,12 @@ groups:
           description: >-
             A node table in the in-memory graph holds more rows than one LadybugDB node
             group (graph_ladybug_node_table_rows against graph_ladybug_node_group_rows).
-            The pinned engine release can then miss relationships in multi-hop and
+            An older engine release can then miss relationships in multi-hop and
             variable-length queries (ladybug#1341), so attack paths, blast_radius_deep,
             saved queries, detections and raw Cypher can return fewer paths than exist.
             The API flags those results multi_hop_may_be_incomplete and Explore shows a
             banner. Single-hop reads and risk scores are not affected. It clears when the
-            tables shrink below the limit or Vulngraph moves to an engine release with
-            the fix.
+            worker is upgraded to the fixed engine (Vulngraph now pins v0.22.3).
 
       # Correlate runs every 30m by default (jobs.defaultCorrelateInterval), so 4h is
       # eight missed sweeps. A worker that stops rebuilding keeps serving the last

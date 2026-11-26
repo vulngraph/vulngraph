@@ -59,11 +59,11 @@ import ladybug "github.com/vulngraph/vulngraph/internal/graphdb/ladybug"
 
 ## Tests
 
-The module has 11 top-level tests: the cgo-hardening checks (native-heap
-leaks, NULL scans, C++ exceptions surfacing as Go errors, verbatim engine
-errors), the database open/close tests, the `database/sql` driver test and
-`TestPreparedStatementIsReadOnly`. Every one runs on a fresh, empty database,
-in CI and in lefthook alike.
+The tests cover native-heap leaks, NULL scans, C++ exceptions surfacing as Go errors,
+verbatim engine errors, database open/close, the `database/sql` driver and read-only
+prepared statements. `TestMultiHopAfterMissingRelationshipNodeGroup` loads 131,112 nodes
+and checks the original upstream #1341 path-loss case against the actual linked library.
+It runs in normal CI and lefthook, without a build tag or external services.
 
 ## Configuration
 

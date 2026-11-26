@@ -186,7 +186,7 @@ type Service struct {
 	blastAdj atomic.Pointer[blastAdjacency]
 
 	// nodeTableRows is the served graph's per-node-table row count, swapped in
-	// with the graph under mu (node_group_guard.go). Nil until a build is
+	// with the graph under mu (node_table_stats.go). Nil until a build is
 	// published.
 	nodeTableRows atomic.Pointer[map[string]int64]
 }
@@ -262,9 +262,10 @@ func (s *Service) LastBuiltAt() time.Time {
 // matches the worker RPC, which needs one.
 func (s *Service) GraphHealth(_ context.Context) (explore.GraphHealth, error) {
 	h := explore.GraphHealth{Ready: s.Ready(), NodeCount: s.NodeCount(), LastBuiltAt: s.LastBuiltAt()}
-	if rows, ok := s.NodeTableRows(); ok {
-		h.NodeTablesMeasured, h.OversizedNodeTables = true, oversizedNodeTables(rows)
-	}
+	// Keep the legacy completeness fields for clients and mixed-version RPC.
+	// v0.22.3 fixes the node-group bug; table size alone no longer flags paths.
+	_, h.NodeTablesMeasured = s.NodeTableRows()
+	h.OversizedNodeTables = map[string]int64{}
 	return h, nil
 }
 

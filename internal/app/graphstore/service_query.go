@@ -73,7 +73,6 @@ func (s *Service) RunCypherBudget(ctx context.Context, query string, budget Quer
 	err := s.withCypher(ctx, func(conn *ladybug.Connection) error {
 		var e error
 		res, e = execCypher(conn, query, budget.Clamp())
-		res.MultiHopMayBeIncomplete = s.multiHopMayBeIncomplete()
 		return e
 	})
 	// Running out of time waiting for a connection, or before the engine's own
@@ -202,7 +201,6 @@ func (s *Service) RunNamedQuery(ctx context.Context, name string, params map[str
 	err = s.withRead(ctx, defaultQueryTimeout, func(conn *ladybug.Connection) error {
 		var e error
 		res, e = execCypher(conn, cypher, HardBudget)
-		res.MultiHopMayBeIncomplete = s.multiHopMayBeIncomplete()
 		return e
 	})
 	return explore.Result{

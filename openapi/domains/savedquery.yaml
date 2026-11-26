@@ -78,7 +78,7 @@ components:
           which only a complete scheduled run advances. A result truncated at the row
           budget is returned with the truncation in `error`, and so is a result the
           graph engine flagged multi-hop-may-be-incomplete (a node table above one
-          engine node group, ladybug#1341).
+          engine node group on an older worker, ladybug#1341; fixed in the pinned v0.22.3 engine).
         parameters: [ { $ref: '../openapi.yaml#/components/parameters/IdPath' } ]
         responses:
           '200':

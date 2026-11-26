@@ -127,11 +127,8 @@ type Result struct {
 	Truncated bool             `json:"truncated"` // hit the node/edge budget
 	Columns   []string         `json:"columns"`   // scalar/tabular column order
 	Rows      []map[string]any `json:"rows"`      // one entry per scalar result row
-	// MultiHopMayBeIncomplete is set by the graph engine that answered: one of
-	// its node tables is above one engine node group, so a multi-hop or
-	// variable-length match in this query may have missed relationships
-	// (GraphHealth.MultiHopMayBeIncomplete). Results that did not come from
-	// the graph engine never set it.
+	// MultiHopMayBeIncomplete preserves legacy warnings from older workers.
+	// The pinned v0.22.3 engine fixes the node-group bug and does not set it.
 	MultiHopMayBeIncomplete bool `json:"multi_hop_may_be_incomplete,omitempty"`
 }
 
@@ -163,17 +160,15 @@ type GraphHealth struct {
 	NodeCount   int64
 	LastBuiltAt time.Time
 	// NodeTablesMeasured is true once a loaded build recorded its per-table
-	// row counts. OversizedNodeTables then names every node table holding more
-	// rows than one engine node group, with its row count.
+	// row counts. OversizedNodeTables is a legacy warning from workers using
+	// engines before v0.22.0; upgraded workers return an empty map.
 	NodeTablesMeasured  bool
 	OversizedNodeTables map[string]int64
 }
 
-// MultiHopMayBeIncomplete reports whether multi-hop and variable-length
-// matches on this graph can miss relationships: the pinned engine release
-// does so once a node table exceeds one node group (ladybug#1341). known is
-// false when no build's table sizes were recorded, which is unknown, not
-// complete.
+// MultiHopMayBeIncomplete preserves warnings from older workers during upgrades.
+// The pinned v0.22.3 engine fixes ladybug#1341. known remains false until a
+// build has recorded its table sizes; this signal covers only that legacy bug.
 func (h GraphHealth) MultiHopMayBeIncomplete() (incomplete, known bool) {
 	return len(h.OversizedNodeTables) > 0, h.NodeTablesMeasured
 }

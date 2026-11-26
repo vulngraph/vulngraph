@@ -1564,7 +1564,7 @@ export interface paths {
         put?: never;
         /**
          * Execute a saved query now (admin only)
-         * @description Manual trigger; records a run in the history. A manual run never alerts and never moves the change-detection baseline (last_run_at / last_result_count), which only a complete scheduled run advances. A result truncated at the row budget is returned with the truncation in `error`, and so is a result the graph engine flagged multi-hop-may-be-incomplete (a node table above one engine node group, ladybug#1341).
+         * @description Manual trigger; records a run in the history. A manual run never alerts and never moves the change-detection baseline (last_run_at / last_result_count), which only a complete scheduled run advances. A result truncated at the row budget is returned with the truncation in `error`, and so is a result the graph engine flagged multi-hop-may-be-incomplete (a node table above one engine node group on an older worker, ladybug#1341; fixed in the pinned v0.22.3 engine).
          */
         post: operations["runSavedQuery"];
         delete?: never;
@@ -3267,7 +3267,7 @@ export interface components {
             rows: {
                 [key: string]: unknown;
             }[];
-            /** @description Present and true when the graph engine that answered has a node table above one node group: a multi-hop or variable-length match in this query may have missed relationships (see GraphStatus). Absent otherwise, including for results that did not come from the graph engine. */
+            /** @description Legacy warning from an older worker affected by ladybug#1341 (see GraphStatus). The pinned v0.22.3 engine fixes the bug and no longer sets this flag. */
             multi_hop_may_be_incomplete?: boolean;
         };
         TranslateRequest: {
@@ -3284,7 +3284,7 @@ export interface components {
             rows: {
                 [key: string]: unknown;
             }[];
-            /** @description Present and true when the graph engine that answered has a node table above one node group: a multi-hop or variable-length match in this query may have missed relationships (see GraphStatus). Absent otherwise, including for results that did not come from the graph engine. */
+            /** @description Legacy warning from an older worker affected by ladybug#1341 (see GraphStatus). The pinned v0.22.3 engine fixes the bug and no longer sets this flag. */
             multi_hop_may_be_incomplete?: boolean;
             /** @description The Cypher query Claude generated and executed. */
             generated_cypher: string;
@@ -3312,9 +3312,9 @@ export interface components {
             last_built_at?: string;
             /** @description Seconds since last_built_at; absent with it. */
             stale_seconds?: number;
-            /** @description True when a node table of the loaded graph holds more rows than one graph-engine node group (131,072), so multi-hop and variable-length matches (attack paths, blast_radius_deep, saved queries, detections, NL-to-Cypher, raw Cypher) may return fewer paths than exist (ladybug#1341). False is a measurement. Absent when no build has recorded its table sizes, or the state is unknown. */
+            /** @description Legacy warning from workers using an engine before v0.22.0 (ladybug#1341). The pinned v0.22.3 engine fixes this bug and reports false after loading a graph. Absent when no build has recorded its table sizes, or the state is unknown. This field does not measure other forms of incompleteness. */
             multi_hop_may_be_incomplete?: boolean;
-            /** @description The node tables above one node group, sorted by label. Absent when there are none or nothing was measured. */
+            /** @description Legacy warnings from older workers, sorted by label. Upgraded workers return none because v0.22.3 fixes the node-group bug. Absent when there are none or nothing was measured. */
             oversized_node_tables?: components["schemas"]["OversizedNodeTable"][];
         };
         GraphStats: {

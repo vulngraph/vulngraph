@@ -9,6 +9,11 @@ contain breaking changes; they are called out in its entry.
 
 ### Fixed
 
+- Upgrade LadybugDB to v0.22.3, resolving multi-hop paths lost when a node table spans
+  more than one storage group. Add the 131,112-node upstream reproducer to normal CI,
+  stop issuing the obsolete size warning, and invalidate old graph snapshots so they
+  rebuild from ClickHouse. Retain legacy status fields and metrics for existing clients.
+
 - Update the pinned Go toolchain to 1.26.11 and patched OpenAPI, compression,
   WebSocket, HTML parsing and OpenTelemetry dependencies. Keep the existing
   deprecated OpenPGP exception explicit; moving it to a separate module is not a fix.

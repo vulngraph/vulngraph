@@ -119,7 +119,7 @@ func (s *Service) LoadFromSnapshot(ctx context.Context, signals SignalSource) er
 	s.mu.Lock()
 	old := s.db
 	s.db = newDB
-	s.publishNodeTableRows(ctx, loadStats.nodeTableRows)
+	s.publishNodeTableRows(loadStats.nodeTableRows)
 	s.mu.Unlock()
 	if old != nil {
 		old.close()

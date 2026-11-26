@@ -75,7 +75,7 @@ type copyStats struct {
 	// expiredShareStepChanges.
 	verifiedExpiry bool
 	// nodeTableRows is each node table's row count after the load, read back
-	// from the engine (node_group_guard.go).
+	// from the engine (node_table_stats.go).
 	nodeTableRows map[string]int64
 }
 

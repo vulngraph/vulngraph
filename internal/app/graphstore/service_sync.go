@@ -280,7 +280,7 @@ func (s *Service) SyncFromSources(ctx context.Context, topoVersion uint64, asset
 	s.mu.Lock()
 	old := s.db
 	s.db = newDB
-	s.publishNodeTableRows(ctx, loadStats.nodeTableRows)
+	s.publishNodeTableRows(loadStats.nodeTableRows)
 	s.mu.Unlock()
 	if old != nil {
 		old.close()

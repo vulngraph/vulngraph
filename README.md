@@ -5,7 +5,7 @@
   <img alt="Vulngraph" src="docs/images/logo-light.svg" width="420">
 </picture>
 
-**A graph of your cloud, for seeing what an attacker could reach.**
+**Cloud security investigations for people and AI agents.**
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/vulngraph/vulngraph/badge)](https://scorecard.dev/viewer/?uri=github.com/vulngraph/vulngraph)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -14,26 +14,29 @@
 
 </div>
 
-Vulngraph is a self-hosted security graph for cloud accounts. It joins your cloud inventory, identities,
-container images, packages and repositories into one graph, then ranks every risk by what an attacker
-can actually reach. People use the UI. Your own security agents use the same graph over MCP with scoped
-API keys: they query it and investigate a finding. Anything that would change your cloud needs a person:
-proposed fixes wait in an approval queue (the UI, an email link or a signed webhook), and an agent's own
-request runs only with a grant from a human admin. It runs in your environment.
+Vulngraph is an **open-source, self-hosted cloud security graph**. It connects cloud resources,
+identities, vulnerable packages and repositories so you can follow a finding from its entry point to
+its possible impact, investigate the evidence, and review a proposed fix in one application.
+
+Use the web UI, ask questions in plain English, write Cypher, or connect your own agents over MCP.
+AI can investigate and propose; a person approves every state-changing action. Bring a hosted or local
+model, or run without one: inventory, graph queries, checks and scoring work without an LLM.
 
 ![Writing a Cypher query in the Graph page: the internet reaches a web server whose role can escalate to an administrator, then opening that server shows its details and findings](docs/images/attack-path-dark.gif)
 
-- **Risk ranked by reach.** Each finding is scored by exposure, exploitability and blast radius, so the
-  "must fix" list stays short and shows its evidence on every row.
-- **One graph across tools.** Which internet-exposed workload can reach an administrator role? Where is
-  this vulnerable package running, and which repository ships it? Ask in Cypher, in plain English, or over MCP.
-- **Unknown is not clean.** Data it could not read is shown as unknown, never as passing.
-- **Works with agents.** An MCP endpoint and read-scoped keys let an agent fleet ask questions and pull
-  context for a finding without any access to your cloud. When the graph is unsure, an admin can have
-  it verified live, read-only and audited. A key can never approve its own change: a real action needs a
-  grant from a different human admin.
-- **Read-only by default.** Collectors only read, nothing changes your cloud without a person's approval, credentials are isolated and actions are audited.
-- **Yours to run.** One Go binary with Postgres and ClickHouse. Every outbound connection is documented.
+- **See why a finding matters.** Rank findings using modeled exposure, exploitability and blast radius,
+  then inspect the evidence and relationships behind the score.
+- **Investigate across systems.** Which exposed workload can reach an administrator role? Where is a
+  vulnerable package running, and which repository ships it? Follow those relationships in one graph.
+- **Put AI to work on the evidence.** Investigation chat, natural-language graph queries and MCP are
+  built in. Scoped keys let external agents query inventory without holding your cloud credentials.
+  Admins can verify uncertain evidence with audited, read-only cloud calls.
+- **Keep control of changes.** Connectors start read-only. Proposed fixes require human approval;
+  an API key cannot approve its own action. Credentials are isolated and actions are audited.
+- **Understand the gaps.** Missing or partial collection is surfaced alongside the findings.
+  [Coverage and limitations](docs/capabilities.md) explain what each result can establish.
+- **Choose where it runs.** Apache-2.0, self-hosted, with an embedded web UI and optional hosted or
+  local models. [Outbound connections](docs/configuration.md#network-egress) are documented.
 
 Connects to AWS, GCP, Azure, Kubernetes, GitHub, Okta and Google Workspace.
 [See it in action](docs/examples.md).
@@ -66,6 +69,26 @@ with no database, see [quick scan](docs/quick-scan.md).
 | **Freshness** | Re-sync every 2 hours by default, GitHub changes immediately, any event through one API call ([how](docs/getting-started.md#5-keep-the-data-fresh)). |
 
 Each, with its limits, is in [`docs/capabilities.md`](docs/capabilities.md).
+
+## Coming from Cartography
+
+[Cartography](https://github.com/cartography-cncf/cartography) inspired Vulngraph's inventory graph.
+Vulngraph brings collection, risk prioritisation, investigation and approval into one application:
+
+| What you want to do | Included in Vulngraph |
+|---|---|
+| Go from a finding to its context | A web UI with findings, graph exploration, exposure paths and evidence for risk scores. |
+| Investigate with your own agents | MCP, scoped API keys, investigation chat and natural-language graph queries. |
+| Review a proposed fix | Plans tied to findings, human approval, execution controls and an audit trail. |
+| Avoid repeating unchanged evaluations | Content diffs skip unchanged checks and enrichment; a graph-content digest skips unnecessary rebuilds. |
+| Keep inventory and history independently of graph traversal | ClickHouse stores inventory and findings; LadybugDB is a disposable in-memory graph projection. Postgres holds jobs, users and approvals. |
+
+Cartography has broader integrations, an established community, and its own security rules. Vulngraph
+is a fit when you want this investigation workflow built in. We have **not published a like-for-like
+sync benchmark**: concurrent jobs and change-aware evaluation are implementation choices, not proof
+of a speed advantage. Sync still collects and writes unchanged assets, and topology changes can
+require a full graph rebuild. See the [comparison and evaluation criteria](docs/comparing-cartography.md)
+and [architecture](docs/architecture.md).
 
 ## What it is not
 

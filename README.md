@@ -100,7 +100,9 @@ Vulngraph holds read access to your cloud, so it is built to be a safe thing to 
 ## Project status
 
 Early and pre-1.0: APIs, the graph schema and config keys may change ([`CHANGELOG.md`](CHANGELOG.md)).
-It has one maintainer, is built with AI coding assistance, and has had no external security review.
+It was used internally, including in production, for a while before being open sourced, so this is its first
+public release and the first time outside users run it. It has one maintainer, is built with AI coding
+assistance, and has not been security tested by anyone independent: no penetration test or third-party review.
 The quality of the LLM's proposals is measured only by two small golden sets (10 and 8 cases),
 run by hand ([details](docs/capabilities.md#reasoning-and-governance)). Support is best effort
 ([`SUPPORT.md`](SUPPORT.md)). Known limitations that affect results are in

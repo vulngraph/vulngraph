@@ -4,7 +4,7 @@
 > packages and repositories into one graph and ranks findings by what an attacker can actually reach. Apache-2.0,
 > Go, Postgres, ClickHouse. Read-only by default; it never changes anything without a person's approval.
 
-Pre-1.0, one maintainer, built with AI coding assistance, no external security review yet. Connectors start read-only.
+Pre-1.0, one maintainer, built with AI coding assistance, used internally before this first public release, no independent security testing yet. Connectors start read-only.
 
 ## Start here
 

@@ -17,13 +17,6 @@ const defaultMaxBodyBytes int64 = 1 << 20 // 1 MiB
 // routeBodyLimits raises the cap for the few routes whose payloads are
 // legitimately larger. Keyed by exact path (none of these take path params).
 var routeBodyLimits = map[string]int64{
-	// Bulk findings from an external scanner (OpenVAS/Qualys/Burp export).
-	"/api/scans/import": 32 << 20,
-	// Nuclei template YAML; real templates are KiBs, workflows with many
-	// embedded requests can reach a few hundred KiB.
-	"/api/scans/templates/validate": 4 << 20,
-	"/api/scans/templates/test":     4 << 20,
-	"/api/scans/templates/generate": 4 << 20,
 	// The chat UI resends the whole conversation, tool results included.
 	"/api/chat": 8 << 20,
 	// A customer agent's package inventory (up to 10,000 packages).

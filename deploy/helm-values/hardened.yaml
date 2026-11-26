@@ -34,7 +34,7 @@ securityContext:
   enabled: true                # runAsNonRoot, uid 65532, every capability dropped, RuntimeDefault seccomp
   readOnlyRootFilesystem: true # writers get emptyDirs at /tmp and $HOME (deploy/README.md "Container hardening")
 scanner:
-  # nuclei, which parses responses from the hosts it scans, runs in its own pod
+  # Opted-in disk reads, which parse untrusted VM filesystems, run in their own pod
   # with no GRAPH_SECRET_KEY, LLM key, signing secret or cloud identity.
   enabled: true
 worker:

@@ -268,7 +268,7 @@ func (s *Service) checkApproval(ctx context.Context, connectorID string, req Exe
 // resolution the execution will perform — so the plan the approver reads is
 // the plan the grant is bound to, byte for byte. The approving admin is taken
 // from the context, never from the request, and their account must be at
-// least minApproverAge old. A refusal of who asked (an API key, a too-young
+// least minApproverAge old and have held active admin authority for that long. A refusal of who asked (an API key, a too-young
 // account) is audited.
 func (s *Service) Approve(ctx context.Context, req ExecutionRequest) (Approval, error) {
 	approval, err := s.approve(ctx, req)
@@ -317,8 +317,8 @@ func (s *Service) approve(ctx context.Context, req ExecutionRequest) (Approval, 
 // "approving" or "executing") from an account that has not been an admin for
 // minApproverAge. The clock starts at the later of the account's created_at and
 // the time its role last became admin, so promoting an old account does not
-// skip the floor. An admin from before admin_since was recorded has no such
-// time and counts from created_at. The times come from the authenticated
+// skip the floor. Unknown administrator tenure is refused. Migration 8 starts
+// existing administrators' tenure at upgrade time. The times come from the authenticated
 // principal (RequireAuth attaches the user row's for sessions and the owner's
 // for API keys); an unknown account age fails closed — a zero time would
 // otherwise read as an account two thousand years old.
@@ -334,6 +334,10 @@ func (s *Service) checkAccountAge(p Principal, role string) error {
 		return fmt.Errorf("%w: the %s account has been an admin for %s; two-person actions need accounts that have been admin for at least %s",
 			ErrApprovalInvalid, role, age.Truncate(time.Minute), s.minApproverAge)
 	}
+	if p.AdminSince.IsZero() || s.now().Sub(p.AdminSince) < s.minApproverAge {
+		return fmt.Errorf("%w: the %s administrator tenure must be known and at least %s", ErrApprovalInvalid, role, s.minApproverAge)
+	}
+
 	return nil
 }
 
@@ -508,6 +512,7 @@ func principalFromContext(ctx context.Context) Principal {
 		p.ID = u.ID
 		p.CreatedAt = u.CreatedAt
 		p.AdminSince = u.AdminSince
+		p.AuthorityVersion = u.AuthorityVersion
 	}
 	return p
 }

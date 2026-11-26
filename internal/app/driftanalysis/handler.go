@@ -42,25 +42,22 @@ type ListResponse struct {
 // ScanRecommendation is recommended, not_needed or unknown; unknown is never
 // "no scan needed".
 type AnalysisResponse struct {
-	BatchID               string             `json:"batch_id"`
-	ConnectorID           string             `json:"connector_id"`
-	WindowStart           time.Time          `json:"window_start"`
-	WindowEnd             time.Time          `json:"window_end"`
-	Status                string             `json:"status"`
-	UnknownReason         string             `json:"unknown_reason"`
-	Summary               string             `json:"summary"`
-	Changes               []ChangeResponse   `json:"changes"`
-	ExposureJudgement     string             `json:"exposure_judgement"`
-	ScanRecommendation    string             `json:"scan_recommendation"`
-	Reason                string             `json:"reason"`
-	SuggestedProfileID    string             `json:"suggested_profile_id"`
-	SuggestedTemplateTags []string           `json:"suggested_template_tags"`
-	Confidence            string             `json:"confidence"`
-	Evidence              []EvidenceResponse `json:"evidence"`
-	AutoScanProfileIDs    []string           `json:"auto_scan_profile_ids"`
-	Truncated             bool               `json:"truncated"`
-	Source                string             `json:"source"`
-	Advisory              bool               `json:"advisory"`
+	BatchID            string             `json:"batch_id"`
+	ConnectorID        string             `json:"connector_id"`
+	WindowStart        time.Time          `json:"window_start"`
+	WindowEnd          time.Time          `json:"window_end"`
+	Status             string             `json:"status"`
+	UnknownReason      string             `json:"unknown_reason"`
+	Summary            string             `json:"summary"`
+	Changes            []ChangeResponse   `json:"changes"`
+	ExposureJudgement  string             `json:"exposure_judgement"`
+	ScanRecommendation string             `json:"scan_recommendation"`
+	Reason             string             `json:"reason"`
+	Confidence         string             `json:"confidence"`
+	Evidence           []EvidenceResponse `json:"evidence"`
+	Truncated          bool               `json:"truncated"`
+	Source             string             `json:"source"`
+	Advisory           bool               `json:"advisory"`
 }
 
 type ChangeResponse struct {
@@ -85,12 +82,10 @@ func ToResponse(b Batch) AnalysisResponse {
 		Status: b.Status, UnknownReason: b.UnknownReason,
 		Summary: v.Summary, ExposureJudgement: v.ExposureJudgement,
 		ScanRecommendation: v.Recommendation(), Reason: v.Reason,
-		SuggestedProfileID: v.SuggestedProfileID, Confidence: v.Confidence,
-		SuggestedTemplateTags: nonNil(v.SuggestedTemplateTags),
-		AutoScanProfileIDs:    nonNil(v.AutoScanProfileIDs),
-		Changes:               make([]ChangeResponse, len(v.Changes)),
-		Evidence:              make([]EvidenceResponse, len(v.Evidence)),
-		Truncated:             b.Truncated, Source: "llm", Advisory: true,
+		Confidence: v.Confidence,
+		Changes:    make([]ChangeResponse, len(v.Changes)),
+		Evidence:   make([]EvidenceResponse, len(v.Evidence)),
+		Truncated:  b.Truncated, Source: "llm", Advisory: true,
 	}
 	for i, c := range v.Changes {
 		out.Changes[i] = ChangeResponse(c)

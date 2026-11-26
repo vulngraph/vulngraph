@@ -16,6 +16,10 @@ The public git history starts at the first public commit; earlier history is
 not published. The ADRs in [`docs/adr/`](docs/adr/README.md) are the record of
 why things are the way they are.
 
+The aggregate `CI required` result is the intended required merge check.
+See [PR security checks](docs/pr-security-checks.md) for the separate repository
+settings needed to enforce it.
+
 ## Before you start
 
 - **Open an issue first** for anything beyond a small fix, describing the

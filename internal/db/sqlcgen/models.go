@@ -516,16 +516,17 @@ type Session struct {
 }
 
 type User struct {
-	ID           string
-	Email        string
-	PasswordHash string
-	Role         string
-	TotpSecret   *string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	DisabledAt   pgtype.Timestamptz
-	OidcIssuer   pgtype.Text
-	OidcSubject  pgtype.Text
-	TotpLastStep pgtype.Int8
-	AdminSince   pgtype.Timestamptz
+	ID               string
+	Email            string
+	PasswordHash     string
+	Role             string
+	TotpSecret       *string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	DisabledAt       pgtype.Timestamptz
+	OidcIssuer       pgtype.Text
+	OidcSubject      pgtype.Text
+	TotpLastStep     pgtype.Int8
+	AdminSince       pgtype.Timestamptz
+	AuthorityVersion int64
 }

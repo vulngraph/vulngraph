@@ -49,13 +49,13 @@ linters:
               desc: services depend on repository interfaces, never database drivers
             - pkg: github.com/ClickHouse/clickhouse-go
               desc: services depend on repository interfaces, never database drivers
-        # the nuclei SDK and its dependency tree stay quarantined.
-        nuclei-quarantine:
+        # Active external scanning is retired (ADR 096).
+        retired-active-scanning:
           files:
-            - "!**/internal/scanner/nuclei/**"
+            - "$all"
           deny:
             - pkg: github.com/projectdiscovery
-              desc: nuclei SDK is imported only by internal/scanner/nuclei
+              desc: active external scanning is retired; ProjectDiscovery dependencies are not permitted
         # LLM provider SDKs stay behind the provider-neutral internal/llm seam,
         # so features never couple to one vendor's request/response types.
         llm-quarantine:

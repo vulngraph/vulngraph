@@ -1,5 +1,7 @@
 # ADR 009 — Nuclei embedded via its official Go SDK
 
+> Superseded for active external scanning by [ADR 097](097-retire-external-scanning.md). The remainder is historical.
+
 **Status:** accepted
 
 ## Context

@@ -12,8 +12,6 @@ import (
 // periodicWithoutSingleton names periodic kinds that still lack the
 // periodicSingletonOpts shape, each with the reason. Shrink it, never grow it.
 var periodicWithoutSingleton = map[string]string{
-	"run_scheduled_profiles": "unique by args already; a per-minute tick is skipped once older than " +
-		"tickStaleAfter, so River's default attempts only ever hold the slot for minutes",
 	"run_saved_queries": "unique by args already; a per-minute tick is skipped once older than " +
 		"tickStaleAfter, so River's default attempts only ever hold the slot for minutes",
 }
@@ -70,7 +68,6 @@ func TestPeriodicSingletonInsertOpts(t *testing.T) {
 		{RefreshEPSSArgs{}, queueFeeds, 3},
 		{AdjudicateArgs{}, queueAdjudicate, 2},
 		{DriftSweepArgs{}, queueDrift, 2},
-		{ScanArgs{}, queueScan, 3},
 		{RefreshKEVArgs{}, queueFeeds, 2},
 		{EnrichSweepArgs{}, queueEnrich, enrichSweepMaxAttempts},
 		{EnqueueSyncsArgs{}, queueSync, 3},

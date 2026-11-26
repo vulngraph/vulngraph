@@ -98,10 +98,11 @@ type APIKeyRecord struct {
 	// OwnerEmail/OwnerRole are the owning user's current email and role;
 	// OwnerCreatedAt is when the owner's account was created and
 	// OwnerAdminSince when their role last became admin (zero = unknown).
-	OwnerEmail      string
-	OwnerRole       Role
-	OwnerCreatedAt  time.Time
-	OwnerAdminSince time.Time
+	OwnerEmail            string
+	OwnerRole             Role
+	OwnerCreatedAt        time.Time
+	OwnerAdminSince       time.Time
+	OwnerAuthorityVersion int64
 	// ExpiresAt is when the key stops authenticating (its effective expiry).
 	ExpiresAt time.Time
 }
@@ -266,9 +267,9 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	cookie, err := r.Cookie(SessionCookie)
-	if err == nil {
-		if err := h.svc.Logout(r.Context(), cookie.Value, "sign_out"); err != nil {
+	token, ok := sessionToken(r)
+	if ok && !strings.HasPrefix(token, "gph_") {
+		if err := h.svc.Logout(r.Context(), token, "sign_out"); err != nil {
 			log.FromContext(r.Context()).Error().Err(err).Msg("logout failed")
 			errs.WriteHTTPError(w, errs.Internal("logout failed"))
 			return
@@ -407,11 +408,12 @@ func (h *Handler) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 			// key's scope capped at the owner's CURRENT role: demoting a user
 			// demotes their keys.
 			user := User{
-				ID:         key.UserID,
-				Email:      key.OwnerEmail,
-				Role:       lesserRole(APIKeyScopeToRole(key.Scope), key.OwnerRole),
-				CreatedAt:  key.OwnerCreatedAt,
-				AdminSince: key.OwnerAdminSince,
+				ID:               key.UserID,
+				Email:            key.OwnerEmail,
+				Role:             lesserRole(APIKeyScopeToRole(key.Scope), key.OwnerRole),
+				CreatedAt:        key.OwnerCreatedAt,
+				AdminSince:       key.OwnerAdminSince,
+				AuthorityVersion: key.OwnerAuthorityVersion,
 			}
 			ctx := ContextWithAPIKey(ContextWithUser(r.Context(), user), key)
 			next(w, r.WithContext(ctx))

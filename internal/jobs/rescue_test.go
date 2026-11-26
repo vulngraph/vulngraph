@@ -75,7 +75,7 @@ func TestAllJobKindsRescuable(t *testing.T) {
 // registered, and every other kind becomes known to the client.
 func TestAddRescueOnlyWorkersSkipsRealRegistrations(t *testing.T) {
 	workers := river.NewWorkers()
-	river.AddWorker(workers, &ScanWorker{}) // real registration, kind "scan"
+	river.AddWorker(workers, &CorrelateWorker{}) // real registration, kind "correlate"
 
 	require.NotPanics(t, func() { addRescueOnlyWorkers(workers) })
 
@@ -97,21 +97,12 @@ func TestAddRescueOnlyWorkersSkipsRealRegistrations(t *testing.T) {
 func TestRescueOnlyWorkerReportsRealTimeout(t *testing.T) {
 	regs := rescueRegistrations()
 	want := map[string]time.Duration{
-		ScanArgs{}.Kind():           ScanWorker{}.Timeout(nil),
-		ScanProfileJobArgs{}.Kind(): ScanProfileWorker{}.Timeout(nil),
-		ScanAssetArgs{}.Kind():      ScanAssetWorker{}.Timeout(nil),
-		CorrelateArgs{}.Kind():      (&CorrelateWorker{}).Timeout(nil),
-		RefreshOSVArgs{}.Kind():     OSVWorker{}.Timeout(nil),
-		SyncConnectorArgs{}.Kind():  SyncWorker{}.Timeout(nil),
+		CorrelateArgs{}.Kind():     (&CorrelateWorker{}).Timeout(nil),
+		RefreshOSVArgs{}.Kind():    OSVWorker{}.Timeout(nil),
+		SyncConnectorArgs{}.Kind(): SyncWorker{}.Timeout(nil),
 	}
 	for kind, timeout := range want {
 		require.Equal(t, timeout, regs[kind].timeout, "rescue-only %q must report its real worker's Timeout", kind)
 	}
 
-	// The two kinds that outlive River's default 1h rescue horizon: a
-	// rescue-only registration reporting 0 for these is exactly the bug.
-	for _, kind := range []string{ScanArgs{}.Kind(), ScanProfileJobArgs{}.Kind()} {
-		require.Greater(t, regs[kind].timeout, time.Hour,
-			"%q runs past River's default rescue horizon; its rescue-only Timeout must cover it", kind)
-	}
 }

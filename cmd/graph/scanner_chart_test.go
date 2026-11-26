@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The scanner pod parses responses from the hosts it scans, so the chart keeps
+// The scanner pod parses untrusted VM disks, so the chart keeps
 // the application secrets (graph.appSecretEnv: GRAPH_SECRET_KEY, LLM keys,
 // signing secrets) and every cloud identity off it. That is only sound while
 // the scanner needs none of them: if scanner.go starts building the cipher, an
@@ -51,9 +51,9 @@ func TestScannerPodGetsNoAppSecretsOrCloudIdentity(t *testing.T) {
 	}
 }
 
-// The scanner pod is the default: with it off, nuclei runs in the worker,
+// The scanner pod is the default: with it off, disk scanning runs in the worker,
 // which holds GRAPH_SECRET_KEY and the cloud identity.
-func TestChartRunsNucleiInTheScannerPodByDefault(t *testing.T) {
+func TestChartIsolatesDiskReadsWhenEnabled(t *testing.T) {
 	scanner, ok := chartValues(t)["scanner"].(map[string]any)
 	require.True(t, ok, "values.yaml has no scanner block")
 	require.Equal(t, true, scanner["enabled"], "scanner.enabled must default to true")

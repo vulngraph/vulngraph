@@ -139,7 +139,7 @@ Read by `serve`.
 
 ## LLM provider
 
-LLM features (reasoning on findings, chat, template generation) are optional.
+LLM features (reasoning on findings, chat) are optional.
 Both `serve` and `worker` read these. Provider selection rules, model
 defaults and examples for Anthropic, OpenAI, Ollama and other gateways are in
 [llm-providers.md](llm-providers.md).
@@ -150,27 +150,7 @@ without extra settings. Loopback hosts are never proxied; list any other
 direct host (for example an in-cluster `ollama` Service or
 `host.docker.internal`) in `NO_PROXY`. Slack delivery and OIDC ID-token
 verification honour the same variables. Vulngraph's in-cluster calls, such as the
-serve-to-worker graph RPC, ignore them and never go through the proxy, and so
-does the nuclei-templates download, which has its own `NUCLEI_TEMPLATES_PROXY`
-(see the nuclei templates note under [On by default](#on-by-default)).
-
-nuclei reads these variables too: its JavaScript-protocol templates send their
-HTTP requests to scan targets through the proxy. serve (template tests) and the
-worker (scans, when the chart's `scanner.enabled` is off) run nuclei, so with a
-proxy set there, two things follow. Scan traffic to a target reaches it from
-the proxy, and the scan sandbox, which checks addresses when nuclei dials,
-sees only the proxy's address: the always-blocked cloud metadata endpoints and,
-unless internal scanning is allowed, private targets are then held back only
-by a hostname check made before the request, which a name that resolves again
-at the proxy can pass. And when internal scanning is not allowed and the proxy
-has a private address, every such request is refused at the dial, so those
-templates find nothing on any target. nuclei honours `NO_PROXY` as well, so it
-can avoid both only by taking the proxy out of the path: a target it lists
-(or every target, with `NO_PROXY=*`) is dialled directly and checked at the
-dial again, and no longer reaches through the proxy at all. Keep these
-variables out of the scanner (the chart's default topology runs every scan
-there, and gives it none of the chart-wide `extraEnv`), and know the trade-off
-before setting them for serve or a worker that scans.
+serve-to-worker graph RPC, ignore them and never go through the proxy.
 
 | Variable | Process | Default | Format | Sensitive | Description |
 |---|---|---|---|---|---|
@@ -192,7 +172,7 @@ before setting them for serve or a worker that scans.
 | `DISK_SCAN_ENVELOPE_KEY` | worker, scanner (with `DISK_SCAN_ENABLED`) | none | standard base64 of exactly 32 bytes | Yes | Seals each connector's disk-scan credentials into the volume job so the scanner pod never holds `GRAPH_SECRET_KEY`; it opens nothing else. The worker and the scanner must hold the same value. Helm derives one from `secret.secretKey` and stores it as `disk-scan-envelope-key`, or set `secret.diskScanEnvelopeKey`; elsewhere generate one, for example `openssl rand -base64 32`. Anyone holding it can open the credentials of an unexpired run ([threat 18](threat-model.md)). |
 | `LLM_MONTHLY_BUDGET_USD` | serve, worker | `0` (unlimited) | non-negative dollar amount | No | Cap on **all** LLM spend per calendar month (UTC), summed from the `llm_usage` ledger. It gates background work (remediation reasoning, adjudication, CT triage): once reached, those calls are refused until the month rolls over, and they are also refused when the ledger cannot be read (`budget_unknown`). Interactive features are not cut off by it. A malformed value fails startup. See [LLM providers](llm-providers.md#usage-and-budgets). |
 | `LLM_INTERACTIVE_MONTHLY_BUDGET_USD` | serve, worker | `0` (unlimited) | non-negative dollar amount | No | Cap on interactive LLM spend only (chat, NL graph query, decision refine, scan-template generation) per calendar month. Background spend never counts against it. With an unreadable ledger, interactive calls proceed (and are still bounded by `LLM_RATE_LIMIT_PER_USER`). A malformed value fails startup. |
-| `LLM_USER_DAILY_BUDGET_USD` | serve | `0` (unlimited) | non-negative dollar amount | No | Cap on one user's interactive LLM spend (chat, NL graph query including MCP `graph_query`, refine, template generation) per UTC day. Interactive spend counts toward `LLM_MONTHLY_BUDGET_USD`, which halts background work, so this keeps one user from draining it. With an unreadable ledger the call proceeds. A malformed value fails startup. |
+| `LLM_USER_DAILY_BUDGET_USD` | serve | `0` (unlimited) | non-negative dollar amount | No | Cap on one user's interactive LLM spend (chat, NL graph query including MCP `graph_query`, refine) per UTC day. Interactive spend counts toward `LLM_MONTHLY_BUDGET_USD`, which halts background work, so this keeps one user from draining it. With an unreadable ledger the call proceeds. A malformed value fails startup. |
 | `LLM_USER_MONTHLY_BUDGET_USD` | serve | `0` (unlimited) | non-negative dollar amount | No | Same, per calendar month. Every budget check reserves the call's worst-case cost until the call is recorded, but reservations are held per process: with N `serve` replicas (plus the worker), calls in flight on different processes do not see each other's reservations, so a cap can be overshot by up to one round of concurrent calls per process. The recorded spend itself is shared. |
 | `CHAT_MAX_TOKENS_PER_TURN` | serve | `500000` | positive integer | No | Chargeable tokens one chat turn may use across its tool loop (each iteration resends the conversation). The turn ends with a note when reached. A malformed value fails startup. |
 | `CHAT_MAX_TOOL_CALLS_PER_TURN` | serve | `24` | positive integer | No | Tool executions in one chat turn (on top of the 12-iteration ceiling). |
@@ -215,7 +195,6 @@ before setting them for serve or a worker that scans.
 | `OKTA_MAX_PAGES` | worker | `50` | int | No | Pagination ceiling for the Okta collector (about 10,000 users). |
 | `GOOGLE_MAX_PAGES` | worker | `20` | int | No | Pagination ceiling for the Google Workspace collector (about 10,000 users). |
 | `GITHUB_MALFEED_TOKEN` | worker | none (unauthenticated, 60 requests/hour) | GitHub token | Yes | Optional token for the malicious-package feed. Only buys rate-limit headroom. |
-| `OFFLINE_MODE` | worker, scanner (schedule), serve (nuclei, cost collection) | off | switch | No | Turns off every outbound connection Vulngraph makes on its own that has a switch: the seven switches below plus `TAKEOVER_PROBE_DISABLED`, `COST_COLLECT_DISABLED` and `NUCLEI_TEMPLATES_DOWNLOAD_DISABLED`, and keeps the opt-in `NUCLEI_INTERACTSH_ENABLED` off. Other integrations you configured (connector syncs, LLM, webhooks, sign-in) are unaffected. The nuclei SDK's version check to `api.pdtm.sh` is refused in every mode and needs no switch. See [Network egress](#network-egress). |
 | `INTEL_KEV_DISABLED` | worker, scanner (schedule) | off (feed on) | switch | No | Stops fetching the CISA Known Exploited Vulnerabilities catalog. Findings are no longer flagged `known_exploited` or escalated for it. |
 | `INTEL_EPSS_DISABLED` | worker, scanner (schedule) | off (feed on) | switch | No | Stops fetching FIRST.org EPSS scores. CVE findings then get no EPSS points. |
 | `INTEL_MALFEED_DISABLED` | worker, scanner (schedule) | off (feed on) | switch | No | Stops reading the OpenSSF malicious-packages feed from GitHub (the fast malicious-package detection path). |
@@ -241,24 +220,18 @@ region (see Bootstrap).
 
 ## Scanning
 
+Nuclei external scanning and scan-profile APIs have been retired. Image and
+package analysis remain available; VM disk scanning is opt-in.
+
 | Variable | Process | Default | Format | Sensitive | Description |
 |---|---|---|---|---|---|
-| `SCAN_INTERVAL` | worker, scanner | unset (no periodic estate scan) | duration, at least `1h` | No | Enables the scheduled estate scan, e.g. `168h` for weekly. Values under one hour are rejected with a warning, because nuclei scans take 20 to 60 minutes. |
-| `SCAN_SCANNERS` | worker, scanner | all bundled scanners | comma-separated scanner names (bundled: `nuclei`) | No | Restricts which bundled scanners run. An unknown name stops the pod at startup. |
-| `SCAN_WORKER_DISABLED` | worker | off | switch | No | Stops the main worker from consuming the scan queue and registering any nuclei worker. Set it when a dedicated scanner pod does the scanning, or locally for a small footprint. |
-| `SCAN_ALLOW_INTERNAL_TARGETS` | serve, worker, scanner | off | exact `true` | Yes | **Dangerous.** Lets scanners reach private and loopback addresses (never link-local or cloud metadata). See [Dev-only and dangerous](#dev-only-and-dangerous). |
+| `SCAN_WORKER_DISABLED` | worker | off | switch | No | Delegates disk-volume reads to the isolated scanner. The Helm chart sets it when the disk-reader deployment is enabled. |
 | `IMAGE_SCAN_DISABLED` | worker, scanner (schedule) | off (image scanning is on) | switch | No | Disables the container-image vulnerability sweep. It pulls images from registries by default, which is heavy locally. The sweep is also off whenever `INTEL_OSV_DISABLED` or `OFFLINE_MODE` is set, because every CVE match it makes is an OSV query. |
 | `IMAGE_SCAN_ROOT` | worker | unset (registry-pull source) | directory path | No | Scan a local image root filesystem instead of pulling from registries. |
 | `IMAGE_SCAN_MAX_STREAM_GIB` | worker | `4` | positive whole number of GiB | No | How much uncompressed layer data one image scan reads (newest layer first) before it stops. An image larger than this — typical of ML and CUDA images — is scanned only in part and carries a permanent `scan_incomplete` OS coverage finding, because its oldest layers (usually the OS base) are never reached; every rescan of the same digest stops at the same place. The stream is never held in memory, so raising the cap costs pull time and registry bandwidth, not memory; one pull is still bounded by a 5-minute timeout, past which the scan fails instead. A Go binary past the 512 MiB build-info probe budget, or a language manifest over 32 MiB, opens a separate `imagevuln-language-packages-incomplete` finding and does not affect the OS verdict. An invalid value stops the worker. |
 | `IMAGE_REGISTRY_ALLOW_PRIVATE` | worker | unset (no private registry is reachable) | comma-separated CIDR prefixes or IPs, e.g. `10.20.0.0/16` | No | Private address ranges the image scanner may pull from. Every registry connection — including blob redirects and token-realm fetches — is checked at dial time and refused if it resolves to a private, loopback or reserved address, because image references come from connector data. List the subnet of an in-cluster or on-premises registry here. Link-local ranges (the cloud metadata endpoint) and catch-alls such as `0.0.0.0/0` are rejected, and an invalid value stops the worker; the metadata addresses outside link-local (`fd00:ec2::254`, `100.100.100.200`, `192.0.0.192`) stay blocked whatever the list allows. No HTTP proxy is used for registry pulls. |
 | `IMAGE_REGISTRY_DOCKER_KEYCHAIN` | worker | off | exact `true` (case-insensitive) | No | Lets the image scanner present credentials from the pod's docker config (`$DOCKER_CONFIG/config.json`, `~/.docker/config.json`) to registries. Off by default so the scanner never sends ambient credentials to a registry that an image reference names; private ECR (via the AWS connector) and GCR/Artifact Registry (via application-default credentials) authenticate without it. |
 | `BASE_IMAGE_CATALOGUE` | worker | unset (built-in catalogue) | path to a JSON file | No | Your preferred replacement base images, proposed ahead of the built-in vendor-neutral ones in base-image root-cause findings (ADR 088). The file is `{"replace_defaults": false, "entries": [{"name": "…", "image": "…", "runtime": "static\|glibc\|python\|node\|java\|ruby\|any", "note": "…"}]}`; `replace_defaults: true` proposes only your entries. A file that is missing or invalid stops the worker at startup. |
-| `NUCLEI_TEMPLATES_DIR` | worker, scanner (serve checks the value at startup) | unset (the pinned release is downloaded into `$HOME/nuclei-templates-<version>-<sha256>`) | directory path | No | Use a pre-populated nuclei template directory, for example a mounted copy of [nuclei-templates](https://github.com/projectdiscovery/nuclei-templates). Nothing is downloaded and you own the template version. A missing or empty directory fails every scan. Cannot be combined with `NUCLEI_TEMPLATES_VERSION`. Unset, and with no resolvable `$HOME`, the worker, scanner and serve pods do not start. |
-| `NUCLEI_TEMPLATES_VERSION` | worker, scanner (serve checks the value at startup) | unset (`v10.5.1`, pinned in `internal/scanner/nuclei/templates.go`) | release tag, `vX.Y.Z` | No | Download a different nuclei-templates release instead of the pinned one. Requires `NUCLEI_TEMPLATES_SHA256`. |
-| `NUCLEI_TEMPLATES_SHA256` | worker, scanner (serve checks the value at startup) | unset (the pinned release's checksum) | 64 hex characters | No | sha256 of `https://github.com/projectdiscovery/nuclei-templates/archive/refs/tags/<NUCLEI_TEMPLATES_VERSION>.tar.gz`. The archive is refused, and scans fail, unless it matches. Requires `NUCLEI_TEMPLATES_VERSION`. |
-| `NUCLEI_TEMPLATES_DOWNLOAD_DISABLED` | worker, scanner (serve checks the value at startup) | off (download on) | switch | No | Stops the download of the nuclei-templates release from GitHub. Scans then fail unless that release is already installed under `$HOME` or `NUCLEI_TEMPLATES_DIR` is set. Implied by `OFFLINE_MODE`. |
-| `NUCLEI_TEMPLATES_PROXY` | worker, scanner (serve checks the value at startup) | unset (direct) | `http://` or `https://` proxy URL, optionally with `user:password@` | Yes when it carries credentials | HTTP proxy for the nuclei-templates download, and for nothing else. `HTTPS_PROXY`/`HTTP_PROXY` are not used for the download. A value that is not such a URL stops the pod at startup. See the nuclei templates note under [On by default](#on-by-default). |
-| `NUCLEI_INTERACTSH_ENABLED` | worker, scanner, serve | off (no out-of-band testing) | switch | No | Turns on nuclei's out-of-band (interactsh) testing, which makes scan targets call back to ProjectDiscovery's public `oast.*` servers. While it is off, templates that detect a vulnerability only through such a callback (blind SSRF, out-of-band XXE, log4j-style JNDI lookups and similar) run but cannot match, in scans and in template tests. `OFFLINE_MODE` keeps it off. |
 
 ## Ladybug graph engine
 
@@ -369,65 +342,8 @@ lower than they otherwise would.
 | Registries of the container images running in your clusters (for example Docker Hub, `ghcr.io`, `registry.k8s.io`, your private registries) | worker | Image pulls by reference, with private-ECR tokens from your AWS connectors and GCP application-default credentials when available (pod docker credentials only with `IMAGE_REGISTRY_DOCKER_KEYCHAIN`); private addresses only within `IMAGE_REGISTRY_ALLOW_PRIVATE` | Container-image vulnerability sweep, daily | `IMAGE_SCAN_DISABLED` (also off with `INTEL_OSV_DISABLED`) |
 | The worker's DNS resolver (the cluster or host resolver, and whatever it forwards to) | worker | DNS lookups of the CNAME/ALIAS targets of records flagged as subdomain-takeover candidates | Takeover check during enrichment: whether the target still resolves | **None.** It uses the system resolver; point the pod at a resolver you control to keep the names in-house |
 | Hostnames from your collected DNS records (usually the third-party service a CNAME points at) | worker | HTTP GET to the hostname | Confirms or refutes subdomain-takeover candidates during enrichment | `TAKEOVER_PROBE_DISABLED` |
-| `github.com`, `codeload.github.com` | worker, scanner | Plain GET of the pinned `projectdiscovery/nuclei-templates` release archive, no data. Verified against its sha256 before anything in it is used | nuclei templates, before the first scan in a pod that does not have that release installed yet (the Helm chart's `$HOME` is an `emptyDir`, so each new pod) | `NUCLEI_TEMPLATES_DIR` or `NUCLEI_TEMPLATES_DOWNLOAD_DISABLED` |
 
-Not contacted: the nuclei SDK (v3.11.1) has a built-in version check to
-`api.pdtm.sh` (OS, CPU architecture, Go and nuclei versions, a hashed machine
-ID) that it makes before it reads any option. Vulngraph gives the HTTP client
-that call uses a transport that never dials, so the check fails inside the
-process in every mode, `OFFLINE_MODE` or not. The SDK's own template installer,
-which would fetch the latest, unpinned release from GitHub, is turned off in
-every nuclei engine Vulngraph builds.
-
-The web UI makes no third-party requests: its fonts are bundled (SIL OFL) and served by Vulngraph itself.
-
-**nuclei templates.** Scans run one pinned nuclei-templates release (`v10.5.1`,
-with its sha256, in `internal/scanner/nuclei/templates.go`). Before its first
-scan, the worker or scanner pod downloads that release's source archive from
-GitHub, refuses it unless the sha256 matches, unpacks it (directories and
-regular files only, size-capped, nothing outside the target directory) into
-`$HOME/nuclei-templates-v10.5.1-<sha256>`, and reuses it while that directory
-lasts. The Helm chart mounts `$HOME` as an `emptyDir`, so each new pod
-downloads it again. Processes that share one `$HOME` (a worker and a scanner
-run as the same user outside containers) install it once between them: each
-takes an exclusive lock on `$HOME/.nuclei-templates.lock` before it installs,
-the tree is unpacked beside the target and renamed into place only when
-complete, and a verified tree is never deleted or replaced, so a scan never
-loads a partial one. A marker file that exists but cannot be read stops the
-install with that error rather than counting as no install. Each release and
-checksum gets its own directory, and none is removed automatically, since
-another process may still be scanning with it. Where `$HOME` persists (a
-bare-binary install), changing `NUCLEI_TEMPLATES_VERSION` and
-`NUCLEI_TEMPLATES_SHA256`, or running a Vulngraph build that pins another
-release, leaves the previous tree (about 80 MiB at v10.5.1) in place: remove
-old `$HOME/nuclei-templates-v*-*` directories by hand once no process runs
-with them. The Helm chart's `emptyDir` and a Compose container's `$HOME` go
-away with the pod or container.
-Template tests and template validation in serve load only the submitted
-template and download nothing, so a submitted template that refers to stock
-files by relative path (a wordlist, or a workflow naming stock templates) fails
-its test even though it would run in a scan. To run another release, set
-`NUCLEI_TEMPLATES_VERSION` and `NUCLEI_TEMPLATES_SHA256`; to run templates you
-supply (for example from an image layer or a PVC, with no download at all),
-set `NUCLEI_TEMPLATES_DIR`. With `OFFLINE_MODE` or
-`NUCLEI_TEMPLATES_DOWNLOAD_DISABLED` and no templates in place, scans fail with
-an error instead of running no templates. Where GitHub is reachable only
-through an HTTP proxy, set `NUCLEI_TEMPLATES_PROXY`: only the download reads
-it, and it ignores `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, because nuclei
-would route scan traffic through those too (see
-[LLM provider](#llm-provider)). The URL is compiled in and the archive is
-checksum-verified, so the proxy can block the download but not change what
-runs. Redirects are followed only to `github.com` and `codeload.github.com`
-over https. When `HTTPS_PROXY` or `HTTP_PROXY` is set and
-`NUCLEI_TEMPLATES_PROXY` is not, a failed download says so and names
-`NUCLEI_TEMPLATES_PROXY`. The Helm chart gives the scanner none of the chart-wide
-`extraEnv`, so set it in `scanner.extraEnv` as well as for the worker.
-Invalid values of these settings (or `NUCLEI_TEMPLATES_DIR` together with
-`NUCLEI_TEMPLATES_VERSION`, or the retired `NUCLEI_UPDATE_DISABLED` and
-`NUCLEI_INTERACTSH_DISABLED`) stop serve at startup too, though serve never
-downloads templates. The templates run in processes that
-hold database credentials (and, in the worker, your connector credentials);
-pinning fixes which release runs, it does not review it.
+The web UI makes no third-party requests: its fonts are bundled and served locally.
 
 ### Only when configured
 
@@ -444,16 +360,13 @@ pinning fixes which release runs, it does not review it.
 | `admin.googleapis.com`, `oauth2.googleapis.com` | worker | Directory API calls with the service-account key | A Google Workspace connector |
 | `accounts.google.com`, `oauth2.googleapis.com`, `www.googleapis.com` | serve | OAuth code exchange and user-info lookup | `GOOGLE_CLIENT_ID` |
 | `www.gstatic.com` | serve | Plain GET of the IAP public keys | `IAP_AUDIENCE` |
-| LLM provider (`api.anthropic.com`, `api.openai.com`, or `LLM_BASE_URL`) | serve, worker | **Finding, asset and graph context** in prompts: remediation reasoning, chat, phishing triage, adjudication, template generation | `LLM_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `LLM_BASE_URL` |
+| LLM provider (`api.anthropic.com`, `api.openai.com`, or `LLM_BASE_URL`) | serve, worker | **Finding, asset and graph context** in prompts: remediation reasoning, chat, phishing triage, adjudication | `LLM_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `LLM_BASE_URL` |
 | `slack.com` | worker, serve | Alert text: finding titles, severities, resource names | A Slack notification channel (serve sends only the "Test" message) |
 | Webhook URLs | worker, serve | JSON alert, decision or approval payloads | A webhook channel; `DECISION_WEBHOOK_URL`; `APPROVAL_WEBHOOK_URL` |
 | SMTP server | worker | Approval-request emails with single-use links | `SMTP_HOST` |
 | OTLP collector | all | Trace spans | `OTEL_EXPORTER_OTLP_ENDPOINT` |
-| `oast.pro`, `oast.live`, `oast.site`, `oast.online`, `oast.fun`, `oast.me` | worker, scanner, serve | Out-of-band templates make the **scan target** call a ProjectDiscovery-run server, which nuclei polls with a correlation ID, while a scan or template test runs | `NUCLEI_INTERACTSH_ENABLED=true` (never under `OFFLINE_MODE`) |
-| Scan targets | worker, scanner, serve | nuclei HTTP, DNS and network probes, and HTTP snapshots of targets | `SCAN_INTERVAL`, scan profiles, manual scans and template tests. Private and metadata ranges stay blocked unless `SCAN_ALLOW_INTERNAL_TARGETS=true` |
 
-Calls to user-supplied endpoints (Okta domains, Google token URIs, webhooks,
-scan targets) go through an SSRF-blocking HTTP client that refuses private and
+Calls to user-supplied endpoints (Okta domains, Google token URIs, webhooks) go through an SSRF-blocking HTTP client that refuses private and
 metadata addresses.
 
 ## Tuning and scale
@@ -513,7 +426,6 @@ covered in [oauth2-proxy](security-hardening.md#oauth2-proxy) rather than in the
 |---|---|---|---|---|
 | `BYPASS_AUTH` + `BYPASS_AUTH_I_UNDERSTAND` | `true` + `yes` | serve | Every request runs as one synthetic admin, so audit rows name no person and cloud changes (executor runs) are refused. | A network-level auth gate fronts every path, or loopback-only local dev. |
 | `LADYBUG_RPC_INSECURE` | `true` | worker | The internal graph RPC is unauthenticated; any pod that can reach it can query the whole graph. | Local dev only. |
-| `SCAN_ALLOW_INTERNAL_TARGETS` | `true` | serve, worker, scanner | Scanners can reach private ranges (SSRF into the cluster). Link-local and cloud metadata stay blocked. | You deliberately scan internal ranges. |
 | `SMTP_ALLOW_PLAINTEXT` | `true` | worker | Approval emails, and their single-use approve/deny links, can travel unencrypted to the SMTP server. | The SMTP relay is on the same host or a trusted private link. |
 | `COOKIE_INSECURE` | `true` | serve | Session cookies lose the `Secure` attribute and travel over plain http. | Plain-http localhost development. |
 | `OAUTH2_PROXY_ALLOW_ANY_DOMAIN` | `true` | serve | Any email the verified proxy sends is accepted and auto-provisioned (viewer unless `ADMIN_EMAILS`/groups say otherwise). | The proxy's own policy is the gate you want. |

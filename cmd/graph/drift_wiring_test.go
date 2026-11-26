@@ -10,23 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/vulngraph/vulngraph/internal/app/finding"
-	"github.com/vulngraph/vulngraph/internal/app/scan"
 )
-
-type fakeDriftProfiles struct {
-	profiles []scan.ScanProfile
-	auto     []string
-	listErr  error
-	autoErr  error
-}
-
-func (f fakeDriftProfiles) ListProfiles(context.Context) ([]scan.ScanProfile, error) {
-	return f.profiles, f.listErr
-}
-
-func (f fakeDriftProfiles) ListDriftEnabledProfileIDs(context.Context) ([]string, error) {
-	return f.auto, f.autoErr
-}
 
 type fakeDriftFindings struct {
 	found []finding.Finding
@@ -47,37 +31,6 @@ func (f fakeDriftExposure) IsExposedEdge(_ context.Context, id string) (bool, er
 		return false, errors.New("clickhouse down")
 	}
 	return f.exposed[id], nil
-}
-
-func TestDriftFacts_ProfilesOnlyEnabledAndAutoScanIDs(t *testing.T) {
-	d := driftFacts{profiles: fakeDriftProfiles{
-		profiles: []scan.ScanProfile{
-			{ID: "p1", Name: "web", TemplateTags: []string{"cve"}, Enabled: true},
-			{ID: "p2", Name: "off", Enabled: false},
-		},
-		auto: []string{"p1"},
-	}}
-
-	got, auto, err := d.Profiles(t.Context())
-
-	require.NoError(t, err)
-	require.Len(t, got, 1)
-	assert.Equal(t, "p1", got[0].ID)
-	assert.Equal(t, []string{"cve"}, got[0].TemplateTags)
-	assert.Equal(t, []string{"p1"}, auto)
-}
-
-func TestDriftFacts_ProfilesFailureIsAnError(t *testing.T) {
-	boom := errors.New("boom")
-	for name, p := range map[string]fakeDriftProfiles{
-		"list": {listErr: boom},
-		"auto": {autoErr: boom},
-	} {
-		t.Run(name, func(t *testing.T) {
-			_, _, err := driftFacts{profiles: p}.Profiles(t.Context())
-			require.ErrorIs(t, err, boom)
-		})
-	}
 }
 
 func TestDriftFacts_FindingsCountOpenAndMaxScore(t *testing.T) {
@@ -122,19 +75,19 @@ func TestDriftAnalysisSwitch(t *testing.T) {
 	for _, v := range []string{"", "0", "false"} {
 		svc, err := driftAnalysisService(t.Context(), func(k string) string {
 			return map[string]string{"DRIFT_ANALYSIS_ENABLED": v}[k]
-		}, nil, nil, nil, nil, nil)
+		}, nil, nil, nil, nil)
 		require.NoError(t, err)
 		assert.Nil(t, svc, "DRIFT_ANALYSIS_ENABLED=%q must leave drift analysis off", v)
 	}
 	on, err := driftAnalysisService(t.Context(), func(k string) string {
 		return map[string]string{"DRIFT_ANALYSIS_ENABLED": "true"}[k]
-	}, nil, nil, nil, nil, nil)
+	}, nil, nil, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, on)
 	assert.True(t, on.Enabled())
 
 	_, err = driftAnalysisService(t.Context(), func(k string) string {
 		return map[string]string{"DRIFT_ANALYSIS_ENABLED": "ture"}[k]
-	}, nil, nil, nil, nil, nil)
+	}, nil, nil, nil, nil)
 	require.ErrorContains(t, err, "DRIFT_ANALYSIS_ENABLED")
 }

@@ -216,14 +216,15 @@ func (a apiKeyAdapter) Verify(ctx context.Context, plaintext string) (auth.APIKe
 		return auth.APIKeyRecord{}, err
 	}
 	rec := auth.APIKeyRecord{
-		ID:              key.ID,
-		UserID:          key.UserID,
-		Name:            key.Name,
-		Scope:           string(key.Scopes),
-		OwnerEmail:      key.OwnerEmail,
-		OwnerRole:       auth.Role(key.OwnerRole),
-		OwnerCreatedAt:  key.OwnerCreatedAt,
-		OwnerAdminSince: key.OwnerAdminSince,
+		ID:                    key.ID,
+		UserID:                key.UserID,
+		Name:                  key.Name,
+		Scope:                 string(key.Scopes),
+		OwnerEmail:            key.OwnerEmail,
+		OwnerRole:             auth.Role(key.OwnerRole),
+		OwnerCreatedAt:        key.OwnerCreatedAt,
+		OwnerAdminSince:       key.OwnerAdminSince,
+		OwnerAuthorityVersion: key.OwnerAuthorityVersion,
 	}
 	if key.ExpiresAt != nil {
 		rec.ExpiresAt = *key.ExpiresAt

@@ -112,7 +112,7 @@ git clone https://github.com/vulngraph/vulngraph && cd vulngraph
 gitleaks dir .                       # secrets; CI runs this on every change, with no allowlist file
 grep -n '^FROM\|^USER' Dockerfile    # every base image is pinned by digest; the runtime user is nonroot
 ls scripts third_party               # six helper scripts, and two inert stand-in modules (see NOTICE)
-go list -m all | wc -l               # about 970 modules, most of them the Nuclei SDK's dependency tree
+go list -m all | wc -l               # inspect the current module count
 grep -rn 'http.Client{' --include='*.go' . | grep -v _test    # HTTP clients are built only in pkg/safenet
 grep -n 'permissions' -A1 .github/workflows/*.yaml            # workflows default to read-only
 grep -n 'Reject read-only' -B2 -A3 internal/app/executor/service.go   # the only path that changes a cloud

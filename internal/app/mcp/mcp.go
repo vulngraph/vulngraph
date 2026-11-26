@@ -178,7 +178,7 @@ func NewHandler(assets AssetReader, findings FindingLister, findingCtx FindingCo
 		Name:        "list_findings",
 		Description: "List security findings, optionally filtered by source and severity.",
 		InputSchema: objSchema(map[string]any{
-			"source":   strProp("filter by source (cspm, nuclei)"),
+			"source":   strProp("filter by source (cspm, supply_chain; nuclei is historical)"),
 			"severity": strProp("filter by severity"),
 		}),
 		handler: func(ctx context.Context, args map[string]any) (any, error) {

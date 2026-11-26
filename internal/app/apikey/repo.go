@@ -157,7 +157,7 @@ func (r *PGRepo) Verify(ctx context.Context, plaintext string) (APIKey, error) {
 	// access without deleting them.
 	const q = `
 		SELECT k.id, k.user_id, k.name, k.key_hash, k.prefix, k.scopes, k.last_used_at, k.expires_at, k.created_at,
-		       u.email, u.role, u.created_at, u.admin_since
+		       u.email, u.role, u.created_at, u.admin_since, u.authority_version
 		FROM   api_keys k
 		JOIN   users u ON u.id = k.user_id
 		WHERE  u.disabled_at IS NULL
@@ -168,7 +168,7 @@ func (r *PGRepo) Verify(ctx context.Context, plaintext string) (APIKey, error) {
 	err := r.pool.QueryRow(ctx, q, plaintext[:lookupIDLen]).Scan(
 		&c.key.ID, &c.key.UserID, &c.key.Name, &c.hash, &c.key.Prefix, &c.key.Scopes,
 		&c.key.LastUsedAt, &c.key.ExpiresAt, &c.key.CreatedAt, &c.key.OwnerEmail, &c.key.OwnerRole,
-		&c.key.OwnerCreatedAt, &adminSince,
+		&c.key.OwnerCreatedAt, &adminSince, &c.key.OwnerAuthorityVersion,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return APIKey{}, ErrNotFound

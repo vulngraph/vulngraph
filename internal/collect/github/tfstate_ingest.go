@@ -29,9 +29,8 @@ const maxTFBackendsPerRepo = 64
 // tfStateReader fetches an object's bytes from a connector-scoped S3 bucket,
 // bounded by the caller's size cap. mcp.LiveAWSCallerImpl.GetObject satisfies
 // this structurally — it is passed in from cmd/graph/worker.go so this
-// package never imports the AWS SDK: only internal/scanner/nuclei
-// gets an SDK exemption, and only for nuclei; every other cross-cloud call
-// goes through a narrow interface like this one.
+// package never imports the AWS SDK. Cross-cloud calls go through a narrow
+// interface like this one.
 type tfStateReader interface {
 	GetObject(ctx context.Context, connectorID, bucket, key string) ([]byte, error)
 }

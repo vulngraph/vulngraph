@@ -8,43 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/vulngraph/vulngraph/internal/app/graphstore"
-	"github.com/vulngraph/vulngraph/internal/app/scan"
 )
-
-// A misspelt SCAN_SCANNERS stops startup and names the bundled scanners; left
-// running it would enable none, and every profile run would report its targets
-// clean.
-func TestBundledScanner_SCANSCANNERS(t *testing.T) {
-	for _, tc := range []struct {
-		value   string
-		wantErr bool
-	}{
-		{"", false},
-		{"nuclei", false},
-		{" nuclei , ", false},
-		{"Nuclei", true},
-		{"nucleii", true},
-		{"nuclei,naabu", true},
-	} {
-		t.Run(tc.value, func(t *testing.T) {
-			s, err := bundledScanner(func(k string) string {
-				if k == "SCAN_SCANNERS" {
-					return tc.value
-				}
-				return ""
-			})
-			if !tc.wantErr {
-				require.NoError(t, err)
-				assert.True(t, s.Capabilities().Has(scan.CapWeb), "the bundled scanner is enabled")
-				return
-			}
-			require.ErrorIs(t, err, scan.ErrUnknownScanner)
-			require.ErrorContains(t, err, "SCAN_SCANNERS")
-			require.ErrorContains(t, err, "valid: nuclei")
-			assert.Nil(t, s)
-		})
-	}
-}
 
 // An engine the operator asked for (LADYBUG_INTERNAL_PORT set) that fails to
 // open stops the worker. Returning nil would be indistinguishable from "no

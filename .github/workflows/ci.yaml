@@ -6,6 +6,8 @@ name: CI
 # none.
 
 on:
+  workflow_call:
+  merge_group:
   push:
     branches: [main]
   pull_request:
@@ -16,7 +18,7 @@ permissions:
 
 # Cancel redundant CI runs on the same branch (saves queue time on rapid pushes).
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   # A new push to a pull request supersedes its older run. A push to main never
   # cancels the run for the commit before it: that run is the record of main.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -239,9 +241,10 @@ jobs:
       # into every test binary here; linking it alone does not trip the abort.
       - name: Race detector on the packages with concurrency tests
         run: >-
-          go test -race -count=1
+          go test -race -timeout=20m -count=1
           ./internal/collect/aws ./internal/collect/github ./internal/collect/gcp
           ./internal/collect/azure ./internal/collect/kubernetes
+          ./internal/app/auth ./internal/app/executor
           ./internal/app/correlate ./internal/jobs ./internal/app/llmusage
           ./internal/llm/toolloop ./internal/app/enrich ./internal/app/webhook
           ./internal/scanner/imagevuln ./internal/obs
@@ -702,13 +705,14 @@ jobs:
           secret() { docker compose exec -T "$1" sh -c ". /secrets/env; printf %s \"\$$2\""; }
           POSTGRES_SCANNER_PASSWORD=$(secret postgres GRAPH_SCANNER_DB_PASSWORD)
           CLICKHOUSE_SCANNER_PASSWORD=$(secret clickhouse GRAPH_CH_SCANNER_PASSWORD)
-          # Compose runs nuclei in the worker. Stop it so the scan jobs below
-          # can only run in a scanner container with the scanner's users, as
-          # the Helm chart's scanner pod has them.
+          # Start the opt-in disk reader with restricted database users and a
+          # dedicated sealing key. No connector is opted in in this fixture.
           docker compose stop worker
           docker run -d --name ci-scanner --network vulngraph_default \
             -e DATABASE_URL="postgres://graph_scanner:${POSTGRES_SCANNER_PASSWORD}@postgres:5432/graph?sslmode=disable" \
             -e CLICKHOUSE_URL="clickhouse://graph_scanner:${CLICKHOUSE_SCANNER_PASSWORD}@clickhouse:9000/graph" \
+            -e DISK_SCAN_ENABLED=true \
+            -e DISK_SCAN_ENVELOPE_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
             vulngraph:local scanner > /dev/null
           for _ in $(seq 60); do
             docker logs ci-scanner 2>&1 | grep -q 'graph scanner started' && break
@@ -717,22 +721,15 @@ jobs:
           done
           docker logs ci-scanner 2>&1 | grep -q 'graph scanner started' || { echo "the scanner did not start" >&2; exit 1; }
 
-          # An estate scan and a profile run, each executed by the scanner
-          # (no assets, so no targets: they read assets, record their runs and
-          # finish).
+          # Retired external-scanning endpoints cannot enqueue work.
           TOKEN=$(docker compose exec -T serve /graph user token --email ci@example.com | tr -d '\r')
-          api() { curl -sSf -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' "$@"; }
-          api -X POST http://127.0.0.1:8080/api/scans
-          PROFILE=$(api -X POST -d '{"name":"ci","template_strategy":"all","scanner_type":"nuclei","enabled":true}' \
-            http://127.0.0.1:8080/api/scan-profiles | jq -r .id)
-          api -X POST "http://127.0.0.1:8080/api/scan-profiles/$PROFILE/trigger" > /dev/null
-          for _ in $(seq 60); do
-            RUNS=$(api http://127.0.0.1:8080/api/scans)
-            jq -e 'length == 2 and all(.status != "running")' <<<"$RUNS" > /dev/null && break
-            sleep 2
+          for path in scans scan-profiles workflows/presets; do
+            for method in GET POST; do
+              status=$(curl -sS -o /dev/null -w '%{http_code}' -X "$method" \
+                -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:8080/api/$path")
+              [ "$status" = 404 ] || { echo "$method /api/$path returned $status" >&2; exit 1; }
+            done
           done
-          jq -e 'length == 2 and all(.status == "completed")' <<<"$RUNS" > /dev/null ||
-            { echo "the scanner's runs did not complete: $RUNS" >&2; exit 1; }
           if docker logs ci-scanner 2>&1 | grep -iE 'ACCESS_DENIED|permission denied|Not enough privileges'; then
             echo "the scanner was refused a privilege it uses" >&2; exit 1
           fi
@@ -741,23 +738,25 @@ jobs:
           # rewrite the graph and the audit trail.
           for q in "INSERT INTO users DEFAULT VALUES" "UPDATE users SET role = 'admin'" \
                    "INSERT INTO api_keys DEFAULT VALUES" "SELECT count(*) FROM sessions" \
-                   "SELECT count(*) FROM connectors" "DELETE FROM scan_profiles"; do
+                   "SELECT count(*) FROM connectors" "SELECT count(*) FROM scan_profiles" \
+                   "SELECT count(*) FROM scan_runs" "SELECT count(*) FROM scan_findings"; do
             if out=$(docker compose exec -T postgres psql -U graph_scanner -d graph -v ON_ERROR_STOP=1 -tAc "$q" 2>&1); then
               echo "Postgres role graph_scanner was allowed: $q" >&2; exit 1
             fi
             grep -q 'permission denied' <<<"$out" || { echo "$q failed for another reason: $out" >&2; exit 1; }
           done
           ch() { docker compose exec -T clickhouse clickhouse-client -u graph_scanner --password "$CLICKHOUSE_SCANNER_PASSWORD" -q "$1" 2>&1; }
-          for q in "INSERT INTO graph.findings (id) SELECT id FROM graph.findings WHERE 0" \
-                   "SELECT count() FROM graph.assets" "SELECT count() FROM graph.finding_enrichment"; do
+          for q in "SELECT count() FROM graph.goose_db_version"; do
             ch "$q" > /dev/null || { echo "ClickHouse user graph_scanner was refused: $q" >&2; exit 1; }
           done
-          for q in "SELECT count(*) FROM scan_profiles" "SELECT count(*) FROM scan_runs" \
-                   "SELECT count(*) FROM scan_findings" "SELECT count(*) FROM river_job"; do
+          for q in "SELECT count(*) FROM disk_scan_runs" "SELECT count(*) FROM disk_scan_volumes" \
+                   "SELECT count(*) FROM disk_scan_connector_modes" "SELECT count(*) FROM river_job"; do
             docker compose exec -T postgres psql -U graph_scanner -d graph -v ON_ERROR_STOP=1 -tAc "$q" > /dev/null ||
               { echo "Postgres role graph_scanner was refused: $q" >&2; exit 1; }
           done
-          for q in "INSERT INTO graph.assets (id) SELECT id FROM graph.assets WHERE 0" \
+          for q in "INSERT INTO graph.findings (id) SELECT id FROM graph.findings WHERE 0" \
+                   "SELECT count() FROM graph.assets" "SELECT count() FROM graph.finding_enrichment" \
+                   "INSERT INTO graph.assets (id) SELECT id FROM graph.assets WHERE 0" \
                    "SELECT count() FROM graph.audit_events" \
                    "SELECT count() FROM graph.graph_edges" \
                    "ALTER TABLE graph.findings DELETE WHERE 0" \
@@ -791,7 +790,7 @@ jobs:
         env:
           CHART: deploy/helm-chart/graph
           # secretKey must be base64 of 32 bytes (the chart checks it): 32 zero bytes.
-          SECRETS: secret.secretKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=,secret.postgresPassword=ci-pg,secret.postgresSuperuserPassword=ci-pg-su,secret.postgresScannerPassword=ci-pg-scan,secret.clickhousePassword=ci-ch,secret.clickhouseMigratePassword=ci-ch-migrate,secret.clickhouseScannerPassword=ci-ch-scan
+          SECRETS: config.diskScanEnabled=true,secret.diskScanEnvelopeKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=,secret.secretKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=,secret.postgresPassword=ci-pg,secret.postgresSuperuserPassword=ci-pg-su,secret.postgresScannerPassword=ci-pg-scan,secret.clickhousePassword=ci-ch,secret.clickhouseMigratePassword=ci-ch-migrate,secret.clickhouseScannerPassword=ci-ch-scan
           DB_SECRETS: secret.postgresPassword=ci-pg,secret.postgresSuperuserPassword=ci-pg-su,secret.postgresScannerPassword=ci-pg-scan,secret.clickhousePassword=ci-ch,secret.clickhouseMigratePassword=ci-ch-migrate,secret.clickhouseScannerPassword=ci-ch-scan
           KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
         run: |
@@ -800,7 +799,7 @@ jobs:
           helm lint --strict "$CHART" -f deploy/helm-values/example.yaml --set-string "$SECRETS"
           helm template graph "$CHART" --set-string "$SECRETS" > /dev/null
           helm template graph "$CHART" -f deploy/helm-values/example.yaml --set-string "$SECRETS" > /dev/null
-          EXTERNAL=(--set-string "secret.secretKey=$KEY" --set postgres.enabled=false --set clickhouse.enabled=false
+          EXTERNAL=(--set config.diskScanEnabled=true --set-string "secret.diskScanEnvelopeKey=$KEY" --set-string "secret.secretKey=$KEY" --set postgres.enabled=false --set clickhouse.enabled=false
             --set-string secret.databaseUrl=postgres://u:p@db:5432/graph
             --set-string secret.clickhouseUrl=clickhouse://u:p@ch:9000/graph)
           SCANNER_URLS=(--set-string secret.scannerDatabaseUrl=postgres://s:p@db:5432/graph
@@ -893,7 +892,7 @@ jobs:
           helm template graph "$CHART" --set-string "$SECRETS" --set scanner.enabled=false > /dev/null
           if ! helm template graph "$CHART" --set-string "$SECRETS" \
             --show-only templates/deployment-scanner.yaml | grep -q 'name: graph-scanner'; then
-            echo "the default render has no scanner pod: nuclei would run in the worker" >&2; exit 1
+            echo "the disk-enabled render has no isolated scanner pod" >&2; exit 1
           fi
           # With no tag or digest set, every graph container pulls the appVersion
           # tag, the tag release.yaml pushes for the matching vX.Y.Z.
@@ -951,7 +950,7 @@ jobs:
           fi
           # Worker and scanner must build the same periodic schedule.
           scripts/check-chart-schedule-env.sh "$CHART" --set-string "$SECRETS" \
-            --set scanner.enabled=true --set-string scanner.scanInterval=168h \
+            --set scanner.enabled=true \
             --set-string config.syncInterval=1h --set config.adjudicatorEnabled=true
           # Chart-wide extraEnv / extraEnvFrom must not hand app secrets to the scanner.
           SCANNER=$(helm template graph "$CHART" --set-string "$SECRETS" --set scanner.enabled=true \
@@ -1097,3 +1096,33 @@ jobs:
         run: |
           docker run --rm graph:ci-smoke version
           echo "OK: binary loads its shared libraries (graph version exited 0)"
+
+  required:
+    name: CI required
+    if: always()
+    needs: [fetch-ladybug, lint, unit, race, generated, govulncheck, guard-mutation, migration-order, secret-scan, frontend, integration, release-stack, helm, docker-build]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every applicable check to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python3 - <<'PYCODE'
+          import json, os, sys
+          results = json.loads(os.environ["RESULTS"])
+          required = {"fetch-ladybug", "lint", "unit", "race", "generated", "govulncheck", "guard-mutation", "secret-scan", "frontend", "integration", "release-stack", "helm"}
+          pr_only = {"migration-order", "docker-build"}
+          expected = required | pr_only
+          if set(results) != expected:
+              sys.exit("Required job inventory does not match workflow dependencies")
+          errors = []
+          for job in sorted(expected):
+              result = results[job]["result"]
+              want = "success" if job in required or os.environ["EVENT_NAME"] == "pull_request" else "skipped"
+              if result != want:
+                  errors.append(f"{job}: {result} (expected {want})")
+          if errors:
+              sys.exit("\n".join(errors))
+          print("Every applicable check passed")
+          PYCODE

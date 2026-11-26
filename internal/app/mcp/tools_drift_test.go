@@ -3,16 +3,13 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/vulngraph/vulngraph/internal/app/auth"
 	"github.com/vulngraph/vulngraph/internal/app/driftanalysis"
-	"github.com/vulngraph/vulngraph/internal/app/scan"
 	"github.com/vulngraph/vulngraph/pkg/promptfence"
 )
 
@@ -32,16 +29,6 @@ func (f *fakeDriftReader) Get(_ context.Context, _ string) (driftanalysis.Batch,
 	return f.batch, f.err
 }
 
-type fakeScanStarter struct {
-	calls []string
-	err   error
-}
-
-func (f *fakeScanStarter) StartProfileScan(_ context.Context, id string) (string, error) {
-	f.calls = append(f.calls, id)
-	return "run-1", f.err
-}
-
 func driftBatch() driftanalysis.Batch {
 	return driftanalysis.Batch{
 		ID: "b1", ConnectorID: "c1", Status: driftanalysis.StatusAnalysed,
@@ -53,12 +40,8 @@ func driftBatch() driftanalysis.Batch {
 	}
 }
 
-func driftHandler(r *fakeDriftReader, s *fakeScanStarter, audit *fakeAuditSink) *Handler {
-	h := newHandler().WithScanLimit(unlimited{}).WithDriftAnalysis(r, s)
-	if audit != nil {
-		h.WithAudit(audit)
-	}
-	return h
+func driftHandler(r *fakeDriftReader) *Handler {
+	return newHandler().WithDriftAnalysis(r)
 }
 
 func fencedBody(t *testing.T, resp rpcResponse) map[string]any {
@@ -75,7 +58,7 @@ func fencedBody(t *testing.T, resp rpcResponse) map[string]any {
 
 func TestDriftTools_ReadToolsWorkForViewersAndAreFenced(t *testing.T) {
 	r := &fakeDriftReader{listing: driftanalysis.Listing{Enabled: true, Analyses: []driftanalysis.Batch{driftBatch()}}, batch: driftBatch()}
-	h := driftHandler(r, &fakeScanStarter{}, nil)
+	h := driftHandler(r)
 
 	list := fencedBody(t, rpcCtx(t, viewerCtx(), h, toolCall(t, "list_drift_analyses", map[string]any{"since": "24h", "limit": 5})))
 	require.Equal(t, true, list["enabled"])
@@ -92,16 +75,16 @@ func TestDriftTools_ReadToolsWorkForViewersAndAreFenced(t *testing.T) {
 }
 
 func TestDriftTools_DisabledListingIsNotAVerdict(t *testing.T) {
-	h := driftHandler(&fakeDriftReader{}, &fakeScanStarter{}, nil)
+	h := driftHandler(&fakeDriftReader{})
 	out := fencedBody(t, rpcCtx(t, viewerCtx(), h, toolCall(t, "list_drift_analyses", nil)))
 	require.Equal(t, false, out["enabled"])
 	require.Empty(t, out["analyses"])
 }
 
 func TestDriftTools_AreListed(t *testing.T) {
-	h := driftHandler(&fakeDriftReader{}, &fakeScanStarter{}, nil)
+	h := driftHandler(&fakeDriftReader{})
 	resp := rpcCtx(t, viewerCtx(), h, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
-	for _, name := range []string{"list_drift_analyses", "get_drift_analysis", "start_profile_scan"} {
+	for _, name := range []string{"list_drift_analyses", "get_drift_analysis"} {
 		require.Contains(t, toolNames(resp), name)
 	}
 }
@@ -115,7 +98,7 @@ func toolNames(resp rpcResponse) []string {
 }
 
 func TestDriftTools_BadParams(t *testing.T) {
-	h := driftHandler(&fakeDriftReader{err: driftanalysis.ErrNotFound}, &fakeScanStarter{}, nil)
+	h := driftHandler(&fakeDriftReader{err: driftanalysis.ErrNotFound})
 	for name, call := range map[string]string{
 		"since unit":       toolCall(t, "list_drift_analyses", map[string]any{"since": "7d"}),
 		"since too long":   toolCall(t, "list_drift_analyses", map[string]any{"since": "9999h"}),
@@ -132,106 +115,14 @@ func TestDriftTools_BadParams(t *testing.T) {
 	}
 }
 
-func TestToolsCall_StartProfileScan_AdminOnly(t *testing.T) {
-	args := map[string]any{"profile_id": "p1", "drift_batch_id": "b1"}
-	for name, ctx := range map[string]context.Context{
-		"viewer":          viewerCtx(),
-		"analyst":         auth.ContextWithUser(context.Background(), auth.User{ID: "u3", Role: auth.RoleAnalyst}),
-		"unauthenticated": context.Background(),
-	} {
-		t.Run(name, func(t *testing.T) {
-			s, audit := &fakeScanStarter{}, &fakeAuditSink{}
-			h := driftHandler(&fakeDriftReader{batch: driftBatch()}, s, audit)
-			resp := rpcCtx(t, ctx, h, toolCall(t, "start_profile_scan", args))
-			require.NotNil(t, resp.Error)
-			require.Equal(t, codeForbidden, resp.Error.Code)
-			require.Empty(t, s.calls, "no scan may start for a non-admin")
-			require.Empty(t, audit.events)
-		})
-	}
-}
-
-func TestToolsCall_StartProfileScan_AdminStartsAndAudits(t *testing.T) {
-	s, audit := &fakeScanStarter{}, &fakeAuditSink{}
-	// The verdict says "not needed": it is advice, not authority, so the admin's call still runs.
-	b := driftBatch()
-	b.Verdict.ScanRecommended = false
-	h := driftHandler(&fakeDriftReader{batch: b}, s, audit)
-
-	resp := rpcCtx(t, adminCtx(), h, toolCall(t, "start_profile_scan", map[string]any{"profile_id": "p1", "drift_batch_id": "b1"}))
-	out := fencedBody(t, resp)
-	require.Equal(t, "run-1", out["run_id"])
-	require.Equal(t, []string{"p1"}, s.calls)
-
-	require.Len(t, audit.events, 1)
-	e := audit.events[0]
-	require.Equal(t, "mcp.scan_start", e.Action)
-	require.Equal(t, "a@b.example", e.Actor)
-	require.Equal(t, "p1", e.TargetID)
-	require.Equal(t, scan.AuditTargetScanProfile, e.TargetType)
-	var d map[string]any
-	require.NoError(t, json.Unmarshal([]byte(e.Details), &d))
-	require.Equal(t, "b1", d["drift_batch_id"])
-	require.Equal(t, "u1", d["actor_user_id"])
-}
-
-func TestToolsCall_StartProfileScan_BatchIDIsOptional(t *testing.T) {
-	s, audit := &fakeScanStarter{}, &fakeAuditSink{}
-	h := driftHandler(&fakeDriftReader{}, s, audit)
-	require.Nil(t, rpcCtx(t, adminCtx(), h, toolCall(t, "start_profile_scan", map[string]any{"profile_id": "p1"})).Error)
-	require.Equal(t, []string{"p1"}, s.calls)
-	require.NotContains(t, audit.events[0].Details, "drift_batch_id")
-}
-
-func TestToolsCall_StartProfileScan_Refusals(t *testing.T) {
-	t.Run("audit failure refuses the scan", func(t *testing.T) {
-		s := &fakeScanStarter{}
-		h := driftHandler(&fakeDriftReader{}, s, &fakeAuditSink{err: errors.New("down")})
-		resp := rpcCtx(t, adminCtx(), h, toolCall(t, "start_profile_scan", map[string]any{"profile_id": "p1"}))
-		require.NotNil(t, resp.Error)
-		require.Empty(t, s.calls)
-	})
-	t.Run("missing profile id", func(t *testing.T) {
-		s := &fakeScanStarter{}
-		resp := rpcCtx(t, adminCtx(), driftHandler(&fakeDriftReader{}, s, nil), toolCall(t, "start_profile_scan", map[string]any{}))
-		require.Equal(t, codeInvalidParams, resp.Error.Code)
-		require.Empty(t, s.calls)
-	})
-	t.Run("unknown batch id", func(t *testing.T) {
-		s, audit := &fakeScanStarter{}, &fakeAuditSink{}
-		h := driftHandler(&fakeDriftReader{err: driftanalysis.ErrNotFound}, s, audit)
-		resp := rpcCtx(t, adminCtx(), h, toolCall(t, "start_profile_scan", map[string]any{"profile_id": "p1", "drift_batch_id": "nope"}))
-		require.Equal(t, codeInvalidParams, resp.Error.Code)
-		require.Empty(t, s.calls)
-		require.Empty(t, audit.events)
-	})
-	t.Run("unknown profile", func(t *testing.T) {
-		s := &fakeScanStarter{err: scan.ErrProfileNotFound}
-		resp := rpcCtx(t, adminCtx(), driftHandler(&fakeDriftReader{}, s, nil), toolCall(t, "start_profile_scan", map[string]any{"profile_id": "p1"}))
-		require.Equal(t, codeInvalidParams, resp.Error.Code)
-	})
-}
-
-func TestToolsCall_StartProfileScan_IsRateLimitedPerUser(t *testing.T) {
-	s := &fakeScanStarter{}
-	h := newHandler().WithScanLimit(auth.NewKeyedLimiter(1, 1)).WithDriftAnalysis(&fakeDriftReader{}, s)
-	call := toolCall(t, "start_profile_scan", map[string]any{"profile_id": "p1"})
-	require.Nil(t, rpcCtx(t, adminCtx(), h, call).Error)
-	resp := rpcCtx(t, adminCtx(), h, call)
-	require.NotNil(t, resp.Error)
-	require.Equal(t, codeRateLimited, resp.Error.Code)
-	require.Len(t, s.calls, 1)
-}
-
-func TestToolsCall_StartProfileScan_DisabledWithoutLimiter(t *testing.T) {
-	s := &fakeScanStarter{}
-	h := newHandler().WithDriftAnalysis(&fakeDriftReader{}, s)
-	resp := rpcCtx(t, adminCtx(), h, toolCall(t, "start_profile_scan", map[string]any{"profile_id": "p1"}))
-	require.NotNil(t, resp.Error)
-	require.Equal(t, codeRateLimited, resp.Error.Code)
-	require.Empty(t, s.calls)
-}
-
 func TestServerInstructions_DriftAnalysisIsAdvisory(t *testing.T) {
 	require.Contains(t, serverInstructions, "LLM-derived and advisory")
+}
+
+func TestDriftTools_CannotStartRetiredScans(t *testing.T) {
+	h := driftHandler(&fakeDriftReader{})
+	list := rpcCtx(t, viewerCtx(), h, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	require.NotContains(t, toolNames(list), "start_profile_scan")
+	resp := rpcCtx(t, viewerCtx(), h, toolCall(t, "start_profile_scan", map[string]any{"profile_id": "old"}))
+	require.NotNil(t, resp.Error)
 }

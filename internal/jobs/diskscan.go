@@ -34,10 +34,7 @@ import (
 )
 
 const (
-	// queueDiskScan is the third heavy lane: one volume read at a time on the
-	// scanner pod. It is separate from queueScan so a nuclei run and a disk read
-	// do not queue behind each other, and it is its own lane rather than a share
-	// of queueScan because disk jobs carry a different memory and I/O profile.
+	// queueDiskScan serializes volume reads on the isolated scanner.
 	queueDiskScan = "disk_scan"
 
 	diskScanWorkers = 1 // one volume at a time; see DiskScanLimits.MaxConcurrentSnapshots

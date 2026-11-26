@@ -44,7 +44,12 @@ permissions:
   contents: read
 
 jobs:
+  verified:
+    name: Verify release source
+    uses: ./.github/workflows/ci.yaml
+
   release:
+    needs: verified
     name: Build + push graph
     runs-on: ubuntu-24.04
     permissions:

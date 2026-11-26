@@ -81,10 +81,3 @@ func TestRunSavedQueriesArgs_UniqueOpts(t *testing.T) {
 	require.True(t, opts.UniqueOpts.ByArgs)
 	require.Equal(t, uniqueStates, opts.UniqueOpts.ByState)
 }
-
-func TestRunScheduledProfilesArgs_UniqueOpts(t *testing.T) {
-	opts := RunScheduledProfilesArgs{}.InsertOpts()
-	require.Equal(t, queueGraph, opts.Queue)
-	require.True(t, opts.UniqueOpts.ByArgs)
-	require.Equal(t, uniqueStates, opts.UniqueOpts.ByState)
-}

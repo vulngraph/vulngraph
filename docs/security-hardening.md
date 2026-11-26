@@ -18,10 +18,7 @@ defaults are not hardened and are yours to change:
 - Everything is sealed under one key ([Encryption key](#encryption-key)).
 - The audit trail is not tamper-proof ([Audit trail](#audit-trail)).
 - Several outbound connections to third parties are on: package names and
-  versions to OSV, the threat-intel feeds, and the download of the pinned
-  nuclei-templates release ([Network egress](configuration.md#network-egress)).
-  nuclei's out-of-band (interactsh) callbacks are off unless
-  `NUCLEI_INTERACTSH_ENABLED=true`.
+  versions to OSV and the threat-intel feeds ([Network egress](configuration.md#network-egress)).
 - Offboarding a person at the IdP does not end their Vulngraph API keys, or
   their sessions in direct Google or Okta mode ([Offboarding](#offboarding)).
 - An admin cannot list or revoke another user's API key, only disable or
@@ -325,7 +322,7 @@ days).
 Other admin writes stay open to an admin key, audited where the
 [audit trail](#what-is-recorded) says so: connector create, sync and
 connection test; alert channels (including repointing a webhook channel);
-saved queries; scans, scan profiles and templates; intel domains and phishing
+saved queries; intel domains and phishing
 triage; unsuppressing; decision refinement. Give agents read-scoped keys
 unless they need one of these.
 
@@ -487,26 +484,12 @@ To enforce MFA for every admin, enforce it where people sign in:
 Local admin TOTP stays optional when you enforce MFA at the IdP and keep
 password login closed.
 
-### Scan target policy
+### External scanning retired
 
-By default (no `SCAN_ALLOW_INTERNAL_TARGETS`):
-
-- **Template "test against URL"** (`POST /api/scans/templates/test`, admin
-  only) returns 400 if the target resolves to an internal address. The nuclei
-  engine also refuses internal addresses when it dials, so a template that
-  hard-codes `169.254.169.254`, or a DNS name that changes after the check,
-  is still blocked. Local file access from templates is always disabled.
-- **Scheduled and profile scans** target owned inventory (asset domains and
-  public IPs). Each target is resolved before the scan and dropped (with a
-  warning) if it points at an internal or metadata address, and the same
-  dial-time policy applies during the scan, so an owned DNS record that
-  points inward is not probed.
-
-With `SCAN_ALLOW_INTERNAL_TARGETS=true`, scheduled scans against internal
-assets and template tests against internal URLs both work. Link-local space
-and the cloud metadata endpoints stay blocked even then. Set it on the
-process that runs the scan: the worker for scheduled scans, `serve` for
-template tests.
+Nuclei execution, scan profiles, template APIs and the generic scan-import API
+are removed. Historical findings and audit records are preserved. Migration 7
+disables old profiles and cancels unfinished external-scan jobs; disk jobs are
+unaffected. See [ADR 097](adr/097-retire-external-scanning.md).
 
 ## Put a TLS-terminating proxy in front
 
@@ -637,25 +620,22 @@ No graph pod connects as a datastore admin, in the Helm chart and in
   it, and only the migrate container gets its password. The image's
   passwordless `default` admin is removed, so no user has access management.
 - The scanner: `graph_scanner` on both. On Postgres it owns nothing, and
-  migrate grants it River's job tables and the scan tables after every run
+  migrate grants it River's job tables, disk result tables and the connector-mode view after every run
   (`internal/migrate/scanner.go`). Migrate fails while the role holds
   `CREATE` on a schema or the database, a membership in any role,
   `SUPERUSER`, `CREATEROLE` or `REPLICATION`, or a privilege on graph's tables
-  through `PUBLIC` or a role. On ClickHouse it reads `assets`, `findings` and
-  `finding_enrichment` and inserts `findings`. Neither touches users,
+  through `PUBLIC` or a role. On ClickHouse it reads only `goose_db_version`. Neither touches users,
   sessions, API keys, connectors or `audit_events`.
 
 What is left: on Postgres the app role owns its tables, so it can change any
 row and, being the owner, the schema too; on ClickHouse it can insert any row.
 Users and API keys are rows, so serve's and the worker's credentials are still
 Vulngraph admin ([Credential isolation](#credential-isolation)). The scanner's
-users can read the asset inventory and findings, insert, change or delete
-River jobs of any kind, and write scan runs and findings. No job changes your
-cloud: a state-changing action runs only after a person approves it. The
-worker does run what is enqueued with no person involved, though, so those
-users can make it reason over a finding they wrote, send that decision to the
-alert channels and the decision webhook, and run other jobs (see [Credential
-isolation](#credential-isolation)).
+users can insert, change or delete River jobs of any kind and write disk
+results. Jobs still run with the worker's credentials and integration budget.
+Cloud remediation requires a person's approval; disk snapshot creation and
+cleanup have the separate explicit standing authorization in ADR 096.
+These residual permissions are described under [Credential isolation](#credential-isolation).
 
 External datastores (`postgres.enabled=false` / `clickhouse.enabled=false`)
 get whatever users you create; [External
@@ -696,82 +676,50 @@ well (see the last mitigation below).
 
 ## Credential isolation
 
-"Vulngraph never remediates on its own" (ADR 087) is a guarantee of the
-application, not an IAM boundary. The approval rules, the two-person grant, the
-approver age floor and the `executor.execute_intent` audit row are all enforced
-by code running in serve. Code execution in a Vulngraph pod is assumed here to
-come from a bug in nuclei, in a collector parsing a cloud API response, or in a
-Go dependency. Such code holds whatever its pod holds:
+Application approval checks do not protect against arbitrary code execution in
+serve or the worker. Both hold `GRAPH_SECRET_KEY`, application database users
+and configured integration secrets. A compromised process can decrypt connector
+credentials, forge application identities, spend LLM budget and bypass approval
+checks using its cloud permissions. Authority-version checks prevent stale
+approvals after ordinary account changes; they do not defend against a database
+owner or a compromised process that holds those credentials.
 
-| | serve | worker | scanner (`scanner.enabled`, the chart default) |
-|---|---|---|---|
-| The app's datastore users (`graph` on Postgres and ClickHouse: not admins, but every row the app writes; see [Datastore users](#datastore-users)) | yes (its migrate init container alone gets the ClickHouse schema user) | yes | no: `graph_scanner`, River's job tables and the scan tables, reads of assets and findings, inserts of findings |
-| `GRAPH_SECRET_KEY`: opens every connector credential, alert-channel secret and TOTP seed, derives the second-admin grant key, and with the database mints sessions (`graph user token`) | yes | yes | no |
-| LLM key, approval and decision-webhook signing secrets | yes | yes | no |
-| Cloud identity (the ServiceAccount the hub role or workload identity is bound to) | yes | yes | no: its own ServiceAccount (`scanner.serviceAccountName`, default `graph-scanner`), no API token mounted, no identity annotations |
-| Kubernetes API token, and with it the chart's RBAC (collector, policy-engine and node-posture log reads) | no: `automountServiceAccountToken: false` | yes: the RBAC binds only its ServiceAccount | no |
-| Chart-wide `extraEnv` / `extraEnvFrom` | yes | yes | no: only `scanner.extraEnv` / `scanner.extraEnvFrom`, so keep secrets out of those two |
-| Runs nuclei against hosts you scan | template tests only | every scan, unless `scanner.enabled` | every scan |
+The optional disk reader is separated from those credentials:
 
-So, without the mitigations below:
+| Capability | serve / worker | isolated disk reader |
+|---|---|---|
+| Application database users | yes | no: restricted `graph_scanner` users |
+| Master encryption key, LLM key, webhook signing keys | yes | no |
+| Cloud workload identity | when configured | no |
+| Kubernetes API token | worker only | no |
+| Graph RPC secret | yes | no |
+| Disk-job envelope key | when disk scanning is enabled | yes |
+| Chart-wide extra environment | yes | no |
 
-- Code running in serve or the worker can call `sts:AssumeRole` on the
-  execution role in every account directly. The role trusts the hub role plus
-  the connector's ExternalId, and the ExternalId is in the connector config,
-  which `GRAPH_SECRET_KEY` opens. That skips every approval rule and leaves no
-  intent row.
-- The same code can forge second-admin grants and sessions, because both are
-  derived from `GRAPH_SECRET_KEY`.
-- With `scanner.enabled: false` nuclei runs in the worker, the pod that holds
-  everything above. The chart turns the scanner pod on by default; Docker
-  Compose has no scanner pod, so there scans run nuclei in the worker and
-  template tests run it in serve.
-- serve and the worker connect as the same app users (see Datastore users).
-  They are not datastore admins, but the database credentials alone are still
-  full Vulngraph admin: passwords are bcrypt hashes and API keys SHA-256
-  digests, neither with a server-side pepper, so such a pod can insert or
-  promote an admin user or API key (backdating `created_at` past the approver
-  age floor) and then act through serve, Approve & run included. It can also
-  rewrite findings and enqueue River jobs; it cannot rewrite or delete
-  `audit_events` rows. No cloud mutation runs as a River job, so an enqueued
-  job cannot act on your cloud by itself. The scanner's `graph_scanner` users
-  reach none of the user, key or connector tables. Code running there can
-  still read the whole asset inventory and every finding, insert findings,
-  read scan profiles, write scan runs and their per-target findings, and
-  insert, change or delete River jobs of any kind, other jobs' arguments
-  included (a `decide` job carries the finding it decides on, and can be
-  rewritten before the worker runs it). None of that changes your cloud: only
-  a person's approval runs a state-changing action. Every other job runs on
-  the worker with no person involved. A finding the scanner inserts is
-  enriched, which can page the alert channels, and over the pipeline
-  threshold its enrich job enqueues a `decide`. A `decide` job, forged,
-  rewritten or enqueued that way, has the worker reason over the finding with
-  the LLM key, spending its budget, write a decision audit row, and hand the
-  decision, with text the scanner chose, to the alert channels, the decision
-  webhook and, for one parked for approval with `SMTP_HOST` set, the approval
-  email.
-  Other jobs run on the worker the same way: `verify_ci_role` (an IAM
-  `GetRole` with a connector's credentials), `reenrich_all` (a re-enrichment
-  pass over open findings) and `adjudicate` (LLM calls), among them. With
-  an external datastore whose scanner URLs are the app's (the chart's
-  opt-out), the scanner holds the app users after all.
-- On GCP the executor impersonates `execute_service_account` from the pod's
-  ambient identity, and on Azure the execution client secret is in the
-  connector config. Neither can be limited to serve the way the AWS path can.
+The disk reader can read and update disk-scan results and the connector-mode
+view in Postgres. Its ClickHouse user can only read the migration ledger.
+It also has River job and leadership permissions: a compromise can change jobs
+of other kinds and cause the worker to perform its normal reads, analysis and
+notifications. The queue is therefore a remaining trust boundary. Disk jobs
+carry sealed credentials bound to a run with an envelope expiry. AWS sessions
+are short-lived; Azure may include the configured disk-scan client secret,
+whose lifetime is not shortened by the envelope. Snapshot creation and cleanup
+use the explicit standing authorization described in [ADR 096](adr/096-opt-in-vm-disk-scanning.md). Do not put
+other secrets or workload identities on the scanner service account.
+
+Serve and the worker share application database access. This includes users,
+API keys and connectors, so their database credentials remain powerful even
+without datastore-superuser privileges. On GCP execution uses the configured
+service account through ambient identity; on Azure the execution secret is
+stored in the connector config. Restrict these execution identities to the
+accounts and operations that require them.
 
 Mitigations, in order of value:
 
-1. **Keep the scanner pod on** (`scanner.enabled: true`, the chart default).
-   Scans then run nuclei in a pod with no master key, no LLM key, no signing
-   secrets and no chart-assigned cloud identity. Template tests do not: an
-   admin's `POST /api/scans/templates/test` (an admin API key is enough) runs
-   nuclei inside serve against the URL it names, and writes no audit row. The
-   scanner pod connects as `graph_scanner`, not the app's database users (see
-   the list above). Do not bind
-   a cloud identity to `graph-scanner`, and block the node's metadata endpoint
-   for it: on EKS a pod without its own identity can
-   otherwise fall back to the node role through IMDS. Docker Compose has no
-   scanner pod: scans run nuclei in the worker and template tests in serve.
+1. **Keep disk reading isolated when enabling it.** `config.diskScanEnabled`
+   is off by default. When enabled, keep `scanner.enabled: true` and its
+   restricted database users. Block the node metadata endpoint for that pod.
+   Compose runs opted-in disk reads on the worker, so it has a weaker boundary.
 2. **Pin the hub's Pod Identity trust** (EKS Pod Identity, the default
    `TrustType`). `graph-hub-role.yaml` accepts sessions only from
    `PodNamespace` and `PodServiceAccount` (default `graph`/`graph`), and from
@@ -874,10 +822,6 @@ command) logs `AUDIT WRITE FAILED` at error level: alert on that line. The
 | `finding.resolve_refused` | `finding` | the same route refused an API key for that finding (see API keys) | `refusal` |
 | `savedquery.create` / `savedquery.delete` | `saved_query` | `POST /api/saved-queries` / `DELETE /api/saved-queries/{id}` | `name`, `cypher`, `schedule`, `enabled`, `alert_on_change`, `alert_severity`, `alert_channel_ids` (for a delete, the definition it removed) |
 | `savedquery.update` | `saved_query` | `PUT /api/saved-queries/{id}` | `before`, `after` (the same fields; `before` is read just before the update) |
-| `scan.profile_create` / `scan.profile_delete` | `scan_profile` | `POST /api/scan-profiles` / `DELETE /api/scan-profiles/{id}` | `name`, `target_query`, `scanner_type`, `template_strategy`, `template_tags`, `schedule`, `enabled`, `drift_enabled` (for a delete, the definition it removed) |
-| `scan.profile_update` | `scan_profile` | `PUT /api/scan-profiles/{id}` | `before`, `after` (the same fields; `before` is read just before the update) |
-| `scan.start` | `scan` (empty `target_id`: the worker creates the run) | `POST /api/scans` enqueued a full scan of the internet-facing assets | `scope` (`internet_facing`) |
-| `scan.profile_start` | `scan_profile` | `POST /api/scan-profiles/{id}/trigger` created and enqueued a run | `run_id`, `name`, `scanner_type`, `template_strategy`, `target_query` |
 
 Other than the sign-in and API-key refusals above and `suppress.refused`
 below, a request refused before it changes anything (a validation error, a
@@ -961,13 +905,9 @@ If you need tamper-evidence:
 - Vulngraph also calls out on its own: threat-intel feeds (CISA KEV, EPSS, OSV,
   the OpenSSF malicious-packages feed, Amazon and Oracle Linux advisories),
   crt.sh for domain monitoring, the registries of your running container
-  images, the subdomain-takeover probe, and the download of the pinned,
-  checksum-verified nuclei-templates release. nuclei's interactsh servers are
-  contacted only with `NUCLEI_INTERACTSH_ENABLED=true`.
+  images and the subdomain-takeover probe.
   [Network egress](configuration.md#network-egress) lists every destination,
   what it sends and its switch. `OFFLINE_MODE=true` turns off all of them except the
-  takeover check's DNS lookups, which go to the worker's resolver. The
-  nuclei SDK's built-in version check to `api.pdtm.sh` is refused inside the
-  process in every mode, so it never reaches the network. For defence in depth
+  takeover check's DNS lookups, which go to the worker's resolver. For defence in depth
   add an egress policy as well; the chart's NetworkPolicy restricts ingress
   only.

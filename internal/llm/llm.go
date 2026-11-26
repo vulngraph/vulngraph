@@ -1,6 +1,6 @@
 // Package llm is the provider-neutral seam every LLM-backed feature calls
 // through (remediation reasoning, the adjudicator, NL→query translation,
-// chat, plan refinement, CT triage, nuclei template generation). It is the
+// chat, plan refinement, CT triage). It is the
 // ONLY package that imports a provider SDK — depguard enforces that — so
 // swapping or adding a provider never touches feature code.
 //

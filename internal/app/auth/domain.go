@@ -48,7 +48,8 @@ type User struct {
 	// AdminSince is when the role last became admin; zero when unknown (not an
 	// admin, or an admin that predates the column). The executor's account-age
 	// floor counts from the later of CreatedAt and AdminSince.
-	AdminSince time.Time
+	AdminSince       time.Time
+	AuthorityVersion int64
 	// DisabledAt is set when an admin offboarded the user: no login, and their
 	// sessions and API keys stop authenticating.
 	DisabledAt *time.Time

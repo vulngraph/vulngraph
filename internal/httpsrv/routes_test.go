@@ -143,7 +143,6 @@ func TestAdminGatedRoutes_ParsesTheRouter(t *testing.T) {
 		"POST /api/connectors",
 		"DELETE /api/connectors/{id}",
 		"POST /api/connectors/{id}/sync",
-		"POST /api/scans",
 	} {
 		require.Truef(t, got[want], "%s is RequireRole-wrapped in server.go but was not derived", want)
 	}

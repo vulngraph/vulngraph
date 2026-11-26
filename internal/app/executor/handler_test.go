@@ -292,7 +292,7 @@ func (k ownerKeys) Verify(_ context.Context, plaintext string) (auth.APIKeyRecor
 func TestSameAddressFlag_UsesTheTrustedClientIP(t *testing.T) {
 	old := time.Now().Add(-365 * 24 * time.Hour)
 	keys := ownerKeys{
-		"gph_bob": {ID: "k2", UserID: "u-bob", Scope: "admin", OwnerEmail: "bob@example.com", OwnerRole: auth.RoleAdmin, OwnerCreatedAt: old},
+		"gph_bob": {ID: "k2", UserID: "u-bob", Scope: "admin", OwnerEmail: "bob@example.com", OwnerRole: auth.RoleAdmin, OwnerCreatedAt: old, OwnerAdminSince: old, OwnerAuthorityVersion: 1},
 	}
 	authH := auth.NewHandler(auth.NewService(nil)).WithAPIKeys(keys).WithClientIPHeader("X-Forwarded-For", netip.MustParsePrefix("10.0.0.1/32"))
 	audit := &fakeAuditor{}

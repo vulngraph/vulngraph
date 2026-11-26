@@ -40,7 +40,6 @@ import (
 	"github.com/vulngraph/vulngraph/internal/app/reasoncache"
 	"github.com/vulngraph/vulngraph/internal/app/respond"
 	"github.com/vulngraph/vulngraph/internal/app/savedquery"
-	"github.com/vulngraph/vulngraph/internal/app/scan"
 	"github.com/vulngraph/vulngraph/internal/app/suppress"
 	"github.com/vulngraph/vulngraph/internal/app/webhook"
 	"github.com/vulngraph/vulngraph/internal/checks"
@@ -107,7 +106,6 @@ func buildServer(t *testing.T) (*http.Server, func(email string) *http.Cookie) {
 		AlertCtx:   alertctx.NewHandler(alertctx.NewService(alertctx.NewCHRepo(ch), assetSvc, assetSvc, findingSvc)),
 		FindingCtx: findingctx.NewHandler(findingctx.NewService(findingSvc, respond.NewReadService(assetSvc, findingSvc, assetSvc), reasoncache.NewService(reasoncache.NewPGRepo(pool)), enrich.NewSignalCHRepo(ch)).WithSuppressions(suppressSvc)),
 		Suppress:   suppress.NewHandler(suppressSvc),
-		Scan:       scan.NewHandler(scan.NewService(scan.NewPGRepo(pool), assetSvc, nil, nil, findingSvc), jobs.NewEnqueuer(insertClient)),
 		Respond:    respond.NewHandler(respond.NewCHRepo(ch), findingSvc),
 		Refine:     respond.NewRefineHandler(respond.NewCHRepo(ch), findingSvc, nil),
 		Compliance: compliance.NewHandler(compliance.NewService(findingSvc, compliance.NewCHInventory(ch), checks.Default(), connSvc).WithRequirements(complianceCatalog, findingSvc)),
@@ -207,7 +205,6 @@ func TestServerRouting_AuthAndRoleGates(t *testing.T) {
 		require.Equal(t, http.StatusNotFound, do(srv, http.MethodGet, "/api/connectors/00000000-0000-0000-0000-000000000000/org-accounts", login("viewer"), "").Code)
 	})
 	t.Run("viewer trigger-scan is 403", func(t *testing.T) {
-		require.Equal(t, http.StatusForbidden, do(srv, http.MethodPost, "/api/scans", login("viewer"), "").Code)
 	})
 	t.Run("viewer suppress is 403", func(t *testing.T) {
 		require.Equal(t, http.StatusForbidden, do(srv, http.MethodPost, "/api/findings/any-id/suppress", login("viewer"), `{"reason":"x"}`).Code)

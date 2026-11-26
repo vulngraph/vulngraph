@@ -29,7 +29,7 @@
 # no DDL, no rewriting audit_events), migrate as graph_migrate (the schema), from
 # the chart's files/clickhouse-users.xml, which has no admin user. Both
 # datastores also get the chart's graph_scanner users, which nothing here
-# connects as: this stack has no scanner container, and the worker runs nuclei.
+# connects as: this stack has no scanner container, and the worker handles opted-in disk reads.
 # README.md ("Datastore users") has the details.
 #
 # Upgrading: `git pull` and `docker compose up -d` rebuild from the checkout;

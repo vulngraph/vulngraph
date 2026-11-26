@@ -725,12 +725,12 @@ var mutations = []Mutation{
 		Why:  "the mirror property: a kind no pod consumes strands `available` forever",
 	},
 	{
-		Guard: "TestEachPodOnlyConsumesQueuesItCanWork", Pkg: "./internal/jobs",
-		File: "internal/jobs/scan.go",
-		Old:  "\treturn periodicSingletonOpts(queueScan, 3)\n",
-		New:  "\treturn periodicSingletonOpts(queueEnrich, 3)\n",
-		Why: "River fetches by QUEUE alone: a pod consuming a lane that carries a kind it cannot work locks those jobs " +
-			"and errors them at MaxAttempts 1 instead of leaving them for the pod that can",
+		Guard: "TestEachPodOnlyConsumesQueuesItCanWork",
+		Pkg:   "./internal/jobs",
+		File:  "internal/jobs/diskscan.go",
+		Old:   "\t\tQueue:       queueDiskScan,\n",
+		New:   "\t\tQueue:       queueEnrich,\n",
+		Why:   "River fetches by QUEUE alone: a pod consuming a lane that carries a kind it cannot work locks those jobs and errors them at MaxAttempts 1 instead of leaving them for the pod that can",
 	},
 	{
 		Guard: "TestEveryQueueDeclaresItsConcurrency", Pkg: "./internal/jobs",
@@ -755,11 +755,12 @@ var mutations = []Mutation{
 			"and the capability reads as shipped",
 	},
 	{
-		Guard: "TestWorkerWiresEveryJobsDep", Pkg: "./internal/jobs",
-		File: "cmd/graph/worker.go",
-		Old:  "\t\tScanInterval:           jobs.ScanIntervalFromEnv(getenv),\n",
-		New:  "",
-		Why:  "a Deps field the binary forgets to pass silently disables the worker gated on it — Deps.Profiles was exactly this",
+		Guard: "TestWorkerWiresEveryJobsDep",
+		Pkg:   "./internal/jobs",
+		File:  "cmd/graph/worker.go",
+		Old:   "\t\tDriftAnalysis:  driftAnalysis,\n",
+		New:   "",
+		Why:   "a Deps field the binary forgets to pass silently disables the worker gated on it — Deps.Profiles was exactly this",
 	},
 	{
 		Guard: "TestOnlyScoreWritersCallRecordDirectly", Pkg: "./internal/jobs",
@@ -1818,17 +1819,6 @@ var mutations = []Mutation{
 	},
 
 	// ── cmd/graph wiring ────────────────────────────────────────────────
-	{
-		Guard: "TestProfileServiceEnqueuerIsWired", Pkg: "./cmd/graph",
-		File: "cmd/graph/worker.go",
-		Old:  "\t\tjobs.NewEnqueuer(profileEnqueueClient),\n\t)",
-		// The trailing `_ =` keeps cmd/graph compiling: the guard reads the file as
-		// text, but the harness insists the guard's OWN package still builds, or a
-		// red run would prove nothing about the guard.
-		New: "\t\tnil,\n\t)\n\t_ = profileEnqueueClient",
-		Why: "a nil ProfileJobEnqueuer on a pod that triggers runs is not a disabled feature but a panic — " +
-			"after the scan_runs row is already inserted, leaving a run stuck `running` forever",
-	},
 
 	// ── admin gating, audit wiring, migration safety ────────────────────
 	{
@@ -1952,13 +1942,7 @@ var mutations = []Mutation{
 		New:  "WithOrgDiscoverer(newAWSOrgDiscoverer())",
 		Why:  "a connector switched to read_write, created, deleted or purged leaves no audit_events row, and nothing fails",
 	},
-	{
-		Guard: "TestScanStartsAreWiredWithAudit", Pkg: "./cmd/graph",
-		File: "cmd/graph/serve.go",
-		Old:  "\t\tenqueuer,\n\t).WithAudit(adminAudit)\n",
-		New:  "\t\tenqueuer,\n\t)\n",
-		Why:  "an admin starts an active scan profile against the estate and audit_events has no row saying who",
-	},
+
 	{
 		Guard: "TestSetMode_IsAuditedWithBeforeAndAfter", Pkg: "./internal/app/connector",
 		File: "internal/app/connector/service.go",
@@ -2808,15 +2792,12 @@ var mutations = []Mutation{
 
 	// ── Worker struct field wiring ──
 	{
-		Guard: "TestWorkerStructFieldsAreWiredAtConstruction", Pkg: "./internal/jobs",
-		File: "internal/jobs/client.go",
-		Old: "\t\tfindings: deps.Findings, checks: deps.Checks, metrics: deps.Metrics,\n" +
-			"\t\tforget: deps.Forget, drift: deps.Drift, suppressions: suppressionCarrier(deps.Suppress),\n",
-		New: "\t\tfindings: deps.Findings, checks: deps.Checks, metrics: deps.Metrics,\n" +
-			"\t\tforget: deps.Forget, suppressions: suppressionCarrier(deps.Suppress),\n",
-		Why: "reintroduces the unwired-drift bug: SyncWorker.drift compiles, the queue is registered, and the composite " +
-			"literal that actually constructs it never mentions the field — the drift-scan enqueue path goes " +
-			"dead with every other test green",
+		Guard: "TestWorkerStructFieldsAreWiredAtConstruction",
+		Pkg:   "./internal/jobs",
+		File:  "internal/jobs/client.go",
+		Old:   "\t\tforget: deps.Forget, suppressions: suppressionCarrier(deps.Suppress),\n",
+		New:   "\t\tsuppressions: suppressionCarrier(deps.Suppress),\n",
+		Why:   "Omitting SyncWorker.forget silently disables cleanup of stale assets.",
 	},
 
 	// ── Cross-package known-ness pairing ──
@@ -2839,111 +2820,7 @@ var mutations = []Mutation{
 	},
 
 	// ── egress controls ──────────────────────────────────────────────────
-	{
-		Guard: "TestVersionCheckIsAlwaysRefused", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/egress.go",
-		Old:  "\tupdateutils.DefaultHttpClient.Transport = refuseVersionCheck{}\n",
-		New:  "\t_ = updateutils.DefaultHttpClient.Transport\n",
-		Why: "the first nuclei engine of every process sends OS, arch, versions and a hashed machine ID to " +
-			"api.pdtm.sh again, OFFLINE_MODE or not, since no SDK option reaches that call",
-	},
-	{
-		Guard: "TestInteractshOptions", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/egress.go",
-		Old:  "\topts.NoInteractsh = !c.interactsh\n",
-		New:  "\topts.NoInteractsh = false\n",
-		Why: "every scan sends out-of-band callbacks to the public interactsh (oast.*) servers again, though " +
-			"NUCLEI_INTERACTSH_ENABLED is unset and the docs say they are off by default",
-	},
-	{
-		Guard: "TestEveryEngineCarriesEgressOptions", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/template_service.go",
-		Old:  "\t\tsandboxOption(allowInternal),\n\t}, append(testRunOptions(ctx), egressOptions()...)...)...)",
-		New:  "\t\tsandboxOption(allowInternal),\n\t}, testRunOptions(ctx)...)...)",
-		Why: "the template-test engine is built with SDK defaults again, so serve downloads the latest, " +
-			"unpinned nuclei-templates from GitHub and uses the public interactsh servers, which are off by default",
-	},
-	{
-		Guard: "TestTestTemplateAppliesRunCaps", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/template_service.go",
-		Old:  "\t}, append(testRunOptions(ctx), egressOptions()...)...)...)",
-		New:  "\t}, egressOptions()...)...)",
-		Why: "the template-test engine loses its rate limit, concurrency and response bound, so an admin " +
-			"(or a hostile target) drives uncapped nuclei inside serve, the pod that holds GRAPH_SECRET_KEY",
-	},
-	{
-		Guard: "TestTemplateInstall_ChecksumMismatchInstallsNothing", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/templates.go",
-		Old:  "\tif got := hex.EncodeToString(h.Sum(nil)); got != release.SHA256 {\n",
-		New:  "\tif got := hex.EncodeToString(h.Sum(nil)); got == \"\" {\n",
-		Why: "any archive at the release URL is unpacked and its templates run against your assets, so a " +
-			"changed or substituted nuclei-templates release is never noticed",
-	},
-	{
-		Guard: "TestTemplateInstall_RefusesOversizedArchive", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/templates.go",
-		Old:  "\tif n > maxTemplateArchiveBytes {\n",
-		New:  "\tif n > 2*maxTemplateArchiveBytes {\n",
-		Why: "an oversized download is cut at the cap and reported as a checksum mismatch, so the size limit " +
-			"that keeps the download from filling the pod's $HOME is no longer what refuses it",
-	},
-	{
-		Guard: "TestExtractTemplates_RejectsUnsafeEntries", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/templates.go",
-		Old:  "\t\tdefault:\n\t\t\treturn fmt.Errorf(\"%w: %s has unsupported type %q\", errTemplatesArchive, hdr.Name, hdr.Typeflag)\n",
-		New:  "\t\tdefault:\n\t\t\tcontinue\n",
-		Why: "an archive carrying links or devices unpacks without error, so a release that is not the plain " +
-			"template tree the pin was reviewed as is installed anyway",
-	},
-	{
-		Guard: "TestTemplateInstall_VerifiesAndUnpacks", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/templates.go",
-		Old:  "\t\treturn strings.TrimSpace(string(got)) == release.SHA256, nil\n",
-		New:  "\t\treturn string(got) == release.SHA256, nil\n",
-		Why: "the marker, written with a trailing newline, never matches, so every new process downloads the " +
-			"whole template release again instead of reusing the verified install, and each pod start costs a " +
-			"GitHub download and the scan's time budget",
-	},
-	{
-		Guard: "TestTemplateInstall_ConcurrentInstallersDownloadOnce", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/templates.go",
-		Old:  "\t\terr := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB)\n",
-		New:  "\t\terr := syscall.Flock(fd, syscall.LOCK_SH|syscall.LOCK_NB)\n",
-		Why: "two processes sharing one $HOME install at once again, so one can move or replace the tree the " +
-			"other is unpacking or has just verified and is scanning with",
-	},
-	{
-		Guard: "TestTemplateInstall_RemovesLeftoversOfACrashedInstall", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/templates.go",
-		Old:  "\tleftovers, _ := filepath.Glob(filepath.Join(parent, templatesTempPrefix+\"*\"))\n",
-		New:  "\tleftovers, _ := filepath.Glob(filepath.Join(parent, templatesTempPrefix+\"none-*\"))\n",
-		Why: "the archive and staging tree of every crashed install stay in $HOME for good, each up to the " +
-			"512 MiB tree cap, until the pod's $HOME limit evicts it",
-	},
-	{
-		Guard: "TestTemplateInstall_DownloadsThroughTemplatesProxy", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/templates.go",
-		Old:  "\t\tif err := t.install(ctx, cfg.templatesDir, cfg.release, t.client(cfg.templatesProxy)); err != nil {\n",
-		New:  "\t\tif err := t.install(ctx, cfg.templatesDir, cfg.release, t.client(nil)); err != nil {\n",
-		Why: "the template download ignores NUCLEI_TEMPLATES_PROXY, so where a proxy is the only way out every " +
-			"scan fails until the operator supplies NUCLEI_TEMPLATES_DIR",
-	},
-	{
-		Guard: "TestTemplateInstall_IgnoresProxyEnvironment", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/templates.go",
-		Old:  "\tclient := safenet.NewInternalVia(templateDownloadTimeout, proxy)\n",
-		New:  "\tclient := safenet.NewInternalEgress(templateDownloadTimeout); _ = proxy\n",
-		Why: "the download reads HTTPS_PROXY/HTTP_PROXY again, so operators set them where nuclei runs, and its " +
-			"JavaScript templates then reach targets through the proxy, past the dial-time sandbox",
-	},
-	{
-		Guard: "TestTemplatesProxyErrorOmitsValue", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/egress.go",
-		Old:  "\t\treturn nil, fmt.Errorf(\"%s: want a proxy URL such as http://proxy.internal:3128\", TemplatesProxyEnv)\n",
-		New:  "\t\treturn nil, fmt.Errorf(\"%s=%q: want a proxy URL such as http://proxy.internal:3128\", TemplatesProxyEnv, raw)\n",
-		Why: "a mistyped NUCLEI_TEMPLATES_PROXY puts the proxy's password into the startup error and every log " +
-			"that carries it",
-	},
+
 	{
 		Guard: "TestNewInternalVia_NamedProxyOnly", Pkg: "./pkg/safenet",
 		File: "pkg/safenet/http.go",
@@ -2952,38 +2829,7 @@ var mutations = []Mutation{
 		Why: "a client built for one named proxy reads HTTPS_PROXY/HTTP_PROXY instead, so the call goes through " +
 			"whatever proxy the environment names, or none",
 	},
-	{
-		Guard: "TestTemplateInstall_UnreadableMarkerLeavesTheTree", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/templates.go",
-		Old:  "\t\treturn false, fmt.Errorf(\"nuclei templates: %w\", err)\n",
-		New:  "\t\treturn false, nil\n",
-		Why: "a transient error reading the marker (EACCES, EMFILE, EIO) reads as no install, so the installer " +
-			"moves aside and deletes a verified tree another process may be scanning with",
-	},
-	{
-		Guard: "TestTemplateInstall_DownloadErrorNamesTheUnusedProxy", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/templates.go",
-		Old:  "\t\t\treturn cfg.withProxyHint(err)\n",
-		New:  "\t\t\treturn err\n",
-		Why: "with HTTPS_PROXY set and NUCLEI_TEMPLATES_PROXY not, a failed download is a bare dial error that " +
-			"never says the environment's proxy is ignored or which variable to set",
-	},
-	{
-		Guard: "TestTemplateInstall_TunnelsHTTPSThroughAuthenticatingProxy", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/egress.go",
-		Old:  "\t\treturn nil, fmt.Errorf(\"%s: want a proxy URL such as http://proxy.internal:3128\", TemplatesProxyEnv)\n\t}\n\treturn u, nil\n",
-		New:  "\t\treturn nil, fmt.Errorf(\"%s: want a proxy URL such as http://proxy.internal:3128\", TemplatesProxyEnv)\n\t}\n\tu.User = nil\n\treturn u, nil\n",
-		Why: "the credentials in NUCLEI_TEMPLATES_PROXY are dropped, so an authenticating proxy refuses the " +
-			"CONNECT with 407 and every scan fails with the download error",
-	},
-	{
-		Guard: "TestTemplateInstall_RefusesRedirectOffGitHub", Pkg: "./internal/scanner/nuclei",
-		File: "internal/scanner/nuclei/templates.go",
-		Old:  "\tclient.CheckRedirect = checkTemplateRedirect\n",
-		New:  "\t_ = checkTemplateRedirect\n",
-		Why: "the egress client, which has no SSRF dial guard, follows a redirect anywhere again, so whatever " +
-			"answers the archive request can point it at private addresses and in-cluster services",
-	},
+
 	{
 		Guard: "TestNoHTTPClientConstructedOutsideSafenet", Pkg: "./pkg/safenet",
 		File: "internal/app/explore/ladybug_rpc_repo.go",
@@ -3537,14 +3383,7 @@ var mutations = []Mutation{
 		Why: "the Azure WireServer address, which sits in public address space and hands out VM extension secrets, " +
 			"is dialable because no private-range rule catches it",
 	},
-	{
-		Guard: "TestCheckTargetHost", Pkg: "./internal/app/scan",
-		File: "internal/app/scan/targetguard.go",
-		Old:  "\t\"168.63.129.16/32\",         // Azure WireServer\n",
-		New:  "",
-		Why: "a scan target may name the Azure WireServer, so a template that fetches an arbitrary URL reads VM " +
-			"extension secrets from inside an Azure scan host",
-	},
+
 	{
 		Guard: "TestScanImage_ChainguardStaticUsrmergedApkDatabase", Pkg: "./internal/scanner/imagevuln",
 		File: "internal/scanner/pkginventory/langpackages.go",
@@ -4077,8 +3916,8 @@ var mutations = []Mutation{
 	{
 		Guard: "TestScannerPodGetsNoAppSecretsOrCloudIdentity", Pkg: "./cmd/graph",
 		File: "deploy/helm-chart/graph/templates/deployment-scanner.yaml",
-		Old:  "{{ include \"graph.podEnv\" . }}\n",
-		New:  "{{ include \"graph.podEnv\" . }}\n{{ include \"graph.appSecretEnv\" . }}\n",
+		Old:  "{{ include \"graph.podEnv\" (dict \"Values\" .Values \"scanner\" true) }}\n",
+		New:  "{{ include \"graph.podEnv\" (dict \"Values\" .Values \"scanner\" true) }}\n{{ include \"graph.appSecretEnv\" . }}\n",
 		Why:  "the pod that parses responses from scanned hosts holds GRAPH_SECRET_KEY, the LLM key and the signing secrets",
 	},
 	{
@@ -4089,11 +3928,11 @@ var mutations = []Mutation{
 		Why:  "a secretRef the operator adds chart-wide for serve and the worker (GRAPH_SECRET_KEY, an LLM key) reaches the scanner pod",
 	},
 	{
-		Guard: "TestChartRunsNucleiInTheScannerPodByDefault", Pkg: "./cmd/graph",
+		Guard: "TestChartIsolatesDiskReadsWhenEnabled", Pkg: "./cmd/graph",
 		File: "deploy/helm-chart/graph/values.yaml",
 		Old:  "scanner:\n  enabled: true\n",
 		New:  "scanner:\n  enabled: false\n",
-		Why:  "a default install runs nuclei in the worker, the pod that holds GRAPH_SECRET_KEY and the cloud identity",
+		Why:  "disk reads run in the worker, the pod that holds GRAPH_SECRET_KEY and the cloud identity",
 	},
 	{
 		Guard: "TestOnlyTheWorkerHoldsKubernetesAPIAccess", Pkg: "./cmd/graph",
@@ -4159,11 +3998,12 @@ var mutations = []Mutation{
 		Why:  "the image's default user comes back: no password and access management, so anything that reaches the ClickHouse pod's loopback is a server admin",
 	},
 	{
-		Guard: "TestScannerGrantsMatchWhatTheScannerRuns", Pkg: "./internal/migrate",
-		File: "internal/app/finding/repo_read.go",
-		Old:  "\tselectFindingsArgMax = `SELECT f.id,\n",
-		New:  "\tselectFindingsArgMax = `SELECT f.id, (SELECT count() FROM signals) AS signal_count,\n",
-		Why:  "a table joined into the finding read the scanner runs before every findings insert: graph_scanner has no grant on it, so every scan that finds something fails with ACCESS_DENIED while an empty-estate CI scan stays green",
+		Guard: "TestScannerGrantsMatchWhatTheScannerRuns",
+		Pkg:   "./internal/migrate",
+		File:  "internal/db/sqlcgen/disk_scan_packages.sql.go",
+		Old:   "SELECT disk_scan_mode FROM disk_scan_connector_modes WHERE connector_id = $1",
+		New:   "SELECT disk_scan_mode, (SELECT count(*) FROM users) FROM disk_scan_connector_modes WHERE connector_id = $1",
+		Why:   "The scanner must not query tables outside its restricted grants.",
 	},
 	{
 		Guard: "TestClickHouseUsersHaveNoAdmin", Pkg: "./cmd/graph",
@@ -4173,18 +4013,20 @@ var mutations = []Mutation{
 		Why:  "a user with no password and access management, beside the three the test checks: anything that reaches the ClickHouse pod can log in as it and grant itself every table",
 	},
 	{
-		Guard: "TestScannerGrantsMatchWhatTheScannerRuns", Pkg: "./internal/migrate",
-		File: "internal/app/finding/repo_read.go",
-		Old:  "\tselectFindingsArgMax = `SELECT f.id,\n",
-		New:  "\tselectFindingsArgMax = `SELECT f.id, (SELECT count() FROM system.parts) AS part_count,\n",
-		Why:  "a system table in the finding read the scanner runs: no migration creates it, so no derived grant covers it, and every scan that finds something fails with ACCESS_DENIED",
+		Guard: "TestScannerGrantsMatchWhatTheScannerRuns",
+		Pkg:   "./internal/migrate",
+		File:  "internal/db/sqlcgen/disk_scan_packages.sql.go",
+		Old:   "SELECT disk_scan_mode FROM disk_scan_connector_modes WHERE connector_id = $1",
+		New:   "SELECT disk_scan_mode, (SELECT count(*) FROM system.parts) FROM disk_scan_connector_modes WHERE connector_id = $1",
+		Why:   "The scanner must not query tables outside its restricted grants.",
 	},
 	{
-		Guard: "TestScannerGrantsMatchWhatTheScannerRuns", Pkg: "./internal/migrate",
-		File: "internal/migrate/scanner.go",
-		Old:  "\t\"GRANT SELECT ON scan_profiles TO \" + ScannerRole,\n",
-		New:  "",
-		Why:  "the scanner role loses the profile read every profile run and drift scan starts with, so they all fail on the chart's default scanner pod",
+		Guard: "TestScannerGrantsMatchWhatTheScannerRuns",
+		Pkg:   "./internal/migrate",
+		File:  "internal/migrate/scanner.go",
+		Old:   "\t\"GRANT SELECT ON disk_scan_connector_modes TO \" + ScannerRole,\n",
+		New:   "",
+		Why:   "The disk reader needs its connector-mode view, without access to connector credentials.",
 	},
 	{
 		Guard: "TestChartNetworkPolicyIsLeastPrivilegeByDefault", Pkg: "./cmd/graph",
@@ -5296,12 +5138,12 @@ var mutations = []Mutation{
 			"package evidence is replaced by staler",
 	},
 	{
-		Guard: "TestScannerGrantsNameRealObjects", Pkg: "./internal/migrate",
-		File: "internal/migrate/scanner.go",
-		Old:  "\t\"GRANT SELECT ON scan_profiles TO \" + ScannerRole,\n",
-		New:  "\t\"GRANT SELECT ON scan_profiles, connectors TO \" + ScannerRole,\n",
-		Why: "the scanner database role can read the connectors table, which holds the encrypted credentials of " +
-			"every cloud account, so a compromised scanner pod reaches them",
+		Guard: "TestScannerGrantsNameRealObjects",
+		Pkg:   "./internal/migrate",
+		File:  "internal/migrate/scanner.go",
+		Old:   "\t\"GRANT SELECT ON disk_scan_connector_modes TO \" + ScannerRole,\n",
+		New:   "\t\"GRANT SELECT ON disk_scan_connector_modes, connectors TO \" + ScannerRole,\n",
+		Why:   "The disk reader needs its connector-mode view, without access to connector credentials.",
 	},
 	{
 		Guard: "TestByoaCannotMarkClean", Pkg: "./internal/app/pkginv",
@@ -5367,8 +5209,6 @@ var exempt = map[string]string{
 	// the ldapserver replace, which changes module resolution for the whole build
 	// (go.sum carries no hash for the upstream GPL module), so the harness would
 	// see a build failure, not the guard failing — a mutation can't isolate it.
-	"TestUnlicensedCensysSDKIsReplaced": "asserts go.mod text, like TestGPLLdapserverIsReplaced; removing the replace changes module resolution for every package, so a text mutation cannot isolate the guard from a build failure",
-	"TestGPLLdapserverIsReplaced":       "asserts go.mod text; removing the replace breaks module resolution for every package, so a text mutation cannot isolate the guard from a build failure",
 
 	// The field this guard's mutation used to reintroduce (forget.Sweep.Partial)
 	// was deleted entirely, so the regression is now structurally impossible
@@ -5405,7 +5245,6 @@ var exempt = map[string]string{
 	"TestHTTPClientConstructions":               "parses inline source strings, not the tree; the table test of the detector TestNoHTTPClientConstructedOutsideSafenet runs, which carries the mutation",
 	"TestCatalogueHasNoStaleEntries":            "read-only catalogue check of this harness; its failure mode (a stale row) is what it reports",
 	"TestEveryDiscoveredGuardIsMutatedOrExempt": "the inventory check itself; it is what makes this catalogue demand a decision for every guard",
-	"TestTemplateInstallHelperProcess":          "the body of the child processes TestTemplateInstall_TwoProcessesShareOneInstall and TestTemplateInstall_IgnoresProxyEnvironment start; it skips when run on its own, and those tests carry the mutations",
 	"TestServerRouting_AllWritesRequireAdmin":   "integration-tagged (needs Postgres), and the harness runs untagged; the router parse it shares is mutated through TestAdminGatedRoutes_ParsesTheRouter",
 
 	// Structural, but the bug cannot be reintroduced by a text substitution.

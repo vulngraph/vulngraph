@@ -464,7 +464,7 @@ components:
         suppression_reason: { type: string }
         suppressed_by: { type: string }
         narrative: { type: string, description: "Deterministic plain-English risk story built from the graph signals (exposure, blast radius, identity chain, supply-chain path) — the readable 'why this matters (or doesn't)' framing." }
-        matched_url: { type: string, description: "Scanner-native: the exact URL/endpoint the check matched (e.g. nuclei)." }
+        matched_url: { type: string, description: "Scanner-native: the exact URL/endpoint the check matched (including historical external-scanner evidence)." }
         evidence: { type: string, description: "Scanner-native: matched or extracted values that triggered the result." }
         references: { type: string, description: "Scanner-native: newline-joined reference links for the check." }
         reasoning:

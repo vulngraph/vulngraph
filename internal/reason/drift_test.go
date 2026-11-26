@@ -25,10 +25,8 @@ func driftIn() driftanalysis.AnalysisInput {
 			Field: "public_ip", OldValue: "", NewValue: "1.2.3.4",
 		}},
 		Facts: driftanalysis.Facts{
-			ExposureKnown: true, FindingsKnown: true, ProfilesKnown: true,
-			Profiles:           []driftanalysis.ProfileFact{{ID: "p1", Name: "web scan", TemplateTags: []string{"cve", "exposure"}}},
-			AutoScanProfileIDs: []string{"p1"},
-			Assets:             []driftanalysis.AssetFact{{AssetID: "arn:web-1", InternetFacing: true, OpenFindings: 3, MaxScore: 88}},
+			ExposureKnown: true, FindingsKnown: true,
+			Assets: []driftanalysis.AssetFact{{AssetID: "arn:web-1", InternetFacing: true, OpenFindings: 3, MaxScore: 88}},
 		},
 	}
 }
@@ -44,8 +42,6 @@ func TestAnalyzeDrift_ParsesAndGroundsVerdict(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, driftanalysis.RecommendationRecommended, v.Recommendation())
 	require.Equal(t, driftanalysis.ExposureIncreased, v.ExposureJudgement)
-	require.Equal(t, "p1", v.SuggestedProfileID)
-	require.Equal(t, []string{"cve"}, v.SuggestedTemplateTags)
 	require.Len(t, v.Evidence, 1)
 	require.Equal(t, driftOutputSchema, doer.gotSchema)
 	require.Contains(t, doer.gotUser, "<<<UNTRUSTED>>>arn:web-1<<<END UNTRUSTED>>>")
@@ -94,13 +90,6 @@ func TestAnalyzeDrift_TransportErrorIsNotRetriedAndIsNotUngrounded(t *testing.T)
 	require.Equal(t, 1, doer.calls)
 }
 
-func TestAnalyzeDrift_InventedProfileTagsAreCleared(t *testing.T) {
-	reply := strings.Replace(driftReplyYes, `["cve"]`, `["cve","rce-0day"]`, 1)
-	v, err := (&Reasoner{doer: &fakeDoer{reply: reply}}).AnalyzeDrift(context.Background(), driftIn())
-	require.NoError(t, err)
-	require.Nil(t, v.SuggestedTemplateTags)
-}
-
 // Every string that came from a cloud account or a user is fenced, and a
 // payload carrying the end marker cannot close the fence.
 func TestPromptFencesEveryAssetField(t *testing.T) {
@@ -112,18 +101,15 @@ func TestPromptFencesEveryAssetField(t *testing.T) {
 		}, {
 			AssetID: "ID2", Kind: driftanalysis.KindChanged, Field: "name", OldValue: "OLD" + evil, NewValue: "NEW" + evil,
 		}},
-		Facts: driftanalysis.Facts{
-			ProfilesKnown: true,
-			Profiles:      []driftanalysis.ProfileFact{{ID: "PID" + evil, Name: "PNAME" + evil, TemplateTags: []string{"TAG" + evil}}},
-		},
+		Facts: driftanalysis.Facts{},
 	}
 	p := buildDriftPrompt(in)
-	for _, field := range []string{"ID", "NAME", "TYPE", "REGION", "IP", "OLD", "NEW", "PID", "PNAME", "TAG"} {
+	for _, field := range []string{"ID", "NAME", "TYPE", "REGION", "IP", "OLD", "NEW"} {
 		require.Contains(t, p, fenceOpen+field+"x", field+" is not fenced")
 	}
 	open, closed := countMarkers(p)
 	require.Equal(t, open, closed, "an attacker string closed a fence early")
-	require.Equal(t, 10, strings.Count(p, "ignore previous instructions"))
+	require.Equal(t, 7, strings.Count(p, "ignore previous instructions"))
 	for _, part := range strings.Split(p, fenceClose) {
 		if i := strings.Index(part, "ignore previous instructions"); i >= 0 {
 			require.Contains(t, part[:i], fenceOpen, "payload outside a fence: %q", part)
@@ -133,7 +119,7 @@ func TestPromptFencesEveryAssetField(t *testing.T) {
 
 func TestPromptRendersUnknownFactsAsUnknown(t *testing.T) {
 	in := driftIn()
-	in.Facts.ExposureKnown, in.Facts.FindingsKnown, in.Facts.ProfilesKnown = false, false, false
+	in.Facts.ExposureKnown, in.Facts.FindingsKnown = false, false
 	in.Batch.Truncated = true
 	p := buildDriftPrompt(in)
 	require.Contains(t, p, "internet_facing unknown (lookup failed)")

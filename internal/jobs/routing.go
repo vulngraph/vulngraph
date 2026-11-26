@@ -40,10 +40,6 @@ func allJobArgs() []river.JobArgs {
 		RefreshSCCArgs{},
 		RefreshVMVulnArgs{},
 		RunSavedQueriesArgs{},
-		RunScheduledProfilesArgs{},
-		ScanArgs{},
-		ScanAssetArgs{},
-		ScanProfileJobArgs{},
 		SuppressionExpiryArgs{},
 		SyncConnectorArgs{},
 		VerifyCIRoleArgs{},
@@ -89,22 +85,18 @@ var queueWorkerCounts = map[string]int{
 	queueDrift:      driftWorkers,
 	// The heavy-scan lanes, split by pod-affinity. One worker per lane, so a lane
 	// runs at most one heavy scan at a time. See queueContentScan in client.go.
-	queueScan:        heavyScanWorkers,
 	queueContentScan: heavyScanWorkers,
 	queueDiskScan:    diskScanWorkers,
 }
 
-// heavyScanKinds are the job kinds that do resource-heavy scanning: a nuclei run,
-// a registry pull-and-unpack, a VM disk read. Everything else on this platform is a
+// heavyScanKinds are the job kinds that do resource-heavy scanning:
+// a registry pull-and-unpack or a VM disk read. Everything else on this platform is a
 // database query with a timeout.
 //
 // The set is declared by KIND, and heavyScanLanes derives the queues from it, so
 // giving one of them a new lane immediately shows up as a new heavy lane rather
 // than as extra concurrency nobody chose.
 var heavyScanKinds = map[string]bool{
-	ScanArgs{}.Kind():             true,
-	ScanProfileJobArgs{}.Kind():   true,
-	ScanAssetArgs{}.Kind():        true,
 	RefreshImageVulnArgs{}.Kind(): true,
 	DiskScanVolumeArgs{}.Kind():   true,
 }

@@ -30,6 +30,7 @@ type PGRepo struct {
 	pool   *pgxpool.Pool
 	q      *sqlcgen.Queries
 	cipher SecretCipher
+	tx     pgx.Tx
 }
 
 // NewPGRepo builds the repo. cipher seals and opens users.totp_secret.
@@ -55,7 +56,7 @@ func (r *PGRepo) CreateUserOrFirstAdmin(ctx context.Context, email, passwordHash
 	defer func() { _ = tx.Rollback(ctx) }() // no-op after a successful commit
 
 	q := r.q.WithTx(tx)
-	if err := q.LockFirstUserBootstrap(ctx); err != nil {
+	if err := q.LockUserAdministration(ctx); err != nil {
 		return User{}, fmt.Errorf("CreateUserOrFirstAdmin: lock: %w", err)
 	}
 	exists, err := q.AnyUserExists(ctx)
@@ -250,13 +251,25 @@ func (r *PGRepo) SetUserDisabledAt(ctx context.Context, id string, t *time.Time,
 // updateUser runs update on user id and, when revokeSessions is set, deletes
 // the user's sessions in the same transaction. It returns the sessions deleted.
 func (r *PGRepo) updateUser(ctx context.Context, id string, revokeSessions bool, update func(*sqlcgen.Queries) (int64, error)) (int64, error) {
+	if r.tx != nil {
+		return updateUserQueries(ctx, r.q, id, revokeSessions, update)
+	}
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("updateUser: begin: %w", err)
 	}
-	defer func() { _ = tx.Rollback(ctx) }() // no-op after a successful commit
+	defer func() { _ = tx.Rollback(ctx) }()
+	n, err := updateUserQueries(ctx, r.q.WithTx(tx), id, revokeSessions, update)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("updateUser: commit: %w", err)
+	}
+	return n, nil
+}
 
-	q := r.q.WithTx(tx)
+func updateUserQueries(ctx context.Context, q *sqlcgen.Queries, id string, revokeSessions bool, update func(*sqlcgen.Queries) (int64, error)) (int64, error) {
 	n, err := update(q)
 	if err != nil {
 		return 0, fmt.Errorf("updateUser: %w", err)
@@ -264,16 +277,14 @@ func (r *PGRepo) updateUser(ctx context.Context, id string, revokeSessions bool,
 	if n == 0 {
 		return 0, ErrNotFound
 	}
-	var revoked int64
-	if revokeSessions {
-		if revoked, err = q.DeleteUserSessions(ctx, id); err != nil {
-			return 0, fmt.Errorf("updateUser: sessions: %w", err)
-		}
+	if !revokeSessions {
+		return 0, nil
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("updateUser: commit: %w", err)
+	n, err = q.DeleteUserSessions(ctx, id)
+	if err != nil {
+		return 0, fmt.Errorf("updateUser: sessions: %w", err)
 	}
-	return revoked, nil
+	return n, nil
 }
 
 // DeleteUser removes the user; sessions and API keys cascade.
@@ -321,13 +332,14 @@ func (r *PGRepo) AdvanceTOTPStep(ctx context.Context, userID string, step int64)
 
 func toDomainUser(row sqlcgen.User) User {
 	return User{
-		ID:          row.ID,
-		Email:       row.Email,
-		Role:        Role(row.Role),
-		TOTPEnabled: row.TotpSecret != nil,
-		CreatedAt:   row.CreatedAt,
-		AdminSince:  row.AdminSince.Time,
-		DisabledAt:  timePtr(row.DisabledAt),
+		ID:               row.ID,
+		Email:            row.Email,
+		Role:             Role(row.Role),
+		TOTPEnabled:      row.TotpSecret != nil,
+		CreatedAt:        row.CreatedAt,
+		AdminSince:       row.AdminSince.Time,
+		AuthorityVersion: row.AuthorityVersion,
+		DisabledAt:       timePtr(row.DisabledAt),
 	}
 }
 

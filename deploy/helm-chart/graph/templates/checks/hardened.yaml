@@ -21,7 +21,7 @@ first.
 {{- $gaps = append $gaps "securityContext.enabled and securityContext.readOnlyRootFilesystem must be true" }}
 {{- end }}
 {{- if not $v.scanner.enabled }}
-{{- $gaps = append $gaps "scanner.enabled must be true: without the scanner pod nuclei runs in the worker, which holds GRAPH_SECRET_KEY and the cloud identity" }}
+{{- $gaps = append $gaps "scanner.enabled must be true: without the scanner pod disk reads run in the worker, which holds GRAPH_SECRET_KEY and the cloud identity" }}
 {{- end }}
 {{- if $v.worker.pprofPort }}
 {{- $gaps = append $gaps "worker.pprofPort must be empty: profiling endpoints are for a debugging session" }}

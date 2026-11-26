@@ -35,7 +35,7 @@ func (f *fakeConnectors) Get(context.Context, string) (connector.Connector, erro
 // adminCtx is an authenticated admin whose account is old enough to approve.
 func adminCtx(email string) context.Context {
 	return auth.ContextWithUser(context.Background(), auth.User{ID: "uid:" + email, Email: email, Role: auth.RoleAdmin,
-		CreatedAt: time.Now().Add(-365 * 24 * time.Hour)})
+		CreatedAt: time.Now().Add(-365 * 24 * time.Hour), AdminSince: adminTime(time.Now().Add(-365 * 24 * time.Hour)), AuthorityVersion: 1})
 }
 
 // A rejected execution is as auditable as a successful one: "who tried to
@@ -112,3 +112,5 @@ func TestExecute_AuditTimestampIsUTC(t *testing.T) {
 	require.Equal(t, time.UTC, audit.events[0].TS.Location())
 	require.Equal(t, 10, audit.events[0].TS.Hour())
 }
+
+func adminTime(t time.Time) time.Time { return t }

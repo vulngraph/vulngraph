@@ -268,3 +268,9 @@ func TestUserAdminHandlers_StatusMapping(t *testing.T) {
 	rec = userAdminRequest(t, h, svc, h.DeleteUser, "a1@x.example", http.MethodDelete, v, ``)
 	require.Equal(t, http.StatusNoContent, rec.Code)
 }
+
+func (f *fakeRepo) WithUserAdministration(ctx context.Context, fn func(UserAdminRepo) error) error {
+	f.adminMu.Lock()
+	defer f.adminMu.Unlock()
+	return fn(f)
+}

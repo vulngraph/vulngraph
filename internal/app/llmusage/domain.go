@@ -27,7 +27,7 @@ const (
 	PurposeChat        Purpose = "chat"
 	PurposeNLQuery     Purpose = "nl_query"
 	PurposeRefine      Purpose = "refine"
-	PurposeTemplateGen Purpose = "template_gen"
+	PurposeTemplateGen Purpose = "template_gen" // Historical usage only; template generation is retired.
 	PurposeReason      Purpose = "reason"
 	PurposeAdjudicate  Purpose = "adjudicate"
 	PurposeCTTriage    Purpose = "ct_triage"

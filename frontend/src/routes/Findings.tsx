@@ -49,7 +49,7 @@ const SOURCES = [
   { value: "", label: "All sources" },
   { value: "cspm", label: "CSPM" },
   { value: "supply_chain", label: "Supply chain" },
-  { value: "nuclei", label: "Nuclei" },
+  { value: "nuclei", label: "Nuclei (historical)" },
 ];
 
 const PROVIDERS = [
@@ -79,7 +79,7 @@ function sourceLabel(source?: string): string {
   if (!source) return "";
   if (source === "cspm") return "CSPM";
   if (source === "supply_chain") return "Supply chain";
-  if (source === "nuclei") return "Nuclei";
+  if (source === "nuclei") return "Nuclei (historical)";
   return source;
 }
 
@@ -251,7 +251,7 @@ export function Findings() {
     <div>
       <PageHeader
         title="Findings"
-        subtitle="Risk-scored across CSPM, scanning, and supply chain."
+        subtitle="Risk-scored across cloud posture, images, and dependencies."
       />
 
       {/* View switcher */}

@@ -14,7 +14,6 @@ import {
   type AssetPage,
   type AssetSummary,
   type BlastRadius,
-  type ScanRunFindings,
   type ComplianceCoverage,
   type ComplianceFramework,
   type ComplianceFrameworkList,
@@ -39,9 +38,6 @@ import {
   type GraphStatus,
   type IdentityCensus,
   type LLMUsageSummary,
-  type ScanProfile,
-  type ScanRun,
-  type TemplateValidation,
   type Suppression,
   type User,
   type UserList,
@@ -660,148 +656,6 @@ export function useAssetChanges(id: string) {
 }
 
 // ── Scans ─────────────────────────────────────────────────────────────────
-
-export function useScans() {
-  return useQuery({ queryKey: ["scans"], queryFn: () => api.get<ScanRun[]>("/api/scans") });
-}
-
-export function useScan(id: string) {
-  return useQuery({
-    queryKey: ["scan", id],
-    queryFn: () => api.get<ScanRun>(`/api/scans/${encodeURIComponent(id)}`),
-    enabled: !!id,
-  });
-}
-
-export function useTriggerScan() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.post<void>("/api/scans"),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["scans"] }),
-  });
-}
-
-export function useCancelScan() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api.del<void>(`/api/scans/${encodeURIComponent(id)}`),
-    onSuccess: (_data, id) =>
-      Promise.all([
-        qc.invalidateQueries({ queryKey: ["scans"] }),
-        qc.invalidateQueries({ queryKey: ["scan", id] }),
-      ]),
-  });
-}
-
-export function useScanFindings(id: string) {
-  return useQuery({
-    queryKey: ["scan-findings", id],
-    queryFn: () => api.get<ScanRunFindings>(`/api/scans/${encodeURIComponent(id)}/findings`),
-    enabled: !!id,
-  });
-}
-
-export function useValidateTemplate() {
-  return useMutation({
-    mutationFn: (yaml: string) =>
-      api.post<TemplateValidation>("/api/scans/templates/validate", { yaml }),
-  });
-}
-
-export function useTestTemplate() {
-  return useMutation({
-    mutationFn: ({ yaml, target }: { yaml: string; target: string }) =>
-      api.post<{ results: { template_id: string; name: string; severity: string; matched_url: string }[]; count: number; target: string }>(
-        "/api/scans/templates/test", { yaml, target }
-      ),
-  });
-}
-
-export function useGenerateTemplate() {
-  return useMutation({
-    mutationFn: (description: string) =>
-      api.post<{ yaml: string; validation: TemplateValidation; attempts: number }>(
-        "/api/scans/templates/generate", { description }
-      ),
-  });
-}
-
-// ── Scan Profiles ────────────────────────────────────────────────────────────
-
-export function useScanProfiles() {
-  return useQuery({
-    queryKey: ["scan-profiles"],
-    queryFn: () => api.get<ScanProfile[]>("/api/scan-profiles"),
-  });
-}
-
-// Fields sent to the backend CreateProfile / UpdateProfile handlers.
-type ScanProfileWritePayload = Pick<
-  ScanProfile,
-  "name" | "description" | "template_tags" | "enabled" | "scanner_type" | "template_strategy" | "target_query" | "schedule" | "drift_enabled"
->;
-
-export function useCreateScanProfile() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: ScanProfileWritePayload) =>
-      api.post<ScanProfile>("/api/scan-profiles", payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["scan-profiles"] }),
-  });
-}
-
-export function useUpdateScanProfile() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...payload }: { id: string } & ScanProfileWritePayload) =>
-      api.put<ScanProfile>(`/api/scan-profiles/${encodeURIComponent(id)}`, payload),
-    onSuccess: (_data, { id }) => {
-      qc.invalidateQueries({ queryKey: ["scan-profiles"] });
-      qc.invalidateQueries({ queryKey: ["scan-profile", id] });
-    },
-  });
-}
-
-export function useDeleteScanProfile() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api.del<void>(`/api/scan-profiles/${encodeURIComponent(id)}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["scan-profiles"] }),
-  });
-}
-
-export function useTriggerProfileScan() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) =>
-      api.post<{ run_id: string }>(`/api/scan-profiles/${encodeURIComponent(id)}/trigger`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["scans"] }),
-  });
-}
-
-// Workflow preset catalog — target (WHO) and trigger (WHEN) presets for WorkflowBuilder.
-export type TargetPreset = {
-  id: string;
-  label: string;
-  description: string;
-  query: string;
-};
-
-export type TriggerPreset = {
-  id: string;
-  label: string;
-  description: string;
-  schedule: string;
-  drift_enabled: boolean;
-};
-
-export function useWorkflowPresets() {
-  return useQuery({
-    queryKey: ["workflow-presets"],
-    queryFn: () => api.get<{ targets: TargetPreset[]; triggers: TriggerPreset[] }>("/api/workflows/presets"),
-    staleTime: Infinity, // static catalog, never re-fetch
-  });
-}
 
 // ── Connectors ──────────────────────────────────────────────────────────────
 

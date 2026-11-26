@@ -39,7 +39,10 @@ UPDATE users SET disabled_at = $2, updated_at = now() WHERE id = $1;
 DELETE FROM users WHERE id = $1;
 
 -- name: DeleteUserSessions :execrows
-DELETE FROM sessions WHERE user_id = $1;
+WITH revoked AS (
+    UPDATE users SET authority_version = authority_version + 1 WHERE id = $1 RETURNING id
+)
+DELETE FROM sessions WHERE user_id IN (SELECT id FROM revoked);
 
 -- name: CountActiveAdmins :one
 SELECT count(*) FROM users WHERE role = 'admin' AND disabled_at IS NULL;
@@ -66,7 +69,7 @@ DELETE FROM sessions WHERE token_hash = $1;
 -- name: DeleteExpiredSessions :execrows
 DELETE FROM sessions WHERE expires_at <= now();
 
--- name: LockFirstUserBootstrap :exec
+-- name: LockUserAdministration :exec
 SELECT pg_advisory_xact_lock(hashtext('graph.users.first_admin'));
 
 -- name: AnyUserExists :one

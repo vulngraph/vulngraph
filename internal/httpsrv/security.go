@@ -46,10 +46,6 @@ const DefaultCypherPerUserPerMinute = 30
 // alert-context lookups (ALERT_CONTEXT_RATE_LIMIT_PER_USER).
 const DefaultAlertContextPerUserPerMinute = 30
 
-// DefaultMCPScanStartPerUserPerMinute is the per-user budget for the MCP
-// start_profile_scan tool: each call queues a real scan run.
-const DefaultMCPScanStartPerUserPerMinute = 5
-
 // Validate reports a malformed AllowedOrigins entry, so a typo fails startup
 // rather than silently trusting nothing (or the wrong thing).
 func (c SecurityConfig) Validate() error {

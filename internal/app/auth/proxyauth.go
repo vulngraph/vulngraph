@@ -182,10 +182,6 @@ func (h *Handler) oauth2ProxySignIn(w http.ResponseWriter, r *http.Request, next
 			}
 		}
 	} else {
-		// Shared-secret mode has no identity to compare: a session wins.
-		if hasSessionCookie(r) {
-			return false
-		}
 		id.Email = NormalizeEmail(r.Header.Get(oauth2ProxyEmailHeader))
 		if h.oauth2ProxyTrustGroups {
 			groups = splitGroups(r.Header.Get(oauth2ProxyGroupsHeader))
@@ -195,7 +191,7 @@ func (h *Handler) oauth2ProxySignIn(w http.ResponseWriter, r *http.Request, next
 	ok, allowlisted := domainGate(id.Email, h.oauth2ProxyDomains, h.oauth2ProxyAnyDomain)
 	if !ok {
 		h.svc.RecordSignInFailure(ctx, "oauth2_proxy", id.Email, "", LoginReasonDomainNotAllowed)
-		return false
+		return refuse("email domain not allowed", nil)
 	}
 	// Groups are unknown in shared-secret mode without OAUTH2_PROXY_TRUST_GROUPS,
 	// so a required group refuses every sign-in there.
@@ -203,6 +199,16 @@ func (h *Handler) oauth2ProxySignIn(w http.ResponseWriter, r *http.Request, next
 		h.svc.RecordSignInFailure(ctx, "oauth2_proxy", id.Email, "", LoginReasonGroupRequired)
 		errs.WriteHTTPError(w, errs.Forbidden("your account is not in a group allowed to sign in"))
 		return true
+	}
+	if !h.oauth2ProxyIDToken.configured() {
+		same, err := h.reconcileProxySession(r, id)
+		if err != nil {
+			errs.WriteHTTPError(w, errs.Internal("could not reconcile the proxy session"))
+			return true
+		}
+		if same {
+			return false
+		}
 	}
 	prov := h.roles.Provision(id.Email, groups, allowlisted)
 	var token string
@@ -252,13 +258,6 @@ func (h *Handler) cookieSession(r *http.Request) (cookieSessionInfo, bool) {
 	return cookieSessionInfo{token: c.Value, user: u}, true
 }
 
-// hasSessionCookie is sessionToken without the Bearer fallback: in ID-token
-// mode the Authorization header carries the IdP token, not a session.
-func hasSessionCookie(r *http.Request) bool {
-	c, err := r.Cookie(SessionCookie)
-	return err == nil && c.Value != ""
-}
-
 // bearerJWT returns the Authorization Bearer value when it is shaped like a
 // JWT (three dot-separated parts) rather than a session token or gph_ key.
 func bearerJWT(r *http.Request) string {
@@ -294,9 +293,6 @@ func (h *Handler) iapSignIn(w http.ResponseWriter, r *http.Request, next http.Ha
 		errs.WriteHTTPErrorCtx(ctx, w, "invalid IAP assertion", http.StatusUnauthorized)
 		return true
 	}
-	if _, hasCookie := sessionToken(r); hasCookie {
-		return false
-	}
 	ok, allowlisted := domainGate(id.Email, h.iapDomains, h.iapAnyDomain)
 	if !ok {
 		h.svc.RecordSignInFailure(ctx, "iap", id.Email, "", LoginReasonDomainNotAllowed)
@@ -308,6 +304,14 @@ func (h *Handler) iapSignIn(w http.ResponseWriter, r *http.Request, next http.Ha
 		h.svc.RecordSignInFailure(ctx, "iap", id.Email, "", LoginReasonGroupRequired)
 		errs.WriteHTTPError(w, errs.Forbidden("your account is not in a group allowed to sign in"))
 		return true
+	}
+	same, err := h.reconcileProxySession(r, id)
+	if err != nil {
+		errs.WriteHTTPError(w, errs.Internal("could not reconcile the proxy session"))
+		return true
+	}
+	if same {
+		return false
 	}
 	token, matched, err := h.svc.LoginOIDC(ctx, id, h.roles.Provision(id.Email, nil, allowlisted))
 	switch {
@@ -327,6 +331,39 @@ func (h *Handler) iapSignIn(w http.ResponseWriter, r *http.Request, next http.Ha
 		return true
 	}
 	return h.continueWithSession(w, r, next, token)
+}
+
+// reconcileProxySession revokes a session belonging to a different proxy
+// identity. API keys remain explicit credentials checked by RequireAuth.
+func (h *Handler) reconcileProxySession(r *http.Request, id OIDCIdentity) (bool, error) {
+	token, ok := sessionToken(r)
+	if !ok {
+		return false, nil
+	}
+	if strings.HasPrefix(token, "gph_") {
+		return true, nil
+	}
+	user, err := h.svc.Authenticate(r.Context(), token)
+	if errors.Is(err, ErrUnauthenticated) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("reconcileProxySession: authenticate: %w", err)
+	}
+	same := strings.EqualFold(user.Email, id.Email)
+	if id.Subject != "" {
+		same, err = h.svc.IdentityBelongsTo(r.Context(), id, user.ID)
+		if err != nil {
+			return false, fmt.Errorf("reconcileProxySession: identity: %w", err)
+		}
+	}
+	if same {
+		return true, nil
+	}
+	if err := h.svc.Logout(ContextWithUser(r.Context(), user), token, "proxy_identity_changed"); err != nil {
+		return false, fmt.Errorf("reconcileProxySession: revoke: %w", err)
+	}
+	return false, nil
 }
 
 // continueWithSession sets the cookie for a freshly issued session and serves

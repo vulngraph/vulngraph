@@ -414,7 +414,7 @@ kubectl -n graph exec graph-clickhouse-0 -c clickhouse -- clickhouse-client -q \
 
 With no configuration, the worker and the scanner contact OSV (package names
 and versions), the threat-intel feeds, crt.sh, the registries of your images,
-takeover-candidate hosts and GitHub (the nuclei-templates release). The
+takeover-candidate hosts. The
 [README table](../README.md) lists them, and
 [Network egress](configuration.md#network-egress) lists every destination
 with its switch. Turn off what your policy forbids, one switch at a time or all of them with

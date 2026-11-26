@@ -91,7 +91,7 @@ const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash, role, admin_since)
 VALUES ($1, $2, $3::text,
         CASE WHEN $3::text = 'admin' THEN now() END)
-RETURNING id, email, password_hash, role, totp_secret, created_at, updated_at, disabled_at, oidc_issuer, oidc_subject, totp_last_step, admin_since
+RETURNING id, email, password_hash, role, totp_secret, created_at, updated_at, disabled_at, oidc_issuer, oidc_subject, totp_last_step, admin_since, authority_version
 `
 
 type CreateUserParams struct {
@@ -116,6 +116,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.OidcSubject,
 		&i.TotpLastStep,
 		&i.AdminSince,
+		&i.AuthorityVersion,
 	)
 	return i, err
 }
@@ -154,11 +155,14 @@ func (q *Queries) DeleteUser(ctx context.Context, id string) (int64, error) {
 }
 
 const deleteUserSessions = `-- name: DeleteUserSessions :execrows
-DELETE FROM sessions WHERE user_id = $1
+WITH revoked AS (
+    UPDATE users SET authority_version = authority_version + 1 WHERE id = $1 RETURNING id
+)
+DELETE FROM sessions WHERE user_id IN (SELECT id FROM revoked)
 `
 
-func (q *Queries) DeleteUserSessions(ctx context.Context, userID string) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteUserSessions, userID)
+func (q *Queries) DeleteUserSessions(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUserSessions, id)
 	if err != nil {
 		return 0, err
 	}
@@ -166,7 +170,7 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID string) (int64,
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, role, totp_secret, created_at, updated_at, disabled_at, oidc_issuer, oidc_subject, totp_last_step, admin_since FROM users WHERE lower(email) = lower($1)
+SELECT id, email, password_hash, role, totp_secret, created_at, updated_at, disabled_at, oidc_issuer, oidc_subject, totp_last_step, admin_since, authority_version FROM users WHERE lower(email) = lower($1)
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -185,12 +189,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.OidcSubject,
 		&i.TotpLastStep,
 		&i.AdminSince,
+		&i.AuthorityVersion,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, role, totp_secret, created_at, updated_at, disabled_at, oidc_issuer, oidc_subject, totp_last_step, admin_since FROM users WHERE id = $1
+SELECT id, email, password_hash, role, totp_secret, created_at, updated_at, disabled_at, oidc_issuer, oidc_subject, totp_last_step, admin_since, authority_version FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
@@ -209,12 +214,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
 		&i.OidcSubject,
 		&i.TotpLastStep,
 		&i.AdminSince,
+		&i.AuthorityVersion,
 	)
 	return i, err
 }
 
 const getUserByOIDCIdentity = `-- name: GetUserByOIDCIdentity :one
-SELECT id, email, password_hash, role, totp_secret, created_at, updated_at, disabled_at, oidc_issuer, oidc_subject, totp_last_step, admin_since FROM users WHERE oidc_issuer = $1 AND oidc_subject = $2
+SELECT id, email, password_hash, role, totp_secret, created_at, updated_at, disabled_at, oidc_issuer, oidc_subject, totp_last_step, admin_since, authority_version FROM users WHERE oidc_issuer = $1 AND oidc_subject = $2
 `
 
 type GetUserByOIDCIdentityParams struct {
@@ -238,12 +244,13 @@ func (q *Queries) GetUserByOIDCIdentity(ctx context.Context, arg GetUserByOIDCId
 		&i.OidcSubject,
 		&i.TotpLastStep,
 		&i.AdminSince,
+		&i.AuthorityVersion,
 	)
 	return i, err
 }
 
 const getUserBySessionToken = `-- name: GetUserBySessionToken :one
-SELECT u.id, u.email, u.password_hash, u.role, u.totp_secret, u.created_at, u.updated_at, u.disabled_at, u.oidc_issuer, u.oidc_subject, u.totp_last_step, u.admin_since FROM users u
+SELECT u.id, u.email, u.password_hash, u.role, u.totp_secret, u.created_at, u.updated_at, u.disabled_at, u.oidc_issuer, u.oidc_subject, u.totp_last_step, u.admin_since, u.authority_version FROM users u
 JOIN sessions s ON s.user_id = u.id
 WHERE s.token_hash = $1 AND s.expires_at > now() AND u.disabled_at IS NULL
 `
@@ -264,6 +271,7 @@ func (q *Queries) GetUserBySessionToken(ctx context.Context, tokenHash string) (
 		&i.OidcSubject,
 		&i.TotpLastStep,
 		&i.AdminSince,
+		&i.AuthorityVersion,
 	)
 	return i, err
 }
@@ -298,7 +306,7 @@ func (q *Queries) ListUserTOTPSecrets(ctx context.Context) ([]ListUserTOTPSecret
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, email, password_hash, role, totp_secret, created_at, updated_at, disabled_at, oidc_issuer, oidc_subject, totp_last_step, admin_since FROM users ORDER BY created_at DESC
+SELECT id, email, password_hash, role, totp_secret, created_at, updated_at, disabled_at, oidc_issuer, oidc_subject, totp_last_step, admin_since, authority_version FROM users ORDER BY created_at DESC
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -323,6 +331,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.OidcSubject,
 			&i.TotpLastStep,
 			&i.AdminSince,
+			&i.AuthorityVersion,
 		); err != nil {
 			return nil, err
 		}
@@ -334,12 +343,12 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 	return items, nil
 }
 
-const lockFirstUserBootstrap = `-- name: LockFirstUserBootstrap :exec
+const lockUserAdministration = `-- name: LockUserAdministration :exec
 SELECT pg_advisory_xact_lock(hashtext('graph.users.first_admin'))
 `
 
-func (q *Queries) LockFirstUserBootstrap(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, lockFirstUserBootstrap)
+func (q *Queries) LockUserAdministration(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, lockUserAdministration)
 	return err
 }
 

@@ -60,7 +60,7 @@ with no database, see [quick scan](docs/quick-scan.md).
 |---|---|
 | **Sources** | AWS, GCP, Azure, GitHub and Kubernetes, plus Okta and Google Workspace identity. |
 | **Posture and identity** | About 850 checks across AWS, GCP, Azure and Kubernetes, mapped to the CIS Benchmarks for each ([coverage](docs/cspm-coverage.md)), and 66 privilege-escalation techniques across AWS, GCP and Azure. |
-| **Vulnerabilities** | Package CVEs from VM inventories, SBOMs and container images, matched against OSV, CISA KEV and EPSS, plus Nuclei scanning of internet-facing assets. |
+| **Vulnerabilities** | Package CVEs from VM inventories, SBOMs and container images, matched against OSV, CISA KEV and EPSS. |
 | **Prioritisation** | A 0-100 score from blast radius, exploitability and graph context, with a "safe to fix" class and an evidence-backed "must fix" class. |
 | **Operations** | Scheduled Cypher detections, Slack and webhook alerts, an MCP endpoint, and an audit trail. |
 | **Freshness** | Re-sync every 2 hours by default, GitHub changes immediately, any event through one API call ([how](docs/getting-started.md#5-keep-the-data-fresh)). |
@@ -82,8 +82,8 @@ Vulngraph holds read access to your cloud, so it is built to be a safe thing to 
 
 - **Read-only by default.** Collectors use the read-only grants in [`docs/iam/`](docs/iam). Live cloud
   reads and any state-changing action are admin-gated, and only a person's approval runs a fix.
-- **Credential isolation.** Connector secrets are encrypted at rest, and Nuclei runs in its own pod with no
-  encryption key, LLM key or cloud identity ([details](docs/security-hardening.md#credential-isolation)).
+- **Credential isolation.** Connector secrets are encrypted at rest, and the Helm chart isolates opt-in disk reads in a pod with no
+  application encryption key, LLM key or ambient cloud identity ([details](docs/security-hardening.md#credential-isolation)).
 - **Transparent egress.** Every outbound connection is listed in
   [Network egress](docs/configuration.md#network-egress). By default the worker sends **the ecosystem,
   name and version of each inventoried package to `api.osv.dev`** and **each monitored domain to

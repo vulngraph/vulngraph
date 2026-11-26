@@ -192,7 +192,7 @@ func newDecisionFixture(t *testing.T, c connector.Connector, owners fakeOwners) 
 
 func youngAdminCtx(email string) context.Context {
 	return auth.ContextWithUser(context.Background(), auth.User{ID: "uid:" + email, Email: email, Role: auth.RoleAdmin,
-		CreatedAt: time.Now().Add(-time.Hour)})
+		CreatedAt: time.Now().Add(-time.Hour), AdminSince: adminTime(time.Now().Add(-time.Hour)), AuthorityVersion: 1})
 }
 
 // ── plan ──────────────────────────────────────────────────────────────────────

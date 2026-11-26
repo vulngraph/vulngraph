@@ -14,7 +14,7 @@ state-changing proposal to a person. It never remediates on its own (ADR 087).
 ```
 AWS + GCP + Azure + GitHub + Kubernetes (+ Okta / Google Workspace identity)
   → asset inventory → ClickHouse + LadybugDB graph (Cypher)
-    → CSPM checks + CIEM techniques + Nuclei scanner + CISA-KEV/EPSS/OSV intel
+    → CSPM checks + CIEM techniques + CISA-KEV/EPSS/OSV intel
       → LLM reasoning (graph-enriched) → human approval queue → audit trail
 ```
 
@@ -72,7 +72,7 @@ chokepoint. Drift is modelled as events (`new_asset`, `new_exposure`, `removed_e
 (`internal/app/asset/drift.go`, `drift_handler.go`).
 
 Evidence comes from several independent sources: collected config, graph structure, the
-change log and CloudTrail, intel feeds, Nuclei and read-only live AWS describe calls. A claim's
+change log and CloudTrail, intel feeds and read-only live AWS describe calls. A claim's
 confidence scales with how many independent sources corroborate it. Config alone asserting
 "public" or "privileged" is a `possible` candidate; a second source makes it `confirmed`. This
 applies today to exposure and IAM inbound-assumability (`public_access` tiers, `trust_entry`)

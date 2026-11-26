@@ -50,14 +50,10 @@ extraLabels: {}
 # scanner.* take the same two keys for one component only. The scanner never
 # gets these chart-wide lists, only scanner.extraEnv / scanner.extraEnvFrom, so
 # a secret added here (GRAPH_SECRET_KEY, an LLM key) stays off the pod that runs
-# nuclei; do not put one in the scanner's own lists either. Each name is
+# disk readers; do not put one in the scanner's own lists either. Each name is
 # rendered once: a component entry wins over a chart-wide one, and either wins
 # over a variable the chart itself sets. hardened: true refuses an entry that
-# replaces a chart-set variable, and every extraEnvFrom list. HTTPS_PROXY here
-# also reaches nuclei in serve (template tests) and in a worker that scans
-# (scanner.enabled off), where it routes JavaScript templates past the
-# dial-time sandbox; the templates download uses NUCLEI_TEMPLATES_PROXY instead
-# (docs/configuration.md).
+# replaces a chart-set variable, and every extraEnvFrom list.
 #   extraEnv:
 #     - name: HTTPS_PROXY
 #       value: http://proxy.internal:3128
@@ -97,8 +93,8 @@ avoidSpotPodLabels: {}
 # property of the deployment.
 #
 # readOnlyRootFilesystem is split out because it is the one setting with a real
-# runtime failure mode: the binary writes to os.TempDir() (Ladybug COPY staging,
-# nuclei template validation). Every deployment mounts an emptyDir at /tmp for
+# runtime failure mode: the binary writes to os.TempDir() for staging.
+# Every deployment mounts an emptyDir at /tmp for
 # exactly that, but if an unnoticed writer turns up at runtime this can be
 # turned off ALONE, keeping runAsNonRoot and the dropped capabilities.
 securityContext:
@@ -106,12 +102,7 @@ securityContext:
   runAsUser: 65532            # matches the image's `USER nonroot` (Dockerfile)
   readOnlyRootFilesystem: true
   tmpSizeLimit: 2Gi           # /tmp emptyDir cap — Ladybug CSV staging is the big writer
-  # $HOME emptyDir cap. nuclei keeps its config in ~/.config/nuclei AND, unless
-  # NUCLEI_TEMPLATES_DIR is set, the worker and scanner download the pinned
-  # nuclei-templates release into ~/nuclei-templates-<version>-<sha256> (about 10 MiB of
-  # archive unpacking to about 80 MiB at v10.5.1; capped at 512 MiB). Going
-  # over the cap evicts the pod, so it sits well above the template set's size.
-  # A cap, not a reservation: an unused emptyDir costs nothing.
+  # Bounded writable home for runtime libraries under a read-only root.
   homeSizeLimit: 1Gi
 
 serve:
@@ -160,32 +151,18 @@ worker:
   extraEnv: []
   extraEnvFrom: []
 
-# Dedicated nuclei scanner pod. Runs only the scan worker (queueScan), isolating
-# nuclei's CPU/memory spike from connector syncs and enrichment. Enabling it also
-# sets SCAN_WORKER_DISABLED=true on the worker (the chart does this; nothing to
-# set by hand), so a scan job is never processed twice.
-#
-# It is also the credential boundary for the one component that parses responses
-# from hosts you scan: the scanner pod gets no GRAPH_SECRET_KEY, no LLM key and
-# no signing secrets, and runs as its own ServiceAccount with no cloud identity
-# annotations and no API token mounted. On by default. Turning it off saves one
-# pod (the requests below) but runs nuclei in the worker, which holds all of
-# those (docs/security-hardening.md).
+# Dedicated disk reader. Deployed only when config.diskScanEnabled is true.
+# Keep enabled to isolate volume reads from the worker and its application keys.
+# Disabling this runs opted-in disk reads on the worker instead.
 scanner:
   enabled: true
   replicas: 1
-  # Its own ServiceAccount. Bind no cloud identity to it (Pod Identity
-  # association, IRSA or Workload Identity annotation): the scanner calls no
-  # cloud API. Chart-wide extraEnv / extraEnvFrom do not reach it; only the
-  # two lists below do, so keep secrets out of them.
+  # No workload identity or Kubernetes API token. Volume jobs carry only their
+  # short-lived, sealed disk-read credentials and check the connector opt-in.
   serviceAccountName: graph-scanner
-  # Periodic estate scan, e.g. 168h = weekly; unset = no periodic scan. Rendered
-  # into every pod (worker and scanner alike), whether or not scanner.enabled is
-  # set, because whichever pod holds River leadership enqueues it.
-  scanInterval: ""
   resources:
     requests: { cpu: "500m", memory: "1Gi" }
-    limits: { cpu: "2", memory: "3Gi" }  # nuclei is CPU/mem-hungry
+    limits: { cpu: "2", memory: "3Gi" }  # bounded disk reads
   extraEnv: []
   extraEnvFrom: []
 

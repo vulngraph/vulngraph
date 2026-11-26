@@ -85,11 +85,8 @@ type fakeAnalyst struct {
 
 func (f fakeAnalyst) AnalyzeDrift(context.Context, AnalysisInput) (Verdict, error) { return f.v, f.err }
 
-type fakeFacts struct{ profErr, findErr, expErr error }
+type fakeFacts struct{ findErr, expErr error }
 
-func (f fakeFacts) Profiles(context.Context) ([]ProfileFact, []string, error) {
-	return []ProfileFact{{ID: "p1", TemplateTags: []string{"cve"}}}, []string{"p1"}, f.profErr
-}
 func (f fakeFacts) Findings(context.Context, []string) (map[string]AssetFact, error) {
 	return map[string]AssetFact{"arn:a1": {OpenFindings: 2, MaxScore: 80}}, f.findErr
 }
@@ -220,8 +217,8 @@ func pendingRepo() *fakeRepo {
 func recommendYes() Verdict {
 	return Verdict{
 		ExposureJudgement: ExposureIncreased, ScanRecommended: true, ScanRecommendedKnown: true,
-		Confidence: ConfidenceHigh, SuggestedProfileID: "p1",
-		Evidence: []EvidenceRef{{Source: EvidenceAsset, Ref: "arn:a1", Fact: "public"}},
+		Confidence: ConfidenceHigh,
+		Evidence:   []EvidenceRef{{Source: EvidenceAsset, Ref: "arn:a1", Fact: "public"}},
 	}
 }
 
@@ -234,7 +231,6 @@ func TestAnalyze_StoresGatedVerdictWithStampedFields(t *testing.T) {
 	require.Equal(t, StatusAnalysed, s.status)
 	require.Equal(t, "m", s.verdict.Model)
 	require.Equal(t, t0, s.verdict.AnalysedAt)
-	require.Equal(t, []string{"p1"}, s.verdict.AutoScanProfileIDs)
 	require.Equal(t, RecommendationRecommended, s.verdict.Recommendation())
 }
 
@@ -318,12 +314,10 @@ func TestAnalyze_NoChangesRowsIsUnknown(t *testing.T) {
 }
 
 func TestGatherFacts_FailedLookupsAreNotKnown(t *testing.T) {
-	svc := newSvc(&fakeRepo{}, fakeAnalyst{}, fakeFacts{profErr: errors.New("p"), expErr: errors.New("e")})
+	svc := newSvc(&fakeRepo{}, fakeAnalyst{}, fakeFacts{expErr: errors.New("e")})
 	f := svc.gatherFacts(context.Background(), Batch{}, []AssetChange{{AssetID: "arn:a1"}})
-	require.False(t, f.ProfilesKnown)
 	require.False(t, f.ExposureKnown)
 	require.True(t, f.FindingsKnown)
-	require.Empty(t, f.Profiles)
 	require.Equal(t, 2, f.Assets[0].OpenFindings)
 	require.False(t, f.Assets[0].InternetFacing, "unread exposure is carried as zero but flagged unknown")
 }

@@ -29,8 +29,6 @@ const (
 	limitLLM
 	// limitAlertContext shares the POST /api/context/alert limiter.
 	limitAlertContext
-	// limitScanStart is its own budget: each call queues a real scan run.
-	limitScanStart
 	// limitCypher shares the REST Cypher-pool routes' per-user limiter: caller
 	// Cypher runs on a two-connection pool that scheduled detections also use.
 	limitCypher
@@ -45,12 +43,6 @@ const codeRateLimited = -32029
 func (h *Handler) WithLimits(llmLimiter, alertContext Limiter) *Handler {
 	h.setLimiter(limitLLM, llmLimiter)
 	h.setLimiter(limitAlertContext, alertContext)
-	return h
-}
-
-// WithScanLimit wires the per-user limiter start_profile_scan spends from.
-func (h *Handler) WithScanLimit(l Limiter) *Handler {
-	h.setLimiter(limitScanStart, l)
 	return h
 }
 

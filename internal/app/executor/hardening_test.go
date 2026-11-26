@@ -91,7 +91,7 @@ func TestAudit_RowsCarryTheActingUserID(t *testing.T) {
 	audit := &fakeAuditor{}
 	svc := NewService(awsRW()).WithAudit(audit).WithApprovals(testApprover(t))
 	key := auth.ContextWithUser(context.Background(), auth.User{ID: "u-alice", Email: "alice@example.com (api-key)",
-		Role: auth.RoleAdmin, CreatedAt: time.Now().Add(-48 * time.Hour)})
+		Role: auth.RoleAdmin, CreatedAt: time.Now().Add(-48 * time.Hour), AdminSince: adminTime(time.Now().Add(-48 * time.Hour)), AuthorityVersion: 1})
 
 	_, _ = svc.Execute(key, ExecutionRequest{ConnectorID: "conn-1", Action: ActionS3BlockPublic, Params: map[string]string{ParamBucketName: "logs-bucket"}})
 	_, err := svc.Approve(key, ExecutionRequest{ConnectorID: "conn-1", Action: ActionEC2Stop, Params: map[string]string{ParamInstanceID: "i-1"}})
@@ -106,7 +106,7 @@ func TestAudit_RowsCarryTheActingUserID(t *testing.T) {
 
 // adminCreatedAt is an admin principal whose account was created at created.
 func adminCreatedAt(email string, created time.Time) context.Context {
-	return auth.ContextWithUser(context.Background(), auth.User{ID: "uid:" + email, Email: email, Role: auth.RoleAdmin, CreatedAt: created})
+	return auth.ContextWithUser(context.Background(), auth.User{ID: "uid:" + email, Email: email, Role: auth.RoleAdmin, CreatedAt: created, AdminSince: adminTime(created), AuthorityVersion: 1})
 }
 
 func TestApprove_RefusesYoungAccounts(t *testing.T) {
@@ -125,9 +125,8 @@ func TestApprove_RefusesYoungAccounts(t *testing.T) {
 
 // The floor counts from the later of created_at and admin_since: an old account
 // promoted just now is as young as a new one, and an admin whose promotion was
-// never recorded (zero AdminSince, from before the column) counts from created_at
-// so an upgrade locks no one out. An unknown created_at is refused whatever
-// AdminSince says.
+// never recorded cannot approve. Migration 8 starts their continuous tenure
+// at upgrade time. An unknown created_at is also refused.
 func TestApprove_AccountAgeCountsFromAdminSince(t *testing.T) {
 	now := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
 	old := now.Add(-400 * 24 * time.Hour)
@@ -141,7 +140,7 @@ func TestApprove_AccountAgeCountsFromAdminSince(t *testing.T) {
 		{"old account promoted just now is refused", old, now, "admin for 0s"},
 		{"old account promoted two days ago is allowed", old, now.Add(-48 * time.Hour), ""},
 		{"long-time admin is allowed", old, old.Add(time.Hour), ""},
-		{"admin from before the column falls back to created_at", old, time.Time{}, ""},
+		{"unknown administrator tenure is refused", old, time.Time{}, "administrator tenure"},
 		{"young account with no admin_since is refused", now.Add(-2 * time.Hour), time.Time{}, "admin for 2h0m0s"},
 		{"unknown created_at is refused despite an old admin_since", time.Time{}, old, "age is unknown"},
 		{"unknown created_at and admin_since is refused", time.Time{}, time.Time{}, "age is unknown"},
@@ -152,7 +151,7 @@ func TestApprove_AccountAgeCountsFromAdminSince(t *testing.T) {
 			svc := NewService(awsRW()).WithApprovals(testApprover(t)).WithMinApproverAge(24 * time.Hour)
 			svc.now = func() time.Time { return now }
 			ctx := auth.ContextWithUser(context.Background(), auth.User{ID: "uid:a", Email: "a@example.com", Role: auth.RoleAdmin,
-				CreatedAt: tc.created, AdminSince: tc.adminSince})
+				CreatedAt: tc.created, AdminSince: tc.adminSince, AuthorityVersion: 1})
 			_, err := svc.Approve(ctx, req)
 			if tc.refused == "" {
 				require.NoError(t, err)

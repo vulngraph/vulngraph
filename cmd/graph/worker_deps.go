@@ -19,7 +19,6 @@ import (
 	"github.com/vulngraph/vulngraph/internal/app/finding"
 	"github.com/vulngraph/vulngraph/internal/app/forget"
 	"github.com/vulngraph/vulngraph/internal/app/graphstore"
-	"github.com/vulngraph/vulngraph/internal/app/scan"
 	"github.com/vulngraph/vulngraph/internal/db"
 	"github.com/vulngraph/vulngraph/internal/intel/epss"
 	"github.com/vulngraph/vulngraph/internal/intel/osv"
@@ -29,38 +28,9 @@ import (
 	"github.com/vulngraph/vulngraph/internal/obs"
 	"github.com/vulngraph/vulngraph/internal/reason"
 	"github.com/vulngraph/vulngraph/internal/scanner/imagevuln"
-	"github.com/vulngraph/vulngraph/internal/scanner/nuclei"
 	"github.com/vulngraph/vulngraph/pkg/log"
 	"github.com/vulngraph/vulngraph/pkg/safenet"
 )
-
-// bundledScanner builds the scanner both the worker and the scanner pod run:
-// every bundled connector, narrowed by SCAN_SCANNERS. An unknown name in
-// SCAN_SCANNERS refuses startup rather than leaving nothing enabled.
-func bundledScanner(getenv func(string) string) (scan.Scanner, error) {
-	s, err := scan.NewMultiScanner(enabledScanners(getenv), nuclei.New())
-	if err != nil {
-		return nil, fmt.Errorf("SCAN_SCANNERS: %w", err)
-	}
-	return s, nil
-}
-
-// enabledScanners parses SCAN_SCANNERS (comma-separated connector names) into
-// the set NewMultiScanner uses. An empty or unset value returns an empty map,
-// which enables every bundled scanner.
-func enabledScanners(getenv func(string) string) map[string]bool {
-	raw := strings.TrimSpace(getenv("SCAN_SCANNERS"))
-	if raw == "" {
-		return nil
-	}
-	enabled := map[string]bool{}
-	for name := range strings.SplitSeq(raw, ",") {
-		if name = strings.TrimSpace(name); name != "" {
-			enabled[name] = true
-		}
-	}
-	return enabled
-}
 
 // openGraphDB opens the ladybug in-memory graph engine when LADYBUG_INTERNAL_PORT
 // is set (the enable signal: in-memory mode needs no data path). Returns nil

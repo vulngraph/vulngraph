@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/vulngraph/vulngraph/internal/app/auth"
 	"github.com/vulngraph/vulngraph/internal/db"
 )
 
@@ -223,17 +224,75 @@ func TestPGGrantLedger_RedeemsOnce(t *testing.T) {
 	t.Cleanup(pool.Close)
 	ledger := NewPGGrantLedger(pool)
 
+	var approverID string
+	var authorityVersion int64
+	email := "grant-" + time.Now().Format("150405.000000000") + "@example.com"
+	err = pool.QueryRow(ctx, "INSERT INTO users(email, password_hash, role) VALUES($1, 'unused', 'admin') RETURNING id, authority_version", email).Scan(&approverID, &authorityVersion)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM users WHERE id = $1", approverID) })
+
 	hash := "it-grant-" + time.Now().Format("150405.000000")
 	t.Cleanup(func() {
 		_, err := pool.Exec(ctx, "DELETE FROM executor_grant_redemptions WHERE grant_hash = $1", hash)
 		require.NoError(t, err)
 	})
 
-	ok, err := ledger.Redeem(ctx, hash, "u-bob", time.Now().Add(ApprovalTTL))
+	ok, err := ledger.Redeem(ctx, hash, "u-bob", approverID, authorityVersion, time.Now().Add(ApprovalTTL))
 	require.NoError(t, err)
 	require.True(t, ok)
 
-	ok, err = ledger.Redeem(ctx, hash, "u-carol", time.Now().Add(ApprovalTTL))
+	ok, err = ledger.Redeem(ctx, hash, "u-carol", approverID, authorityVersion, time.Now().Add(ApprovalTTL))
 	require.NoError(t, err)
 	require.False(t, ok, "a redeemed grant cannot be redeemed again")
+}
+
+// This exercises the real trigger and redemption query together: restoring a
+// role or account must not restore a grant issued before revocation.
+func TestPGGrantLedger_RevokedAuthorityStaysRevoked(t *testing.T) {
+	ctx := context.Background()
+	pool, err := db.NewPool(ctx, "postgres://graph:graph@localhost:5432/graph?sslmode=disable", db.MaxConnsWorker)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	ledger := NewPGGrantLedger(pool)
+	for _, tc := range []struct{ name, change, restore string }{
+		{"demotion", "role = 'viewer'", "role = 'admin'"},
+		{"disabled", "disabled_at = now()", "disabled_at = NULL"},
+		{"password", "password_hash = 'reset'", "password_hash = 'unused'"},
+		{"totp", "totp_secret = 'sealed-test-secret'", "totp_secret = NULL"},
+		{"identity", "oidc_issuer = 'https://issuer.example', oidc_subject = 'subject'", "oidc_issuer = NULL, oidc_subject = NULL"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var id string
+			var version int64
+			var since time.Time
+			email := tc.name + "-" + time.Now().Format("150405.000000000") + "@example.com"
+			err := pool.QueryRow(ctx, "INSERT INTO users(email,password_hash,role) VALUES($1,'unused','admin') RETURNING id,authority_version,admin_since", email).Scan(&id, &version, &since)
+			require.NoError(t, err)
+			t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM users WHERE id=$1", id) })
+			for _, change := range []string{tc.change, tc.restore} {
+				_, err = pool.Exec(ctx, "UPDATE users SET "+change+" WHERE id=$1", id)
+				require.NoError(t, err)
+				ok, err := ledger.Redeem(ctx, "revoked-"+id, "executor", id, version, time.Now().Add(ApprovalTTL))
+				require.NoError(t, err)
+				require.False(t, ok)
+			}
+			var current int64
+			var newSince time.Time
+			require.NoError(t, pool.QueryRow(ctx, "SELECT authority_version,admin_since FROM users WHERE id=$1", id).Scan(&current, &newSince))
+			require.Greater(t, current, version)
+			if tc.name == "demotion" || tc.name == "disabled" {
+				require.True(t, newSince.After(since))
+			} else {
+				require.True(t, newSince.Equal(since))
+			}
+			// Explicit session revocation also increments authority, even if the user
+			// has no remaining sessions to delete.
+			repo := auth.NewPGRepo(pool, nil)
+			_, err = repo.DeleteUserSessions(ctx, id)
+			require.NoError(t, err)
+			ok, err := ledger.Redeem(ctx, "revoked-sessions-"+id, "executor", id, current, time.Now().Add(ApprovalTTL))
+			require.NoError(t, err)
+			require.False(t, ok)
+		})
+	}
 }

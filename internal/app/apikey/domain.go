@@ -40,10 +40,11 @@ type APIKey struct {
 	// user's, filled by Verify: the request principal is the owner, never the
 	// user-chosen key name, and the owner's account age and time as admin gate
 	// executor approvals. OwnerAdminSince is zero when unknown.
-	OwnerEmail      string
-	OwnerRole       string
-	OwnerCreatedAt  time.Time
-	OwnerAdminSince time.Time
+	OwnerEmail            string
+	OwnerRole             string
+	OwnerCreatedAt        time.Time
+	OwnerAdminSince       time.Time
+	OwnerAuthorityVersion int64
 }
 
 // Audit actions the service writes to audit_events, target_type

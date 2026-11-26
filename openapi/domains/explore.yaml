@@ -395,7 +395,7 @@ components:
         account_id: { type: string, description: "Cloud ownership boundary (AWS account / GCP project / Azure subscription); used for grouping." }
         exposed: { type: boolean, description: "Asset is reachable from the internet." }
         has_kev: { type: boolean, description: "Asset carries a known-exploited-vulnerability finding (CISA KEV)." }
-        exploitable: { type: boolean, description: "An active nuclei scan confirmed a high/critical exposure on the asset." }
+        exploitable: { type: boolean, description: "Historical active-scan evidence recorded a high/critical exposure on the asset." }
         toxic_combo: { type: boolean, description: "Internet-exposed and carries a privilege-escalation path." }
         max_score: { type: integer, description: "Worst enriched finding score on the asset (0-100)." }
         privesc_count: { type: integer, description: "Count of privilege-escalation (ciem_privesc) findings on the asset." }

@@ -1,7 +1,6 @@
 package jobs
 
 import (
-	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -12,11 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
-	"github.com/riverqueue/river/rivertype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -25,7 +21,6 @@ import (
 	"github.com/vulngraph/vulngraph/internal/app/connector"
 	"github.com/vulngraph/vulngraph/internal/app/finding"
 	"github.com/vulngraph/vulngraph/internal/app/intel"
-	"github.com/vulngraph/vulngraph/internal/app/scan"
 )
 
 // allJobArgs lives in routing.go — it drives the real queue derivation, not just
@@ -165,21 +160,17 @@ func registeredKinds(workers *river.Workers) map[string]bool {
 // type embedding all of them: profileRunner and assetDriftRunner share method
 // names, so a combined struct would satisfy neither.
 type (
-	stubImageVuln         struct{ ImageVulnScanner }
-	stubSCC               struct{ SCCFetcher }
-	stubEPSSFetcher       struct{ EPSSFetcher }
-	stubEPSSCache         struct{ EPSSCache }
-	stubProfiles          struct{ profileRunner }
-	stubProfileScanner    struct{ profileScanner }
-	stubDriftRunner       struct{ assetDriftRunner }
-	stubSavedQueries      struct{ SavedQueryScheduler }
-	stubScheduledProfiles struct{ ScheduledProfiles }
-	stubFullPass          struct{ fullPassMarker }
-	stubLiveAWS           struct{ liveRoleGetter }
-	stubKEV               struct{ KEVFetcher }
-	stubOSV               struct{ OSVQuerier }
-	stubMalFeed           struct{ MalFeedQuerier }
-	stubDistroAdvisories  struct{ DistroAdvisoryFetcher }
+	stubImageVuln        struct{ ImageVulnScanner }
+	stubSCC              struct{ SCCFetcher }
+	stubEPSSFetcher      struct{ EPSSFetcher }
+	stubEPSSCache        struct{ EPSSCache }
+	stubSavedQueries     struct{ SavedQueryScheduler }
+	stubFullPass         struct{ fullPassMarker }
+	stubLiveAWS          struct{ liveRoleGetter }
+	stubKEV              struct{ KEVFetcher }
+	stubOSV              struct{ OSVQuerier }
+	stubMalFeed          struct{ MalFeedQuerier }
+	stubDistroAdvisories struct{ DistroAdvisoryFetcher }
 )
 
 // workerPod builds the main worker client's registration for a FULLY wired
@@ -194,10 +185,8 @@ func workerPod(t *testing.T, scanDisabled bool) pod {
 		Intel: &intel.Service{}, Adjudicator: &belief.Adjudicator{}, DriftAnalysis: enabledDriftService(),
 		ImageVuln: stubImageVuln{}, SCC: stubSCC{},
 		EPSSFetcher: stubEPSSFetcher{}, EPSSCache: stubEPSSCache{},
-		Profiles: stubProfiles{}, ProfileScanner: stubProfileScanner{},
-		DriftRunner: stubDriftRunner{}, DriftAssets: &asset.Service{},
-		SavedQueries: stubSavedQueries{}, ProfileSchedules: stubScheduledProfiles{},
-		FullPass: stubFullPass{}, LiveAWS: stubLiveAWS{},
+		SavedQueries: stubSavedQueries{},
+		FullPass:     stubFullPass{}, LiveAWS: stubLiveAWS{},
 		KEVFetcher: stubKEV{}, OSV: stubOSV{}, MalFeed: stubMalFeed{},
 		DistroAdvisories: stubDistroAdvisories{}, DistroAdvisorySources: Feeds{ALAS: true, ELSA: true}.DistroAdvisorySources(),
 		DiskScan:           &DiskScanDeps{},
@@ -220,8 +209,7 @@ func scannerPod(t *testing.T) pod {
 	t.Helper()
 	workers := river.NewWorkers()
 	registerScanWorkers(workers, ScanDeps{
-		Scans: &scan.Service{}, Profiles: &scan.ProfileService{},
-		Assets: &asset.Service{}, Findings: &finding.Service{}, DiskScan: &DiskScanDeps{},
+		DiskScan: &DiskScanDeps{},
 	})
 	return newPod("scanner", workers)
 }
@@ -336,7 +324,6 @@ func TestLatencySensitiveJobsAreOffTheCorrelateQueue(t *testing.T) {
 	for _, args := range []river.JobArgs{
 		LadybugRebuildArgs{},
 		RunSavedQueriesArgs{},
-		RunScheduledProfilesArgs{},
 	} {
 		t.Run(args.Kind(), func(t *testing.T) {
 			opts := args.(river.JobArgsWithInsertOpts).InsertOpts()
@@ -352,7 +339,6 @@ func TestGraphQueueJobsAreUniqueGated(t *testing.T) {
 	for _, args := range []river.JobArgs{
 		LadybugRebuildArgs{},
 		RunSavedQueriesArgs{},
-		RunScheduledProfilesArgs{},
 	} {
 		t.Run(args.Kind(), func(t *testing.T) {
 			opts := args.(river.JobArgsWithInsertOpts).InsertOpts()
@@ -414,9 +400,8 @@ func TestNoProducerAllowlistHasNoStaleEntries(t *testing.T) {
 //
 // The per-pod queue guards above check a FULLY wired deployment, because a dep
 // gates a worker and its producer together — so they cannot see a dep the binary
-// simply forgot to pass. Profiles was exactly that: ScanProfileWorker is gated on
-// it, nothing set it, and every scan_profile job the handler and the cron tick
-// enqueued was resolved to rescueOnlyWorker and discarded at MaxAttempts 1.
+// simply forgot to pass. An unwired dependency can leave enqueued jobs with
+// only rescueOnlyWorker, which discards them at MaxAttempts 1.
 var depsNotWiredOnTheWorker = map[string]string{}
 
 func TestWorkerWiresEveryJobsDep(t *testing.T) {
@@ -557,7 +542,7 @@ func TestOnlyScoreWritersCallRecordDirectly(t *testing.T) {
 // heavy scan is more resident memory, not less.
 func TestHeavyScanLanesAreSerial(t *testing.T) {
 	lanes := heavyScanLanes()
-	require.Len(t, lanes, 3, "one heavy lane per kind of heavy work: nuclei and disk reads on the scanner, content on the worker")
+	require.Len(t, lanes, 2, "disk reads on the scanner, content on the worker")
 	for lane := range lanes {
 		require.Equalf(t, 1, queueWorkerCounts[lane],
 			"heavy-scan lane %q must run one job at a time", lane)
@@ -566,7 +551,7 @@ func TestHeavyScanLanesAreSerial(t *testing.T) {
 	// The deployed topology: the worker consumes one heavy lane and the scanner
 	// two (nuclei and disk reads), each lane serial. A third on the scanner, or a
 	// second on the worker, is more resident memory the pods were not sized for.
-	budget := map[string]int{"worker(SCAN_WORKER_DISABLED)": 1, "scanner": 2}
+	budget := map[string]int{"worker(SCAN_WORKER_DISABLED)": 1, "scanner": 1}
 	for _, p := range splitTopology(t) {
 		consumed := 0
 		for q := range p.queues {
@@ -597,229 +582,15 @@ func TestEveryQueueDeclaresItsConcurrency(t *testing.T) {
 	}
 }
 
-// SCAN_WORKER_DISABLED must mean what it says: no nuclei on this pod.
-//
-// It was set on graph-worker to keep nuclei's CPU/memory spike off the pod that
-// runs enrichment and holds the Ladybug graph — and then Deps.Profiles wired
-// ScanProfileWorker there, whose scanner is the worker's own scan.Service, built
-// with a real nuclei MultiScanner. A profile run fans out scanProfileConcurrency
-// (10) targets for up to 4h. Registering the two nuclei fan-out workers on the
-// same flag as ScanWorker is what makes the promise structural.
-func TestScanWorkerDisabledKeepsNucleiOffTheWorker(t *testing.T) {
-	nucleiKinds := []string{ScanArgs{}.Kind(), ScanProfileJobArgs{}.Kind(), ScanAssetArgs{}.Kind()}
-
-	disabled := workerPod(t, true)
-	for _, kind := range nucleiKinds {
-		assert.Falsef(t, disabled.realKind[kind],
-			"SCAN_WORKER_DISABLED is set, yet the worker registers a real worker for %q — "+
-				"that pod has explicitly disowned nuclei", kind)
+// Disk volume reads belong to the isolated scanner when delegation is enabled.
+func TestScanWorkerDisabledDelegatesDiskReads(t *testing.T) {
+	kind := DiskScanVolumeArgs{}.Kind()
+	require.False(t, workerPod(t, true).realKind[kind])
+	require.True(t, scannerPod(t).realKind[kind])
+	require.True(t, workerPod(t, false).realKind[kind])
+	for _, p := range append(splitTopology(t), singleTopology(t)...) {
+		for _, retired := range []string{"scan", "scan_profile", "scan_asset", "run_scheduled_profiles"} {
+			require.False(t, p.realKind[retired], "retired kind %s registered by %s", retired, p.name)
+		}
 	}
-	_, consumesScan := disabled.queues[queueScan]
-	assert.False(t, consumesScan, "a pod with no nuclei worker must not consume the nuclei lane")
-
-	// The mirror: the scanner pod, which HAS the nuclei budget, works all three.
-	sc := scannerPod(t)
-	for _, kind := range nucleiKinds {
-		assert.Truef(t, sc.realKind[kind], "the scanner pod must work %q — nothing else can", kind)
-	}
-
-	// And the all-in-one worker still works them, so the single topology is intact.
-	all := workerPod(t, false)
-	for _, kind := range nucleiKinds {
-		assert.Truef(t, all.realKind[kind], "the all-in-one worker must still work %q", kind)
-	}
-}
-
-// A successful drift scan must not suppress the NEXT one.
-//
-// River's UniqueOptsByStateDefault includes `completed`, and River keeps completed
-// jobs for 24h, so ByArgs with an empty ByState meant one clean drift scan blocked
-// every re-scan of that (profile, asset) pair for a day. Drift means the asset
-// changed AGAIN; suppressing that inverts the intent the InsertOpts comment states.
-func TestDriftScanUniquenessCoversOnlyInFlightJobs(t *testing.T) {
-	opts := ScanAssetArgs{}.InsertOpts()
-	require.True(t, opts.UniqueOpts.ByArgs)
-	require.NotEmpty(t, opts.UniqueOpts.ByState, "an empty ByState takes River's default, which includes completed")
-	for _, state := range opts.UniqueOpts.ByState {
-		require.NotEqual(t, rivertype.JobStateCompleted, state,
-			"a completed drift scan must not block the next one")
-	}
-}
-
-// ── CypherResolver actually reaches the registered worker ───────────────────
-//
-// Every existing cypherResolver test (scan_profile_test.go) constructs
-// &ScanProfileWorker{cypherResolver: cypher} BY HAND. That is the exact shape
-// of the defect these tests guard against — cypherResolver declared and never
-// assigned — so deleting the one-line plumbing that assigns it
-// (client.go's `cypherResolver: deps.CypherResolver` inside
-// addNucleiFanoutWorkers's call from registerRealWorkers, or the equivalent
-// line in registerScanWorkers) would leave all three of those tests green.
-//
-// These two tests instead call registerRealWorkers/registerScanWorkers
-// themselves — the exact functions cmd/graph calls — and drive the worker
-// they register through river's own WorkUnitFactory, so a value genuinely has
-// to travel Deps.CypherResolver / ScanDeps.CypherResolver → nucleiFanout →
-// ScanProfileWorker.cypherResolver for the test to pass.
-
-// TestRegisterRealWorkers_PropagatesCypherResolver drives the worker pod's
-// real registration entry point (registerRealWorkers) with a TargetQuery
-// profile and a distinct cypherResolver fake, then calls Work() directly on
-// the *ScanProfileWorker registerRealWorkers actually registered (returned
-// for exactly this reason — river.Workers keeps registered workers behind an
-// unexported map with no accessor, so without that return value there would
-// be no way to observe, on the real registration path, whether
-// deps.CypherResolver actually reached the worker). cypher.targets is left
-// nil (a legitimate empty match) so Work() fails BEFORE reaching
-// scanSvc/finder — see scan_profile.go's zero-target guard — which means
-// every other Deps field this test leaves unset is safely never called.
-func TestRegisterRealWorkers_PropagatesCypherResolver(t *testing.T) {
-	profiles := &fakeProfileRunner{profile: scan.ScanProfile{
-		ID:          "wire-real",
-		TargetQuery: "MATCH (a:Asset) RETURN a",
-	}}
-	cypher := &fakeCypherResolver{}
-
-	workers := river.NewWorkers()
-	worker := registerRealWorkers(workers, nil, Deps{
-		Profiles:       profiles,
-		ProfileScanner: &fakeProfileScanner{},
-		CypherResolver: cypher,
-	})
-	require.NotNil(t, worker, "registerRealWorkers should have registered a ScanProfileWorker (Profiles was set and ScanWorkerDisabled was false)")
-
-	err := worker.Work(context.Background(), &river.Job[ScanProfileJobArgs]{
-		Args: ScanProfileJobArgs{ProfileID: "wire-real", RunID: "wire-real-r1"},
-	})
-
-	require.Error(t, err, "a zero-target TargetQuery profile must fail its run")
-	require.Equal(t, 1, cypher.calls,
-		"registerRealWorkers must propagate Deps.CypherResolver to the registered ScanProfileWorker — "+
-			"if this is 0, the `cypherResolver: deps.CypherResolver` line in registerRealWorkers's "+
-			"addNucleiFanoutWorkers call was deleted")
-	require.True(t, profiles.finished)
-	require.Equal(t, scan.StatusFailed, profiles.finishStatus)
-}
-
-// TestRegisterScanWorkers_PropagatesCypherResolver is the scanner-pod mirror
-// of the test above, exercising registerScanWorkers instead. ScanDeps.Profiles
-// is a concrete *scan.ProfileService (cmd/graph fills in concrete
-// types because the interfaces involved are unexported), so it is built from
-// minimal fake ProfileRepo/Repo implementations rather than a hand-rolled
-// profileRunner: only GetProfile and FinishRun are exercised (the same
-// zero-target short-circuit keeps everything else untouched), and every
-// other method panics so an unexpected call fails loudly.
-func TestRegisterScanWorkers_PropagatesCypherResolver(t *testing.T) {
-	profileRepo := &fakeScanProfileRepoForWiring{profile: scan.ScanProfile{
-		ID:          "wire-scan",
-		TargetQuery: "MATCH (a:Asset) RETURN a",
-	}}
-	runRepo := &fakeScanRunRepoForWiring{}
-	profiles := scan.NewProfileService(profileRepo, runRepo, nil, nil, nil)
-	cypher := &fakeCypherResolver{}
-
-	workers := river.NewWorkers()
-	worker := registerScanWorkers(workers, ScanDeps{
-		Profiles:       profiles,
-		CypherResolver: cypher,
-	})
-	require.NotNil(t, worker, "registerScanWorkers should have registered a ScanProfileWorker (Profiles was set)")
-
-	err := worker.Work(context.Background(), &river.Job[ScanProfileJobArgs]{
-		Args: ScanProfileJobArgs{ProfileID: "wire-scan", RunID: "wire-scan-r1"},
-	})
-
-	require.Error(t, err, "a zero-target TargetQuery profile must fail its run")
-	require.Equal(t, 1, cypher.calls,
-		"registerScanWorkers must propagate ScanDeps.CypherResolver to the registered ScanProfileWorker — "+
-			"if this is 0, the `cypherResolver: deps.CypherResolver` line in registerScanWorkers's "+
-			"addNucleiFanoutWorkers call was deleted")
-	require.True(t, runRepo.finished)
-	require.Equal(t, scan.StatusFailed, runRepo.finishStatus)
-}
-
-// fakeScanProfileRepoForWiring satisfies scan.ProfileRepo. Only GetProfile is
-// exercised by the wiring test above; every other method panics.
-type fakeScanProfileRepoForWiring struct {
-	profile scan.ScanProfile
-}
-
-func (f *fakeScanProfileRepoForWiring) CreateProfile(context.Context, string, string, []string, bool, string, bool, string, string, string) (scan.ScanProfile, error) {
-	panic("CreateProfile: not used by this test")
-}
-
-func (f *fakeScanProfileRepoForWiring) GetProfile(_ context.Context, _ string) (scan.ScanProfile, error) {
-	return f.profile, nil
-}
-
-func (f *fakeScanProfileRepoForWiring) ListProfiles(context.Context) ([]scan.ScanProfile, error) {
-	panic("ListProfiles: not used by this test")
-}
-
-func (f *fakeScanProfileRepoForWiring) UpdateProfile(context.Context, string, string, string, []string, bool, string, bool, string, string, string) (scan.ScanProfile, error) {
-	panic("UpdateProfile: not used by this test")
-}
-
-func (f *fakeScanProfileRepoForWiring) DeleteProfile(context.Context, string) error {
-	panic("DeleteProfile: not used by this test")
-}
-
-func (f *fakeScanProfileRepoForWiring) CreateRunForProfile(context.Context, string, int) (scan.Run, error) {
-	panic("CreateRunForProfile: not used by this test")
-}
-
-func (f *fakeScanProfileRepoForWiring) CreateRunForProfileAndEnqueue(context.Context, string, int, func(context.Context, pgx.Tx, string) error) (scan.Run, error) {
-	panic("CreateRunForProfileAndEnqueue: not used by this test")
-}
-
-func (f *fakeScanProfileRepoForWiring) GetScanFindingByAssetCheck(context.Context, string, string) (scan.ScanFinding, error) {
-	panic("GetScanFindingByAssetCheck: not used by this test")
-}
-
-func (f *fakeScanProfileRepoForWiring) BatchGetScanFindingsByAssetIDs(context.Context, []string) ([]scan.ScanFinding, error) {
-	panic("BatchGetScanFindingsByAssetIDs: not used by this test")
-}
-
-func (f *fakeScanProfileRepoForWiring) UpsertScanFinding(context.Context, scan.ScanFinding) error {
-	panic("UpsertScanFinding: not used by this test")
-}
-
-func (f *fakeScanProfileRepoForWiring) ListOpenScanFindingsByRun(context.Context, string) ([]scan.ScanFinding, error) {
-	panic("ListOpenScanFindingsByRun: not used by this test")
-}
-
-func (f *fakeScanProfileRepoForWiring) ListDriftEnabledProfiles(context.Context) ([]scan.ScanProfile, error) {
-	panic("ListDriftEnabledProfiles: not used by this test")
-}
-
-// fakeScanRunRepoForWiring satisfies scan.Repo. Only FinishRun is exercised.
-type fakeScanRunRepoForWiring struct {
-	finished     bool
-	finishStatus scan.Status
-}
-
-func (f *fakeScanRunRepoForWiring) CreateRun(context.Context, int) (scan.Run, error) {
-	panic("CreateRun: not used by this test")
-}
-
-func (f *fakeScanRunRepoForWiring) FinishRun(_ context.Context, _ string, status scan.Status, _ int, _ string, _ []string, _ int, _ []string, _ string) error {
-	f.finished = true
-	f.finishStatus = status
-	return nil
-}
-
-func (f *fakeScanRunRepoForWiring) CancelRun(context.Context, string) error {
-	panic("CancelRun: not used by this test")
-}
-
-func (f *fakeScanRunRepoForWiring) GetRun(context.Context, string) (scan.Run, error) {
-	panic("GetRun: not used by this test")
-}
-
-func (f *fakeScanRunRepoForWiring) ListRuns(context.Context, int) ([]scan.Run, error) {
-	panic("ListRuns: not used by this test")
-}
-
-func (f *fakeScanRunRepoForWiring) FailStaleRuns(context.Context, time.Time) ([]string, error) {
-	panic("FailStaleRuns: not used by this test")
 }

@@ -15,7 +15,7 @@ import (
 // doc comment). A ClickHouse GROUP BY has no row to report it from at all.
 func TestMergeExpectedSourcesReportsZeroForNeverProduced(t *testing.T) {
 	live := []SourceActivity{{Source: "cspm", LastActivityUnix: 1720000000}}
-	expected := []string{"cspm", "nuclei"}
+	expected := []string{"cspm", "supply_chain"}
 
 	got := mergeExpectedSources(live, expected)
 
@@ -24,9 +24,9 @@ func TestMergeExpectedSourcesReportsZeroForNeverProduced(t *testing.T) {
 		byName[sa.Source] = sa.LastActivityUnix
 	}
 	assert.Equal(t, int64(1720000000), byName["cspm"])
-	gotNuclei, ok := byName["nuclei"]
+	gotSupplyChain, ok := byName["supply_chain"]
 	require.True(t, ok, "an expected source with no live rows must still be reported")
-	assert.Zero(t, gotNuclei, "an expected source that has never produced must report 0, not be omitted")
+	assert.Zero(t, gotSupplyChain, "an expected source that has never produced must report 0, not be omitted")
 }
 
 // sourceActivityTimeout must stay at or below obsScrapeBudget, the same
@@ -103,4 +103,21 @@ func TestServiceSourceActivity_WrapsRepoError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "SourceActivity:", "must be wrapped with its own frame, matching every sibling method")
 	assert.Contains(t, err.Error(), "connection refused", "the underlying repo error must still be visible, not swallowed")
+}
+
+func TestSourceActivityOmitsRetiredScanning(t *testing.T) {
+	repo := &fakeRepo{stored: []Finding{
+		{ID: "old", Source: "nuclei", LastObservedAt: time.Now()},
+		{ID: "import", Source: "custom", LastObservedAt: time.Now()},
+		{ID: "new", Source: "new_supported_source", LastObservedAt: time.Now()},
+	}}
+	got, err := NewService(repo).SourceActivity(context.Background())
+	require.NoError(t, err)
+	sources := map[string]bool{}
+	for _, s := range got {
+		sources[s.Source] = true
+	}
+	require.NotContains(t, sources, "nuclei")
+	require.NotContains(t, sources, "custom")
+	require.Contains(t, sources, "new_supported_source")
 }

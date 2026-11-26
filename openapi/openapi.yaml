@@ -43,7 +43,6 @@ tags:
   - name: diskscan
   - name: compliance
   - name: explore
-  - name: scans
   - name: connectors
 
 security:
@@ -185,29 +184,6 @@ paths:
     $ref: './domains/explore.yaml#/components/pathItems/dspmSummary'
   /api/dspm/stores:
     $ref: './domains/explore.yaml#/components/pathItems/dspmStores'
-
-  /api/scans:
-    $ref: './domains/scan.yaml#/components/pathItems/scans'
-  /api/scans/{id}:
-    $ref: './domains/scan.yaml#/components/pathItems/getScan'
-  /api/scans/{id}/findings:
-    $ref: './domains/scan.yaml#/components/pathItems/getScanFindings'
-  /api/scans/templates/validate:
-    $ref: './domains/scan.yaml#/components/pathItems/validateTemplate'
-  /api/scans/templates/test:
-    $ref: './domains/scan.yaml#/components/pathItems/testTemplate'
-  /api/scans/templates/generate:
-    $ref: './domains/scan.yaml#/components/pathItems/generateTemplate'
-  /api/scan-profiles:
-    $ref: './domains/scan.yaml#/components/pathItems/scanProfiles'
-  /api/scan-profiles/{id}:
-    $ref: './domains/scan.yaml#/components/pathItems/scanProfile'
-  /api/scan-profiles/{id}/trigger:
-    $ref: './domains/scan.yaml#/components/pathItems/triggerScanProfile'
-  /api/scans/import:
-    $ref: './domains/scan.yaml#/components/pathItems/importFindings'
-  /api/workflows/presets:
-    $ref: './domains/scan.yaml#/components/pathItems/workflowPresets'
 
   /api/connectors:
     $ref: './domains/connector.yaml#/components/pathItems/connectors'

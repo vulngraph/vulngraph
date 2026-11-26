@@ -293,7 +293,11 @@ func serialSize(serial uint64) (int, bool) {
 	case serial == 6 || serial == 7:
 		return 8, true
 	case serial >= 12:
-		return int((serial - 12) / 2), true
+		size := (serial - 12) / 2
+		if size > uint64(^uint(0)>>1) {
+			return 0, false
+		}
+		return int(size), true
 	}
 	return 0, false
 }
@@ -314,7 +318,7 @@ func parseRecord(rec []byte) ([]column, error) {
 		}
 		pos += m
 		size, ok := serialSize(serial)
-		if !ok || body+size > len(rec) {
+		if !ok || size < 0 || body > len(rec) || size > len(rec)-body {
 			return nil, fmt.Errorf("sqlite: column of serial type %d overruns the record", serial)
 		}
 		cols = append(cols, column{serial: serial, data: rec[body : body+size]})

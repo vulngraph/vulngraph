@@ -45,39 +45,6 @@ func (SyncConnectorArgs) InsertOpts() river.InsertOpts {
 	}
 }
 
-// driftScanner enqueues drift-triggered scans for changed external assets.
-// Injected from worker.go so sync.go does not import the scan or jobs packages
-// (circular dep). nil = drift scanning disabled.
-type driftScanner interface {
-	EnqueueDriftScans(ctx context.Context, externalAssetIDs []string) error
-}
-
-// driftTriggerAssets returns which changed assets are externally reachable
-// (public IP or domain) — the set that should trigger drift-enabled scan
-// profiles. Extracted to a pure function so its independence from
-// maxPartialCorrelateIDs is a plain unit test, no live Postgres/ClickHouse
-// required — see TestDriftTriggerAssets_UnaffectedByPartialCorrelateSizeCap.
-func driftTriggerAssets(toIngest []asset.Asset, changedAssetIDs map[string]bool) []string {
-	// Deduped: EnqueueDriftScans' InsertMany builds one ScanAssetArgs row per
-	// (asset, profile) pair with UniqueOpts, and Postgres' ON CONFLICT DO
-	// UPDATE rejects a single INSERT statement that would touch the same
-	// conflict target twice ("ON CONFLICT DO UPDATE command cannot affect row
-	// a second time") — a duplicate asset ID in toIngest would
-	// fail the WHOLE batch, losing every drift trigger for the sweep, not just
-	// the duplicate. toIngest is built by a
-	// plain per-asset append with no ID dedup upstream, so this is the
-	// deliberate backstop, not defense against an impossible input.
-	seen := map[string]bool{}
-	var externalIDs []string
-	for _, a := range toIngest {
-		if changedAssetIDs[a.ID] && (a.PublicIP != "" || a.Domain != "") && !seen[a.ID] {
-			seen[a.ID] = true
-			externalIDs = append(externalIDs, a.ID)
-		}
-	}
-	return externalIDs
-}
-
 // scopeForgetter evaluates what deletion enforcement WOULD forget for the
 // scopes a sweep proved it enumerated completely. Injected so sync.go
 // does not import the forget domain, and nil-able because a pod without it must
@@ -101,7 +68,6 @@ type SyncWorker struct {
 	assets     *asset.Service
 	findings   *finding.Service
 	checks     *checks.Registry
-	drift      driftScanner   // nil when drift scanning is disabled
 	metrics    *obs.Metrics   // nil when metrics are disabled
 	forget     scopeForgetter // nil when the deletion evaluation is disabled
 	// suppressions carries a suppression across a check split (sync_supersede.go);
@@ -533,22 +499,6 @@ func (w *SyncWorker) Work(ctx context.Context, job *river.Job[SyncConnectorArgs]
 				enqueuePartialCorrelate(ids)
 			}
 
-			// Drift scan: for changed external assets, trigger drift-enabled scan
-			// profiles immediately. External = the asset has a public IP or domain.
-			// Deliberately OUTSIDE the maxPartialCorrelateIDs cap above: a sync that
-			// changes so many assets it falls back to a full correlate sweep is
-			// exactly the sync whose newly-changed external assets must NOT also
-			// silently skip drift scanning — see
-			// TestDriftTriggerAssets_UnaffectedByPartialCorrelateSizeCap.
-			if w.drift != nil {
-				if externalIDs := driftTriggerAssets(toIngest, changedAssetIDs); len(externalIDs) > 0 {
-					if driftErr := w.drift.EnqueueDriftScans(ctx, externalIDs); driftErr != nil {
-						logger.Warn().Err(driftErr).
-							Int("external_changed", len(externalIDs)).
-							Msg("sync: drift scan enqueue failed (non-fatal)")
-					}
-				}
-			}
 		}
 	}
 

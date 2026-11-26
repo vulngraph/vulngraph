@@ -97,7 +97,6 @@ func TestOpenAPIContract(t *testing.T) {
 		{"compliance framework unknown", http.MethodGet, "/api/compliance/frameworks/nope", viewer, "", http.StatusNotFound},
 		{"compliance export", http.MethodGet, "/api/compliance/frameworks/nist-800-53-r5/export", admin, "", http.StatusOK},
 		{"compliance export viewer", http.MethodGet, "/api/compliance/frameworks/nist-800-53-r5/export", viewer, "", http.StatusForbidden},
-		{"list scans", http.MethodGet, "/api/scans", admin, "", http.StatusOK},
 		{"list connectors", http.MethodGet, "/api/connectors", admin, "", http.StatusOK},
 		{"llm usage", http.MethodGet, "/api/llm/usage", admin, "", http.StatusOK},
 		{"llm usage bad month", http.MethodGet, "/api/llm/usage?month=13", admin, "", http.StatusBadRequest},

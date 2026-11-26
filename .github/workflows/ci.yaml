@@ -1101,10 +1101,13 @@ jobs:
           docker run --rm graph:ci-smoke version
           echo "OK: binary loads its shared libraries (graph version exited 0)"
 
+  pipeline-throughput:
+    uses: ./.github/workflows/pipeline-throughput.yaml
+
   required:
     name: CI required
     if: always()
-    needs: [fetch-ladybug, lint, unit, race, generated, govulncheck, guard-mutation, migration-order, secret-scan, frontend, integration, release-stack, helm, docker-build]
+    needs: [fetch-ladybug, lint, unit, race, generated, govulncheck, guard-mutation, migration-order, secret-scan, frontend, integration, release-stack, helm, docker-build, pipeline-throughput]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every applicable check to pass
@@ -1115,7 +1118,7 @@ jobs:
           python3 - <<'PYCODE'
           import json, os, sys
           results = json.loads(os.environ["RESULTS"])
-          required = {"fetch-ladybug", "lint", "unit", "race", "generated", "govulncheck", "guard-mutation", "secret-scan", "frontend", "integration", "release-stack", "helm"}
+          required = {"fetch-ladybug", "lint", "unit", "race", "generated", "govulncheck", "guard-mutation", "secret-scan", "frontend", "integration", "release-stack", "helm", "pipeline-throughput"}
           pr_only = {"migration-order", "docker-build"}
           expected = required | pr_only
           if set(results) != expected:

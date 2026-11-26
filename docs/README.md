@@ -6,9 +6,6 @@ install with demo data, then your own cloud, then production. [`examples.md`](ex
 whether to trust it with access to your cloud. [`threat-model.md`](threat-model.md) sets out the
 trust boundaries and what is and is not defended.
 
-Coming from Cartography? [`comparing-cartography.md`](comparing-cartography.md) explains the
-workflow differences, sync tradeoffs and how to make a fair comparison on your environment.
-
 To understand the code, start here, in this order:
 
 1. [`architecture.md`](architecture.md) — the architecture overview: the

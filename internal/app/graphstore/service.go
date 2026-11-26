@@ -29,14 +29,11 @@ type AssetSource interface {
 // so the graph build can degrade internet_hops to ReachUnknown (fail-open)
 // instead of asserting ReachNone off an incomplete edge set.
 //
-// VerifyExpiredEphemeral lets bulkSyncCopy check a missing endpoint's declared
-// ephemeral type against the asset table before calling it a corpse, rather
-// than trusting the declared type on its own. asset.Service (the only
-// production implementer) backs it with a single bulk ClickHouse query per
-// build; it is never called per edge.
+// VerifyDepartedAssets checks missing endpoints against inventory and
+// authoritative deletion records. Reads are batched, never per edge.
 type EdgeSource interface {
 	AllEdges(ctx context.Context, proj asset.SyncProjection) (asset.EdgeSyncResult, error)
-	VerifyExpiredEphemeral(ctx context.Context, ids []string) (map[string]bool, error)
+	VerifyDepartedAssets(ctx context.Context, ids []string) (map[string]bool, error)
 }
 
 // NodeSignals is the per-asset security context projected onto the Asset node so
@@ -92,19 +89,22 @@ type SignalSource interface {
 // write lock, so it waits for in-flight reads to drain before the old database is
 // closed — readers never observe a half-built or freed graph.
 type Service struct {
-	mu              sync.RWMutex
-	db              *ladybugDB
-	bufferMB        int           // remembered so SyncFromSources can build a fresh DB
-	poolSize        int           // connection pool depth (LADYBUG_POOL_SIZE)
-	queryThreads    int           // per-connection Ladybug threads (LADYBUG_QUERY_THREADS)
-	loadThreads     int           // COPY-load parallelism (LADYBUG_LOAD_THREADS); 0 = default
-	snapshotPath    string        // LADYBUG_SNAPSHOT_PATH; empty = snapshots disabled
-	synced          atomic.Bool   // true once the first full sync has completed
-	lastTopoVersion atomic.Uint64 // topology version from last full SyncFromSources
-	nodeCount       atomic.Int64  // asset count in the live graph; 0 = empty/never-built
-	emptyConfirmed  atomic.Bool   // two consecutive sweeps built the same empty graph: an empty estate, not a blip
-	lastBuiltAt     atomic.Int64  // unix-nanos of the last successful build (sync or snapshot)
-	reachComplete   atomic.Bool   // last build fetched every reach edge type and all assets untruncated (obs gauge)
+	packageInventory explore.Repo
+	packageNames     PackageNameReader
+	packageSeeds     atomic.Pointer[packageSeedSet]
+	mu               sync.RWMutex
+	db               *ladybugDB
+	bufferMB         int           // remembered so SyncFromSources can build a fresh DB
+	poolSize         int           // connection pool depth (LADYBUG_POOL_SIZE)
+	queryThreads     int           // per-connection Ladybug threads (LADYBUG_QUERY_THREADS)
+	loadThreads      int           // COPY-load parallelism (LADYBUG_LOAD_THREADS); 0 = default
+	snapshotPath     string        // LADYBUG_SNAPSHOT_PATH; empty = snapshots disabled
+	synced           atomic.Bool   // true once the first full sync has completed
+	lastTopoVersion  atomic.Uint64 // topology version from last full SyncFromSources
+	nodeCount        atomic.Int64  // asset count in the live graph; 0 = empty/never-built
+	emptyConfirmed   atomic.Bool   // two consecutive sweeps built the same empty graph: an empty estate, not a blip
+	lastBuiltAt      atomic.Int64  // unix-nanos of the last successful build (sync or snapshot)
+	reachComplete    atomic.Bool   // last build fetched every reach edge type and all assets untruncated (obs gauge)
 	// edgeFetchComplete is the completeness signal — every synced edge tier fetched
 	// in full — which reachComplete must not be mistaken for. See
 	// asset.EdgeSyncResult.FetchComplete.

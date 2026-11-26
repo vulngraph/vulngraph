@@ -64,6 +64,7 @@ type AssetDeletion struct {
 	AssetID     string
 	ConnectorID string
 	DeletedAt   time.Time
+	RetiredAt   pgtype.Timestamptz
 }
 
 type AutomationPolicy struct {

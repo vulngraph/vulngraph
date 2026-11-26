@@ -133,8 +133,8 @@
       "name": "DependsOn",
       "from": "Repo",
       "to": "Package",
-      "loaded": true,
-      "expand": true,
+      "loaded": false,
+      "expand": false,
       "doc": "SBOM repo dependency"
     },
     {
@@ -213,9 +213,9 @@
       "name": "RunsPackage",
       "from": "Asset",
       "to": "Package",
-      "loaded": true,
-      "expand": true,
-      "doc": "asset runs this package. Expand-traversable, so a Package node has an inbound branch and \"where is this package used\" answers through the structured query path."
+      "loaded": false,
+      "expand": false,
+      "doc": "asset runs this package; available through bounded inventory exploration"
     },
     {
       "name": "RunsIn",
@@ -451,7 +451,7 @@
     {
       "type": "runs_package",
       "rel": "RunsPackage",
-      "tier": "critical"
+      "tier": "unsynced"
     },
     {
       "type": "runs_image",
@@ -476,7 +476,7 @@
     {
       "type": "depends_on",
       "rel": "DependsOn",
-      "tier": "bulk"
+      "tier": "unsynced"
     },
     {
       "type": "peered_with",

@@ -51,13 +51,14 @@ func serviceAsset(svc corev1.Service, cluster string, now time.Time) asset.Asset
 	// scheme keeps the address and is flagged scheme_assumed: it was not
 	// observed private, so it is not taken as private.
 	scheme := serviceLBScheme(svc)
-	internal := scheme == schemeInternal
-	publicIP := ""
-	if !internal && len(svc.Status.LoadBalancer.Ingress) > 0 {
-		publicIP = svc.Status.LoadBalancer.Ingress[0].IP
-		if publicIP == "" {
-			publicIP = svc.Status.LoadBalancer.Ingress[0].Hostname
-		}
+	var addresses []string
+	for _, endpoint := range svc.Status.LoadBalancer.Ingress {
+		addresses = append(addresses, endpoint.IP, endpoint.Hostname)
+	}
+	publicIP, privateOnly, _ := lbAddress(addresses)
+	internal := scheme == schemeInternal || privateOnly
+	if internal {
+		publicIP = ""
 	}
 	ranges := lbSourceRanges(svc)
 	class := ""

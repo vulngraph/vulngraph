@@ -29,8 +29,6 @@ var retentionEdgeTypes = func() map[string]bool {
 		"connected_via_sg",
 		"peered_with",
 		"deploys_to",
-		"depends_on",
-		"runs_package",
 		// RunsImage is a Loaded, expand-traversable rel, so its pod endpoint must
 		// survive the prune or the edge is dropped as endpointAbsent and the pod
 		// half of "where does this package run" goes missing.

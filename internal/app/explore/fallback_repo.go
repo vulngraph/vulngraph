@@ -29,6 +29,9 @@ func NewFallbackRepo(primary, fallback Repo, observer ...TierObserver) Repo {
 }
 
 func (r *FallbackRepo) MatchSeed(ctx context.Context, m NodeMatch, limit int) ([]Node, error) {
+	if inventorySeed(m) {
+		return r.fallback.MatchSeed(ctx, m, limit)
+	}
 	nodes, err := r.primary.MatchSeed(ctx, m, limit)
 	if err != nil {
 		return r.fallback.MatchSeed(ctx, m, limit)
@@ -49,7 +52,7 @@ func (r *FallbackRepo) Neighbors(ctx context.Context, ids, edgeTypes []string, d
 		r.observe("neighbors")
 		return r.fallback.Neighbors(ctx, ids, edgeTypes, dir)
 	}
-	return edges, nodes, truncated, nil
+	return mergeInventoryNeighbors(ctx, r.fallback, ids, edgeTypes, dir, edges, nodes, truncated)
 }
 
 func (r *FallbackRepo) observe(op string) {

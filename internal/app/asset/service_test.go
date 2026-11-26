@@ -195,6 +195,16 @@ func (f *fakeRepo) ChangeLog(_ context.Context, _ string, _ int) ([]FieldChange,
 	return nil, nil
 }
 
+func (f *fakeRepo) PackageRiskByRunner(context.Context) (map[string]uint8, error) { return nil, nil }
+
+func (f *fakeRepo) FindPackageVersions(ctx context.Context, name string, limit int) ([]Asset, error) {
+	return f.FindByExactName(ctx, name, limit)
+}
+
+func (f *fakeRepo) RetireAssets(context.Context, map[string]time.Time) ([]string, error) {
+	return nil, nil
+}
+
 func (f *fakeRepo) PurgeAccount(_ context.Context, provider, accountID string) (int, error) {
 	n := 0
 	for id, a := range f.assets {

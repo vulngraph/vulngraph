@@ -86,6 +86,7 @@ type SupplyChainExposure struct {
 	// findings (optional; nil = a package finding always speaks for its runners
 	// too). See FleetCanonical and AlertCarrier.
 	Fleets FleetFindingLister
+	Reach  ReachProvider
 }
 
 func (SupplyChainExposure) Name() string { return "supply_chain_exposure" }
@@ -240,7 +241,7 @@ func (s SupplyChainExposure) reposDeployExposure(ctx context.Context, repoIDs []
 	// Ladybug path: single Neighbors call returning nodes with Exposed signal.
 	if s.Ladybug != nil {
 		wDeployed, wExposed, kErr := s.Ladybug.DeployedExposure(ctx, repoIDs)
-		if kErr == nil {
+		if kErr == nil && wExposed {
 			return deployExposure{lineage: true, deployed: wDeployed, exposed: wExposed}, nil
 		}
 		// Ladybug error → fall through to CH path below.
@@ -260,19 +261,18 @@ func (s SupplyChainExposure) reposDeployExposure(ctx context.Context, repoIDs []
 		workloadIDs = workloadIDs[:maxSupplyChainWorkloads]
 	}
 
-	wlOut, err := s.Graph.EdgesOutBatch(ctx, workloadIDs, "exposed_to_internet")
+	exposed, unknown, err := s.workloadExposure(ctx, workloadIDs)
 	if err != nil {
 		return deployExposure{lineage: true, deployed: true}, err
 	}
-	return deployExposure{lineage: true, deployed: true, exposed: len(wlOut) > 0, truncated: truncated}, nil
+	return deployExposure{lineage: true, deployed: true, exposed: exposed, truncated: truncated || unknown}, nil
 }
 
 // imageDeployExposure is the container-image lineage: package ← runs_package ←
 // container_image ← runs_image ← workload (k8s_pod, ecs_service, cloudrun_service)
-// → exposed_to_internet. Only DIRECT workload exposure is seen here; an
-// LB/ingress-fronted workload is reached by the internet-hops BFS instead. It is CH-only
-// (runs_package/runs_image are BFS-only rels, not query-traversable in Ladybug —
-// see graphschema), fail-open, and bounded at every hop. imgEdges are the
+// → exposed_to_internet. Membership comes from inventory; workload exposure
+// also consults the resident internet-hops map for LB/ingress paths. Every hop
+// is bounded, and missing reach evidence remains unknown. imgEdges are the
 // package's non-VM runs_package edges (step 1, read once by the caller).
 func (s SupplyChainExposure) imageDeployExposure(ctx context.Context, imgEdges []asset.Edge) (deployExposure, error) {
 	imageIDs := uniqueSrcIDs(imgEdges)
@@ -316,11 +316,11 @@ func (s SupplyChainExposure) imageDeployExposure(ctx context.Context, imgEdges [
 	}
 
 	// Step 3: pod → internet.
-	podOut, err := s.Graph.EdgesOutBatch(ctx, podIDs, "exposed_to_internet")
+	exposed, unknown, err := s.workloadExposure(ctx, podIDs)
 	if err != nil {
 		return deployExposure{lineage: true, deployed: true}, err
 	}
-	return deployExposure{lineage: true, deployed: true, exposed: len(podOut) > 0, truncated: truncated}, nil
+	return deployExposure{lineage: true, deployed: true, exposed: exposed, truncated: truncated || unknown}, nil
 }
 
 // isSupplyChainPackage reports whether a finding's resource is a bare package

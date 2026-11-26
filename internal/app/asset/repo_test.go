@@ -151,6 +151,8 @@ var assetReadersRequiringLiveness = map[string]string{
 // assets table WITHOUT the liveness gate, each with a reason. A reader missing
 // from both maps fails TestAssetReadersApplyLiveness.
 var livenessExemptAssetQueries = map[string]string{
+	"retireAssetVersions":        "a conditional DELETE applying complete-enumeration proof to all stored versions, not an inventory reader",
+	"retirementLastSeen":         "checks the latest observation against a deletion proof; includes every version to preserve resurrection",
 	"insertAssets":               "an INSERT, not a read",
 	"selectChangeLog":            "reads asset_change_log, a plain append-only audit log — not the assets table",
 	"assetArgMaxSelect":          "the shared id-lookup SELECT prefix; the gate belongs to whichever reader composes it, and its two composers (selectAsset, ByIDs) are exempt below",

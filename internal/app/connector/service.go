@@ -47,7 +47,9 @@ type Repo interface {
 	CollectingAsset(ctx context.Context, assetID string) ([]string, error)
 	UpsertAssetHashEntries(ctx context.Context, connectorID string, entries []AssetHashEntry) error
 	DeleteAssetHashes(ctx context.Context, connectorID string, ids []string) error
-	RecordAssetDeletions(ctx context.Context, connectorID string, ids []string, at time.Time) error
+	RecordAssetDeletions(ctx context.Context, connectorID string, ids []string, at time.Time) ([]string, error)
+	PendingAssetRetirements(ctx context.Context, limit int) (map[string]time.Time, error)
+	CompleteAssetRetirements(ctx context.Context, deletions map[string]time.Time) error
 	PruneAssetDeletions(ctx context.Context, cutoff time.Time) (int64, error)
 	AssetDeletions(ctx context.Context, ids []string) (map[string]time.Time, error)
 	RecordProvenCapability(ctx context.Context, connectorID string, capability ProvenCapability, at time.Time) error
@@ -519,19 +521,20 @@ func (s *Service) DeleteAssetHashes(ctx context.Context, connectorID string, ids
 // sync's own deletion decision, the same ids whose hashes it drops — so the
 // derived-finding jobs can tell a deleted resource from one that merely stopped
 // being collected.
-func (s *Service) RecordAssetDeletions(ctx context.Context, connectorID string, ids []string, at time.Time) error {
+func (s *Service) RecordAssetDeletions(ctx context.Context, connectorID string, ids []string, at time.Time) ([]string, error) {
 	if len(ids) == 0 {
-		return nil
+		return nil, nil
 	}
-	if err := s.repo.RecordAssetDeletions(ctx, connectorID, ids, at); err != nil {
-		return fmt.Errorf("RecordAssetDeletions: %w", err)
+	proven, err := s.repo.RecordAssetDeletions(ctx, connectorID, ids, at)
+	if err != nil {
+		return nil, fmt.Errorf("RecordAssetDeletions: %w", err)
 	}
 	// Housekeeping, best-effort: a record past retention outlives the asset
 	// row it describes, and a reader still compares it with last_seen.
 	if _, err := s.repo.PruneAssetDeletions(ctx, at.Add(-assetDeletionRetention)); err != nil {
 		log.FromContext(ctx).Warn().Err(err).Msg("connector: asset deletion prune failed")
 	}
-	return nil
+	return proven, nil
 }
 
 // AssetDeletions returns, for each of ids a sync proved deleted, when.

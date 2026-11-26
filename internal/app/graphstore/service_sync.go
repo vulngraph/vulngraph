@@ -8,6 +8,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
+	"github.com/vulngraph/vulngraph/internal/graphschema"
 	"github.com/vulngraph/vulngraph/pkg/log"
 )
 
@@ -37,10 +38,23 @@ func (s *Service) SyncFromSources(ctx context.Context, topoVersion uint64, asset
 	// retries.
 	var (
 		assetRes      asset.AssetSyncResult
+		packageRisk   map[string]uint8
 		edgeRes       asset.EdgeSyncResult
 		sigByResource map[string]NodeSignals
 	)
 	g, gctx := errgroup.WithContext(ctx)
+	if source, ok := assets.(interface {
+		PackageRiskByRunner(context.Context) (map[string]uint8, error)
+	}); ok {
+		g.Go(func() error {
+			var err error
+			packageRisk, err = source.PackageRiskByRunner(gctx)
+			if err != nil {
+				return fmt.Errorf("package risk rollup: %w", err)
+			}
+			return nil
+		})
+	}
 	g.Go(func() error {
 		var err error
 		assetRes, err = assets.ListAll(gctx, SyncProjection())
@@ -66,6 +80,9 @@ func (s *Service) SyncFromSources(ctx context.Context, topoVersion uint64, asset
 		if err != nil {
 			return fmt.Errorf("signal rollup: %w", err)
 		}
+		if sigByResource == nil {
+			sigByResource = map[string]NodeSignals{}
+		}
 		return nil
 	})
 	if err := g.Wait(); err != nil {
@@ -74,7 +91,23 @@ func (s *Service) SyncFromSources(ctx context.Context, topoVersion uint64, asset
 	phases.mark(phaseLoad)
 
 	allAssets := assetRes.Assets
+	for i := range allAssets {
+		allAssets[i].RiskScore = max(allAssets[i].RiskScore, packageRisk[allAssets[i].ID])
+	}
 	allEdges := edgeRes.Edges
+	coreEdges := allEdges[:0]
+	for _, e := range allEdges {
+		if !graphschema.IsOnDemandEdge(e.EdgeType) {
+			coreEdges = append(coreEdges, e)
+		}
+	}
+	clear(allEdges[len(coreEdges):])
+	allEdges = coreEdges
+	var liveErr error
+	allEdges, liveErr = liveTraversalEdges(ctx, allAssets, allEdges, edges.VerifyDepartedAssets)
+	if liveErr != nil {
+		return fmt.Errorf("SyncFromSources: %w", liveErr)
+	}
 	// reachComplete gates ReachNone: when any attacker-movement edge type was
 	// truncated or the whole bulk pass failed, a not-reached node gets
 	// ReachUnknown (fail-open) instead — asserting "no attack path" off an
@@ -240,7 +273,7 @@ func (s *Service) SyncFromSources(ctx context.Context, topoVersion uint64, asset
 		newDB.close()
 		return fmt.Errorf("SyncFromSources: write conn: %w", err)
 	}
-	loadStats, err := bulkSyncCopy(ctx, wc, allAssets, allEdges, ov, sigByResource, reachComplete, s.resolveLoadThreads(), edges.VerifyExpiredEphemeral)
+	loadStats, err := bulkSyncCopy(ctx, wc, allAssets, allEdges, ov, sigByResource, reachComplete, s.resolveLoadThreads(), edges.VerifyDepartedAssets)
 	if err != nil {
 		wc.Close()
 		newDB.close()

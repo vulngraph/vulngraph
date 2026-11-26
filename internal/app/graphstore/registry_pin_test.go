@@ -30,13 +30,13 @@ func TestRegistryDerivationsMatchLegacy(t *testing.T) {
 		// an attack-path edge, so it's uncapped critical + reach like the other
 		// privilege-escalation edges, not bulk like the other 3 SSO edge types.
 		"grants_admin",
-		// The three Inherit types moved bulk→critical. Inheritance is
+		// The runtime Inherit types moved bulk→critical. Inheritance is
 		// reachability, and the bulk tier's shared 500k cap — applied
-		// after ORDER BY edge_type — was starving all three to ZERO rows on every
+		// after ORDER BY edge_type — was starving these to ZERO rows on every
 		// build, which emptied graphstore's inheritAdj and made ReachComplete()
 		// false forever. graphschema.TestReachAndInheritTypesAreCritical is the
 		// invariant; this is the conscious pin.
-		"runs_image", "runs_container", "runs_package",
+		"runs_image", "runs_container",
 		// member_of is critical-tier. It is not a Reach type, so the
 		// invariant test does not force the tier — this is the deliberate choice:
 		// the bulk tier's shared cap is at its limit and starves alphabetically-late
@@ -46,13 +46,13 @@ func TestRegistryDerivationsMatchLegacy(t *testing.T) {
 		// defined_in moved bulk→critical when it became an Inherit
 		// type. It is the IaC-ownership half of repo reachability: every defined_in
 		// rel points <resource> → Repo, so the declaring repo takes the declared
-		// resource's hop count. Same invariant as the three runs_* types above —
+		// resource's hop count. Same invariant as the runs_* types above —
 		// inheritance IS reachability, so it cannot sit under the bulk cap.
 		"defined_in",
 	}, graphschema.TierEdgeTypes(graphschema.TierCritical), "critical tier drifted")
 
 	assert.ElementsMatch(t, []string{
-		"dns_points_to", "depends_on",
+		"dns_points_to",
 		"peered_with", "contains_data",
 		// in_vpc LEFT this tier (→ unsynced): InVPC was Loaded but
 		// every in_vpc destination type is in NeverSyncTypes, so all fetched
@@ -79,7 +79,7 @@ func TestRegistryDerivationsMatchLegacy(t *testing.T) {
 		"ExposedToInternet", "DnsPointsTo", "ConnectedViaSG", "AllowsFrom",
 		"ProtectedBy", "HasRole", "ExecutesAs", "ExecutesAsK8sWorkload",
 		"CanAssume", "CanEscalateTo", "DeploysTo", "DeploysToService",
-		"DependsOn", "Binds", "AccessesSecret", "FederatedAccess",
+		"Binds", "AccessesSecret", "FederatedAccess",
 		// Directly-exposed k8s workload, split out of ExposedToInternet
 		// (Asset→Asset) because k8s_pod/k8s_deployment are K8sWorkload-labeled
 		// and every such row was dropped at COPY.
@@ -88,7 +88,7 @@ func TestRegistryDerivationsMatchLegacy(t *testing.T) {
 		// FederatedAccess (Repo→IamRole) because k8s_service_account is
 		// K8sWorkload-labeled and every such row was dropped at COPY.
 		"FederatedAccessK8sWorkload",
-		"RunsPackage", "Accesses", "AccessesK8sWorkload", "ContainsData",
+		"Accesses", "AccessesK8sWorkload", "ContainsData",
 		// SSO graph
 		"AssignedTo", "GrantsAccessTo", "GrantsAdmin",
 		// IaC ownership
@@ -114,6 +114,7 @@ func TestRegistryDerivationsMatchLegacy(t *testing.T) {
 		// the pod→ServiceAccount hop that had no rel table at all.
 		"FederatedAccessAsset", "MemberOf", "MemberOfGroup", "ExecutesAsK8sServiceAccount",
 	}
+	assert.ElementsMatch(t, []string{"runs_package", "depends_on"}, graphschema.OnDemandEdgeTypes())
 	var gotLoaded []string
 	for rel := range ladybugRelSpec {
 		gotLoaded = append(gotLoaded, rel)
@@ -149,12 +150,9 @@ func TestRegistryDerivationsMatchLegacy(t *testing.T) {
 		// k8s_service_account is K8sWorkload-labeled and Binds is Asset→Asset,
 		// so every SA-subject row was silently dropped at COPY.
 		"Binds", "BindsK8sWorkload",
-		// The "where is X used" branches. Without RunsPackage and DependsOn in
-		// the expand view a :Package node has NO inbound branch and the
-		// structured query path returns nothing for it even though the rows are in
-		// Ladybug. RunsImage: see wantLoaded. DeploysTo/
-		// DeploysToService complete repo→runtime in both directions.
-		"RunsPackage", "DependsOn", "RunsImage", "DeploysTo", "DeploysToService",
+		// Runtime image and deployment branches stay resident; package
+		// memberships are served from inventory on demand.
+		"RunsImage", "DeploysTo", "DeploysToService",
 		// RunsImageAsset: expanding an ECS / Cloud Run image reaches the
 		// service running it, exactly as RunsImage does for a pod.
 		"RunsImageAsset",

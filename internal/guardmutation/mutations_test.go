@@ -2667,8 +2667,8 @@ var mutations = []Mutation{
 		File: "internal/app/enrich/sources_supply_chain.go",
 		Old: "\tif truncated {\n" +
 			"\t\tworkloadIDs = workloadIDs[:maxSupplyChainWorkloads]\n" +
-			"\t}\n\n\twlOut",
-		New: "\n\twlOut",
+			"\t}\n\n\texposed, unknown",
+		New: "\n\texposed, unknown",
 		Why: "removes the workloadIDs cap reposDeployExposure's second hop needs — " +
 			"maxSupplyChainRepos only bounds the FIRST hop's input, so one repo's deploys_to fanning out " +
 			"to many CI/CD environments/regions can still put several thousand ids into an unbounded CHIn, " +

@@ -12,6 +12,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const completeAssetRetirements = `-- name: CompleteAssetRetirements :exec
+UPDATE asset_deletions SET retired_at = now()
+WHERE (asset_id, deleted_at) IN (
+    SELECT unnest($1::text[]), unnest($2::timestamptz[])
+)
+`
+
+type CompleteAssetRetirementsParams struct {
+	AssetIds   []string
+	DeletedAts []time.Time
+}
+
+func (q *Queries) CompleteAssetRetirements(ctx context.Context, arg CompleteAssetRetirementsParams) error {
+	_, err := q.db.Exec(ctx, completeAssetRetirements, arg.AssetIds, arg.DeletedAts)
+	return err
+}
+
 const createConnector = `-- name: CreateConnector :one
 INSERT INTO connectors (type, name, config_enc, enabled, event_source)
 VALUES ($1, $2, $3, $4, $5)
@@ -101,7 +118,12 @@ func (q *Queries) DisableAWSOrgChildren(ctx context.Context, orgConnectorID stri
 }
 
 const getAssetDeletions = `-- name: GetAssetDeletions :many
-SELECT asset_id, deleted_at FROM asset_deletions WHERE asset_id = ANY($1::text[])
+SELECT d.asset_id, d.deleted_at FROM asset_deletions AS d
+WHERE d.asset_id = ANY($1::text[])
+AND NOT EXISTS (
+    SELECT 1 FROM connector_asset_hashes AS owner
+    WHERE owner.asset_id = d.asset_id AND owner.connector_id::text <> d.connector_id
+)
 `
 
 type GetAssetDeletionsRow struct {
@@ -411,6 +433,41 @@ func (q *Queries) ListProvenCapabilities(ctx context.Context, connectorID string
 	return items, nil
 }
 
+const pendingAssetRetirements = `-- name: PendingAssetRetirements :many
+SELECT d.asset_id, d.deleted_at FROM asset_deletions AS d
+WHERE d.retired_at IS NULL
+AND NOT EXISTS (
+    SELECT 1 FROM connector_asset_hashes AS owner WHERE owner.asset_id = d.asset_id
+)
+ORDER BY d.deleted_at, d.asset_id
+LIMIT $1
+`
+
+type PendingAssetRetirementsRow struct {
+	AssetID   string
+	DeletedAt time.Time
+}
+
+func (q *Queries) PendingAssetRetirements(ctx context.Context, batchSize int32) ([]PendingAssetRetirementsRow, error) {
+	rows, err := q.db.Query(ctx, pendingAssetRetirements, batchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PendingAssetRetirementsRow
+	for rows.Next() {
+		var i PendingAssetRetirementsRow
+		if err := rows.Scan(&i.AssetID, &i.DeletedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const pruneAssetDeletions = `-- name: PruneAssetDeletions :execrows
 DELETE FROM asset_deletions WHERE deleted_at < $1
 `
@@ -425,24 +482,45 @@ func (q *Queries) PruneAssetDeletions(ctx context.Context, cutoff time.Time) (in
 	return result.RowsAffected(), nil
 }
 
-const recordAssetDeletions = `-- name: RecordAssetDeletions :exec
+const recordAssetDeletions = `-- name: RecordAssetDeletions :many
 INSERT INTO asset_deletions (asset_id, connector_id, deleted_at)
-SELECT unnest($1::text[]), $2, $3
+SELECT candidate.asset_id, $1, $2
+FROM unnest($3::text[]) AS candidate(asset_id)
+WHERE NOT EXISTS (
+    SELECT 1 FROM connector_asset_hashes AS owner
+    WHERE owner.asset_id = candidate.asset_id AND owner.connector_id::text <> $1
+)
 ON CONFLICT (asset_id) DO UPDATE
-    SET connector_id = EXCLUDED.connector_id, deleted_at = EXCLUDED.deleted_at
+    SET connector_id = EXCLUDED.connector_id, deleted_at = EXCLUDED.deleted_at, retired_at = NULL
+RETURNING asset_id
 `
 
 type RecordAssetDeletionsParams struct {
-	AssetIds    []string
 	ConnectorID string
 	DeletedAt   time.Time
+	AssetIds    []string
 }
 
 // Records the sync's proven deletions. Called with exactly
 // the ids whose hashes the same complete sweep deleted.
-func (q *Queries) RecordAssetDeletions(ctx context.Context, arg RecordAssetDeletionsParams) error {
-	_, err := q.db.Exec(ctx, recordAssetDeletions, arg.AssetIds, arg.ConnectorID, arg.DeletedAt)
-	return err
+func (q *Queries) RecordAssetDeletions(ctx context.Context, arg RecordAssetDeletionsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, recordAssetDeletions, arg.ConnectorID, arg.DeletedAt, arg.AssetIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var asset_id string
+		if err := rows.Scan(&asset_id); err != nil {
+			return nil, err
+		}
+		items = append(items, asset_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const recordProvenCapability = `-- name: RecordProvenCapability :exec

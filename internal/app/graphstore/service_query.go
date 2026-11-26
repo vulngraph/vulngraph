@@ -69,6 +69,9 @@ func (s *Service) RunCypherBudget(ctx context.Context, query string, budget Quer
 		}
 		return explore.Result{}, fmt.Errorf("RunCypherBudget: %w: %w", ErrReadOnly, &explore.QueryRejection{Reason: reason})
 	}
+	if graphquery.ReferencesLabels(query, NodePackage, RelRunsPackage, RelDependsOn) {
+		return explore.Result{}, &explore.QueryRejection{Reason: "package inventory is queried on demand; use a package named query or the structured graph query/expand API"}
+	}
 	var res explore.Result
 	err := s.withCypher(ctx, func(conn *ladybug.Connection) error {
 		var e error
@@ -183,6 +186,9 @@ func (s *Service) RunNamedQuery(ctx context.Context, name string, params map[str
 	}
 	if q == nil {
 		return explore.Result{}, fmt.Errorf("graphstore: unknown query %q", name)
+	}
+	if q.Inventory {
+		return s.runInventoryQuery(ctx, name, params)
 	}
 
 	// blast_radius and full_blast_radius_3hop are Go-orchestrated — see

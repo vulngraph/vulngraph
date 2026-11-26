@@ -155,12 +155,16 @@ UNION ALL MATCH (r:IamRole) WHERE r.id IN $ids RETURN r.id AS id`)
 }
 
 func TestEngineShapes_UntypedRelationshipAcrossLabels(t *testing.T) {
-	wc := loadShapesFixture(t)
+	assets, edges, sigs := copyFixture()
+	edges = append(edges, asset.Edge{SrcID: "lb-1", SrcType: "load_balancer", DstID: "repo-1", DstType: "github_repo", EdgeType: "defined_in"})
+	_, wc := openTestDB(t)
+	_, err := bulkSyncCopy(context.Background(), wc, assets, edges, newReachOverlay(edges), sigs, true, 4, nil)
+	require.NoError(t, err)
 	// lb-1 has one loaded edge into each of three labels: Asset (internet),
-	// IamRole and Package. The fork could silently drop the cross-label rows.
+	// IamRole and Repo. The fork could silently drop the cross-label rows.
 	typed := countQuery(t, wc, `MATCH (a:Asset {id: 'lb-1'})-[:ExposedToInternet]->(b) RETURN count(b)`) +
 		countQuery(t, wc, `MATCH (a:Asset {id: 'lb-1'})-[:HasRole]->(b) RETURN count(b)`) +
-		countQuery(t, wc, `MATCH (a:Asset {id: 'lb-1'})-[:RunsPackage]->(b) RETURN count(b)`)
+		countQuery(t, wc, `MATCH (a:Asset {id: 'lb-1'})-[:DefinedInAsset]->(b) RETURN count(b)`)
 	require.Equal(t, int64(3), typed)
 	require.Equal(t, typed, countQuery(t, wc, `MATCH (a {id: 'lb-1'})-[]->(b) RETURN count(b)`))
 }

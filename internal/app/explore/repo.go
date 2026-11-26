@@ -127,6 +127,7 @@ var expandEdgeTypes = func() []string {
 	for _, rel := range graphschema.ExpandRels() {
 		out = append(out, graphschema.EdgeTypesForRel(rel.Name)...)
 	}
+	out = append(out, graphschema.OnDemandEdgeTypes()...)
 	return out
 }()
 

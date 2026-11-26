@@ -103,7 +103,7 @@ func TestAssessMustFix_ExposedECSServiceWithKEVPackage(t *testing.T) {
 		notKEV := f
 		notKEV.KnownExploited = false
 		class, _ = assessMustFix(context.Background(), notKEV, asset.Asset{}, nil, nil,
-			SupplyChainExposure{Graph: g}, nil, nil, time.Now())
+			SupplyChainExposure{Graph: g, Reach: fakeReach{hops: reachNone, ok: true}}, nil, nil, time.Now())
 		require.Equal(t, MustFixContained, class)
 	})
 }

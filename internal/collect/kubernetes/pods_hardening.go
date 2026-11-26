@@ -44,9 +44,7 @@ func normalizeCapability(c corev1.Capability) string {
 // podHardeningSignals returns the metadata keys described above for one pod.
 func podHardeningSignals(pod corev1.Pod) map[string]string {
 	psc := pod.Spec.SecurityContext
-	containers := make([]corev1.Container, 0, len(pod.Spec.InitContainers)+len(pod.Spec.Containers))
-	containers = append(containers, pod.Spec.InitContainers...)
-	containers = append(containers, pod.Spec.Containers...)
+	containers := podContainers(pod)
 
 	added := map[string]bool{}
 	secretRefs := map[string]bool{}
@@ -89,7 +87,7 @@ func podHardeningSignals(pod corev1.Pod) map[string]string {
 			seccompUnrestricted = true
 		}
 
-		if containerAppArmorUnconfined(pod, c) {
+		if containerAppArmorUnconfined(pod, c.Container) {
 			appArmorUnconfined = true
 		}
 

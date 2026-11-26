@@ -278,7 +278,7 @@ func lbService(annotations map[string]string) corev1.Service {
 		ObjectMeta: metav1.ObjectMeta{Name: "svc", Namespace: "app", Annotations: annotations},
 		Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
 		Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{
-			Ingress: []corev1.LoadBalancerIngress{{IP: "10.0.5.5"}},
+			Ingress: []corev1.LoadBalancerIngress{{IP: "203.0.113.10"}},
 		}},
 	}
 }
@@ -406,14 +406,14 @@ func TestServiceAsset_SourceRanges(t *testing.T) {
 			a := serviceAsset(svc, "c", time.Now())
 			require.Equal(t, tt.ranges, a.Metadata["source_ranges"])
 			require.Equal(t, tt.restricted, a.Metadata["source_restricted"])
-			require.Equal(t, "10.0.5.5", a.PublicIP, "a source restriction does not make the address private")
+			require.Equal(t, "203.0.113.10", a.PublicIP, "a source restriction does not make the address private")
 		})
 	}
 }
 
 func TestServiceAsset_InternalLBHasNoPublicIP(t *testing.T) {
 	now := time.Now()
-	// Internal LB: private status IP must NOT surface as PublicIP.
+	// An explicitly internal LB must NOT surface as PublicIP.
 	internal := serviceAsset(lbService(map[string]string{"cloud.google.com/load-balancer-type": "Internal"}), "c", now)
 	require.Empty(t, internal.PublicIP, "internal LB must not be treated as internet-reachable")
 	require.Equal(t, "true", internal.Metadata["internal"])
@@ -421,7 +421,7 @@ func TestServiceAsset_InternalLBHasNoPublicIP(t *testing.T) {
 
 	// External LB: status address surfaces as PublicIP.
 	external := serviceAsset(lbService(nil), "c", now)
-	require.Equal(t, "10.0.5.5", external.PublicIP)
+	require.Equal(t, "203.0.113.10", external.PublicIP)
 	require.Equal(t, "false", external.Metadata["internal"])
 	require.Equal(t, "false", external.Metadata["scheme_assumed"])
 
@@ -435,7 +435,7 @@ func TestServiceAsset_InternalLBHasNoPublicIP(t *testing.T) {
 	// existing NLB's scheme or the controller's default): its address is kept
 	// and flagged as resting on an assumed scheme, never read as private.
 	lbc := serviceAsset(lbServiceWithClass("service.k8s.aws/nlb", nil), "c", now)
-	require.Equal(t, "10.0.5.5", lbc.PublicIP)
+	require.Equal(t, "203.0.113.10", lbc.PublicIP)
 	require.Equal(t, "false", lbc.Metadata["internal"])
 	require.Equal(t, "true", lbc.Metadata["scheme_assumed"])
 	require.Equal(t, "service.k8s.aws/nlb", lbc.Metadata["load_balancer_class"])
@@ -714,12 +714,15 @@ func TestPodAsset_InitContainersAggregateSecurityContext(t *testing.T) {
 	// Resource limits stay app-container-only: an init container runs to
 	// completion in seconds and its limits do not cause a steady-state OOMKill.
 	require.Equal(t, "true", a.Metadata["has_resource_limits"])
-	// Images likewise stay app-container-only — the pod is not running the
-	// init image when a finding lands on it.
-	require.Equal(t, "elasticsearch:7.17.0", a.Metadata["images"])
+	require.Equal(t, "elasticsearch:7.17.0,busybox:1.35", a.Metadata["images"])
+	foundInit := false
 	for _, e := range extra {
-		require.NotEqual(t, "configure-sysctl", e.Name, "init containers are not promoted to container assets")
+		if e.Name == "configure-sysctl" {
+			foundInit = true
+			require.Equal(t, "init", e.Metadata["container_kind"])
+		}
 	}
+	require.True(t, foundInit)
 }
 
 // A pod whose init containers are all benign must not be flagged by them.

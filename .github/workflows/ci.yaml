@@ -602,6 +602,8 @@ jobs:
         run: go test -tags=integration -p 1 ./... -count=1
         env:
           CGO_LDFLAGS: "-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib"
+          TEST_DATABASE_URL: postgres://graph:graph@localhost:5432/graph?sslmode=disable
+          TEST_CLICKHOUSE_URL: clickhouse://graph:graph@localhost:9000/graph
 
   # ── Release stack, least-privilege users ───────────────────────────────
   # The integration job uses the root docker-compose.yml's admin users. This
@@ -661,6 +663,8 @@ jobs:
           ch() { docker compose exec -T clickhouse clickhouse-client -u "$1" --password "$2" -q "$3" 2>&1; }
           # The mutations the code runs as graph (connector purge, part compaction).
           for q in "ALTER TABLE graph.assets DELETE WHERE 0" "ALTER TABLE graph.graph_edges DELETE WHERE 0" \
+                   "DELETE FROM graph.assets WHERE 0 SETTINGS lightweight_deletes_sync=1" \
+                   "DELETE FROM graph.graph_edges WHERE 0 SETTINGS lightweight_deletes_sync=1" \
                    "OPTIMIZE TABLE graph.findings FINAL" "SELECT count() FROM system.parts" \
                    "SELECT count() FROM system.projection_parts"; do
             ch graph "$CLICKHOUSE_PASSWORD" "$q" > /dev/null || { echo "ClickHouse user graph was refused: $q" >&2; exit 1; }

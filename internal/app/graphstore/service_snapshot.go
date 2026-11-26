@@ -42,9 +42,9 @@ func (s *Service) LoadFromSnapshot(ctx context.Context, signals SignalSource) er
 		// (ErrSnapshotStale). Layer 2 must still get a baseline here, or the very
 		// first post-deploy build — exactly the moment a producer regression is
 		// most likely — would go unchecked. The snapshot cannot seed the GRAPH across a version bump (no
-		// in-place Ladybug migration), but its shape is still a fine Layer-2 baseline:
-		// a version bump gates Ladybug's DDL/loading set, not the ClickHouse row counts
-		// Layer 2 compares. See ReadSnapshotShapeAnyVersion.
+		// in-place Ladybug migration). Project its shape onto the current load set
+		// so deliberately excluded inventory does not look like lost topology.
+		// See ReadSnapshotShapeAnyVersion.
 		if errors.Is(err, ErrSnapshotStale) {
 			if shape, ok := ReadSnapshotShapeAnyVersion(s.snapshotPath); ok {
 				s.fidelity.seedBaseline(shape)
@@ -71,6 +71,9 @@ func (s *Service) LoadFromSnapshot(ctx context.Context, signals SignalSource) er
 		sigByResource, err = signals.SignalsByResource(ctx)
 		if err != nil {
 			return fmt.Errorf("LoadFromSnapshot: signal rollup: %w", err)
+		}
+		if sigByResource == nil {
+			sigByResource = map[string]NodeSignals{}
 		}
 	}
 

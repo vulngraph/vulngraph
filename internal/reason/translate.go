@@ -54,7 +54,6 @@ SCHEMA — Node tables:
   IamRole(id, name, provider, account_id, score INT, type, region)
     Types: iam_role, iam_user, iam_group, gcp_service_account, azure_service_principal
   Repo(id, name, provider)
-  Package(id, name, ecosystem, version, has_kev INT32)
   DataClass(id, classification)  — DSPM sensitivity classes; ids like 'dataclass:pii'
   ` + "`Group`" + `(id, name, provider)  — SSO groups (e.g. Okta groups). RESERVED label: MUST be escaped as ` + "`Group`" + `
   PermissionSet(id, name, provider, account_id, grants_admin INT32)  — AWS Identity Center permission sets
@@ -117,12 +116,6 @@ MATCH (role)-[:CanAssume]->(target:IamRole)
 WHERE target.score >= 60
 RETURN repo, role, target
 ORDER BY target.score DESC LIMIT 30
-
-Q: assets with packages that have known exploited vulnerabilities
-A: MATCH (app:Asset)-[r:RunsPackage]->(pkg:Package)
-WHERE pkg.has_kev = 1
-RETURN app, r, pkg
-ORDER BY app.score DESC LIMIT 50
 
 Q: kubernetes services exposed to the internet
 A: MATCH (s:Asset)-[r:ExposedToInternet]->(:Asset {id: 'internet'})

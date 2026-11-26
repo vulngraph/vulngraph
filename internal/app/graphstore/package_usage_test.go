@@ -2,6 +2,7 @@ package graphstore
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -41,14 +42,8 @@ func packageUsageFixture() ([]asset.Asset, []asset.Edge) {
 	return assets, edges
 }
 
-// TestPackageUsage_InboundExpandNamesBothHalves is the end-to-end guard for
-// "where is package X used" through the structured (non-Cypher) query path.
-//
-// Every piece of the data can be present and the question still go unanswered:
-// with the DependsOn and RunsPackage rows in Ladybug but neither rel in the
-// expand view, a :Package node has no inbound branch at all; with RunsImage not
-// loaded, the chain stops at the container_image and no pod could be named;
-// and matchSeed had no Package branch, so the seed could not even be resolved.
+// TestPackageUsage_InboundExpandNamesBothHalves spans resident runtime topology
+// and inventory memberships without loading packages into Ladybug.
 func TestPackageUsage_InboundExpandNamesBothHalves(t *testing.T) {
 	ctx := context.Background()
 	svc, err := Open("", 64, 0, 0, "")
@@ -56,33 +51,35 @@ func TestPackageUsage_InboundExpandNamesBothHalves(t *testing.T) {
 	defer svc.Close()
 
 	assets, edges := packageUsageFixture()
+	inventory := fixtureInventory{assets: slices.Clone(assets), edges: slices.Clone(edges)}
+	svc.WithPackageInventory(inventory, inventory)
 	require.NoError(t, svc.SyncFromSources(ctx, 0, stubAssets{assets}, stubEdges{edges}, nil))
 
 	const pkgID = "pkg:npm/@example-corp/db-client@1.2.0"
 
-	// 1. The seed resolves at all, and comes back typed despite Package having no
-	//    `type` column in its node table.
-	seeds, err := svc.MatchSeed(ctx, explore.NodeMatch{IDs: []string{pkgID}}, 10)
+	coreSeeds, err := svc.MatchSeed(ctx, explore.NodeMatch{IDs: []string{pkgID}}, 10)
 	require.NoError(t, err)
-	require.Len(t, seeds, 1, "a :Package node must be seedable by id")
+	require.Empty(t, coreSeeds, "packages must not occupy the resident graph")
+	repo := explore.NewFallbackRepo(svc, inventory)
+	seeds, err := repo.MatchSeed(ctx, explore.NodeMatch{IDs: []string{pkgID}}, 10)
+	require.NoError(t, err)
+	require.Len(t, seeds, 1)
 	require.Equal(t, "package", seeds[0].Type)
 	require.Equal(t, "@example-corp/db-client", seeds[0].Name)
-
-	// 2. Inbound expand from the package names the repo AND the image.
-	pkgEdges, pkgNbrs, _, err := svc.Neighbors(ctx, []string{pkgID}, nil, explore.DirectionIn)
+	pkgEdges, pkgNbrs, _, err := repo.Neighbors(ctx, []string{pkgID}, nil, explore.DirectionIn)
 	require.NoError(t, err)
 	inbound := map[string]string{}
 	for _, e := range pkgEdges {
-		require.Equal(t, pkgID, e.DstID, "an inbound edge is reported in stored orientation (neighbour→seed)")
+		require.Equal(t, pkgID, e.DstID)
 		inbound[e.EdgeType] = e.SrcID
 	}
-	require.Equal(t, "example-corp/api-service", inbound["DependsOn"], "SBOM half missing: %v", inbound)
-	require.Equal(t, "image/sha256:abc", inbound["RunsPackage"], "image half missing: %v", inbound)
+	require.Equal(t, "example-corp/api-service", inbound["depends_on"])
+	require.Equal(t, "image/sha256:abc", inbound["runs_package"])
 	types := map[string]string{}
 	for _, n := range pkgNbrs {
 		types[n.ID] = n.Type
 	}
-	require.Equal(t, "github_repo", types["example-corp/api-service"], "Repo neighbour must come back typed")
+	require.Equal(t, "github_repo", types["example-corp/api-service"])
 
 	// 3. Inbound expand from the image names the pod — the hop that did not exist.
 	imgEdges, _, _, err := svc.Neighbors(ctx, []string{"image/sha256:abc"}, nil, explore.DirectionIn)
@@ -107,6 +104,8 @@ func TestPackageUsage_NamedQueriesAnswerByName(t *testing.T) {
 	defer svc.Close()
 
 	assets, edges := packageUsageFixture()
+	inventory := fixtureInventory{assets: slices.Clone(assets), edges: slices.Clone(edges)}
+	svc.WithPackageInventory(inventory, inventory)
 	require.NoError(t, svc.SyncFromSources(ctx, 0, stubAssets{assets}, stubEdges{edges}, nil))
 
 	params := map[string]string{"name": "@example-corp/db-client"}
@@ -153,6 +152,8 @@ func TestPackageUsage_NonK8sWorkloadsRunTheImage(t *testing.T) {
 			EdgeType: "runs_image", Properties: map[string]string{"image_ref": "registry/api:v1"},
 		})
 	}
+	inventory := fixtureInventory{assets: slices.Clone(assets), edges: slices.Clone(edges)}
+	svc.WithPackageInventory(inventory, inventory)
 	require.NoError(t, svc.SyncFromSources(ctx, 0, stubAssets{assets}, stubEdges{edges}, nil))
 
 	imgEdges, _, _, err := svc.Neighbors(ctx, []string{"image/sha256:abc"}, nil, explore.DirectionIn)
@@ -190,4 +191,64 @@ func nodeIDPresent(nodes []explore.Node, id string) bool {
 		}
 	}
 	return false
+}
+
+// fixtureInventory emulates inventory lookup only; integration tests cover SQL.
+type fixtureInventory struct {
+	assets []asset.Asset
+	edges  []asset.Edge
+}
+
+func (f fixtureInventory) MatchSeed(_ context.Context, m explore.NodeMatch, limit int) ([]explore.Node, error) {
+	var out []explore.Node
+	for _, a := range f.assets {
+		if len(m.IDs) > 0 && !slices.Contains(m.IDs, a.ID) {
+			continue
+		}
+		if len(m.IDs) == 0 && len(m.Types) > 0 && !slices.Contains(m.Types, a.Type) {
+			continue
+		}
+		if m.Provider != "" && m.Provider != string(a.Provider) {
+			continue
+		}
+		out = append(out, explore.Node{ID: a.ID, Name: a.Name, Type: a.Type, Score: int(a.RiskScore), InternetHops: ReachUnknown})
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+func (f fixtureInventory) Neighbors(ctx context.Context, ids, types []string, dir explore.Direction) ([]explore.Edge, []explore.Node, bool, error) {
+	var edges []explore.Edge
+	var neighbors []string
+	for _, e := range f.edges {
+		if len(types) > 0 && !slices.Contains(types, e.EdgeType) {
+			continue
+		}
+		if dir != explore.DirectionIn && slices.Contains(ids, e.SrcID) {
+			neighbors = append(neighbors, e.DstID)
+		} else if dir != explore.DirectionOut && slices.Contains(ids, e.DstID) {
+			neighbors = append(neighbors, e.SrcID)
+		} else {
+			continue
+		}
+		edges = append(edges, explore.Edge{SrcID: e.SrcID, DstID: e.DstID, EdgeType: e.EdgeType})
+	}
+	if len(neighbors) == 0 {
+		return edges, nil, false, nil
+	}
+	nodes, err := f.MatchSeed(ctx, explore.NodeMatch{IDs: neighbors}, len(neighbors))
+	return edges, nodes, false, err
+}
+func (f fixtureInventory) FindPackageVersions(_ context.Context, name string, limit int) ([]asset.Asset, error) {
+	var out []asset.Asset
+	for _, a := range f.assets {
+		if a.Type == "package" && a.Name == name {
+			out = append(out, a)
+			if len(out) >= limit {
+				break
+			}
+		}
+	}
+	return out, nil
 }

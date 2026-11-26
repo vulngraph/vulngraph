@@ -34,9 +34,10 @@ type NodeStatsProvider interface {
 // NamedQueryEntry is a query from the catalog that QueryHealth can probe.
 // Defined here to avoid importing graphstore (which imports explore).
 type NamedQueryEntry struct {
-	Name   string
-	Query  string
-	Params []string
+	Inventory bool
+	Name      string
+	Query     string
+	Params    []string
 }
 
 type Handler struct {
@@ -212,8 +213,9 @@ func (h *Handler) QueryHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	results := make([]result, 0, len(h.namedQueries))
 	for _, q := range h.namedQueries {
-		if len(q.Params) > 0 {
-			// Parameterised queries can't be probed without values.
+		if len(q.Params) > 0 || q.Inventory {
+			// Parameterized and inventory-backed queries cannot be probed
+			// through the raw Cypher runner.
 			results = append(results, result{Name: q.Name, Healthy: false, Probed: false})
 			continue
 		}

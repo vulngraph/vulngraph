@@ -37,11 +37,12 @@ func (f *fakeScopeForgetter) Evaluate(_ context.Context, sw forget.Sweep) (int, 
 // calls records the id list of every ByResourceIDs invocation so tests can pin
 // the batching itself, not just its results.
 type fakeLifecycler struct {
-	stored   []finding.Finding
-	resolved []finding.Finding
-	reasons  []finding.ResolutionReason
-	readErr  error
-	calls    [][]string
+	stored     []finding.Finding
+	resolved   []finding.Finding
+	reasons    []finding.ResolutionReason
+	readErr    error
+	resolveErr error
+	calls      [][]string
 }
 
 func (f *fakeLifecycler) ByResourceIDs(_ context.Context, ids []string) ([]finding.Finding, error) {
@@ -63,6 +64,9 @@ func (f *fakeLifecycler) ByResourceIDs(_ context.Context, ids []string) ([]findi
 }
 
 func (f *fakeLifecycler) Resolve(_ context.Context, findings []finding.Finding, reason finding.ResolutionReason) error {
+	if f.resolveErr != nil {
+		return f.resolveErr
+	}
 	f.resolved = append(f.resolved, findings...)
 	f.reasons = append(f.reasons, reason)
 	return nil
@@ -160,9 +164,9 @@ type fakeDeletionApplier struct {
 	calls     []string
 }
 
-func (f *fakeDeletionApplier) RecordAssetDeletions(context.Context, string, []string, time.Time) error {
+func (f *fakeDeletionApplier) RecordAssetDeletions(_ context.Context, _ string, ids []string, _ time.Time) ([]string, error) {
 	f.calls = append(f.calls, "record")
-	return f.recordErr
+	return ids, f.recordErr
 }
 
 func (f *fakeDeletionApplier) DeleteAssetHashes(context.Context, string, []string) error {
@@ -185,6 +189,27 @@ func TestApplyDeletions_RecordFirstAndStopOnFailure(t *testing.T) {
 	applyDeletions(context.Background(), failing, svc, "c1", []string{"vol-1"}, time.Now())
 	require.Equal(t, []string{"record"}, failing.calls, "no hash delete without the record")
 	require.Empty(t, svc.resolved, "nothing resolved on a decision that was not recorded")
+}
+
+func TestApplyDeletions_RetainsRetryStateUntilFindingsReconciled(t *testing.T) {
+	for _, phase := range []string{"read", "resolve"} {
+		t.Run(phase, func(t *testing.T) {
+			svc := &fakeLifecycler{stored: []finding.Finding{{ID: "f", Source: "cspm", ResourceID: "i-gone"}}}
+			if phase == "read" {
+				svc.readErr = errors.New("temporary read failure")
+			} else {
+				svc.resolveErr = errors.New("temporary write failure")
+			}
+			conns := &fakeDeletionApplier{}
+			applyDeletions(context.Background(), conns, svc, "c", []string{"i-gone"}, time.Now())
+			require.Equal(t, []string{"record"}, conns.calls)
+			require.Empty(t, svc.resolved)
+			svc.readErr, svc.resolveErr = nil, nil
+			applyDeletions(context.Background(), conns, svc, "c", []string{"i-gone"}, time.Now())
+			require.Equal(t, []string{"record", "record", "delete-hashes"}, conns.calls)
+			require.Len(t, svc.resolved, 1)
+		})
+	}
 }
 
 // A derived finding sits on a representative resource, but it describes a

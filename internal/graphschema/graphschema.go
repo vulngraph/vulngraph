@@ -16,6 +16,29 @@
 // nothing and may be imported from any layer, including domain.go files.
 package graphschema
 
+// OnDemandEdgeTypes are inventory relationships excluded from the resident
+// graph and available through bounded exploration.
+func OnDemandEdgeTypes() []string {
+	var out []string
+	for _, e := range EdgeTypes {
+		if e.OnDemand {
+			out = append(out, e.Type)
+		}
+	}
+	return out
+}
+func IsOnDemandEdge(typ string) bool {
+	return onDemandEdges[typ]
+}
+
+var onDemandEdges = func() map[string]bool {
+	out := map[string]bool{}
+	for _, typ := range OnDemandEdgeTypes() {
+		out[typ] = true
+	}
+	return out
+}()
+
 // Node label constants — the Ladybug node table names. graphstore's DDL is the
 // structural source; TestLadybugRelSpecMatchesDDL (graphstore) pins every
 // loaded rel's FROM/TO label to it.
@@ -114,14 +137,15 @@ const (
 
 // EdgeType describes one edge_type value in ClickHouse graph_edges.
 type EdgeType struct {
-	Type    string    // snake_case edge_type column value
-	Rel     string    // default Ladybug rel table ("" = no mapping, generic Edge fallback)
-	Tier    Tier      // fetch tier
-	Reach   bool      // attacker-movement edge for the internet_hops BFS
-	Inherit bool      // containment edge: dst inherits src's hop count at no extra depth
-	Weight  float64   // BFS risk-propagation weight (bfs.go), keyed on THIS snake value
-	Dir     Direction // direction risk propagates in the BFS — see Direction
-	Doc     string    // one-line meaning; unsynced types must explain why they are unsynced
+	Type     string    // snake_case edge_type column value
+	Rel      string    // default Ladybug rel table ("" = no mapping, generic Edge fallback)
+	Tier     Tier      // fetch tier
+	OnDemand bool      // inventory traversal is served by bounded ClickHouse reads
+	Reach    bool      // attacker-movement edge for the internet_hops BFS
+	Inherit  bool      // containment edge: dst inherits src's hop count at no extra depth
+	Weight   float64   // BFS risk-propagation weight (bfs.go), keyed on THIS snake value
+	Dir      Direction // direction risk propagates in the BFS — see Direction
+	Doc      string    // one-line meaning; unsynced types must explain why they are unsynced
 	// InheritReverse is containment recorded in the opposite direction: SRC
 	// inherits DST's hop count. Needed when the producer emits the edge along the
 	// direction of causation (a repo DEPLOYS TO a workload) while containment runs
@@ -407,7 +431,7 @@ var EdgeTypes = []EdgeType{
 	// exposure IS the exposure of whatever uses it. src is the member asset, dst
 	// is the SG (spoke-hub, see SharedSecurityGroup.Correlate), so the dst
 	// inherits the member's hop count, taking the MINIMUM across every member —
-	// the same relax-to-minimum closure runs_image/runs_package use for a shared
+	// the same relax-to-minimum closure runs_image uses for a shared
 	// container image.
 	//
 	// Dir: DirBoth: an SG's risk raises its members and a member's the SG.
@@ -447,8 +471,8 @@ var EdgeTypes = []EdgeType{
 	// two quantities being different — reachability flows INTO containment,
 	// severity flows OUT of it. A pod is more dangerous because its image ships a
 	// critical CVE; the CVE is not more dangerous because a pod exists.
-	{Type: "runs_package", Rel: "RunsPackage", Tier: TierCritical, Inherit: true, Weight: defaultWeight, Dir: DirReverse,
-		Doc: "container_image runs this package (emitted by the imagevuln scanner; Inherit: the package IS the image's attack surface, so it takes the image's hop count — this is what lets supply-chain findings reach must_fix)"},
+	{Type: "runs_package", Rel: "RunsPackage", Tier: TierUnsynced, OnDemand: true, Weight: defaultWeight, Dir: DirReverse,
+		Doc: "runtime package inventory; queried on demand from ClickHouse, with reach evaluated on its running workload"},
 	{Type: "runs_image", Rel: "RunsImage", Tier: TierCritical, Inherit: true, Weight: defaultWeight, Dir: DirReverse,
 		Reroutes: []string{"RunsImageAsset"},
 		Doc:      "workload (k8s pod, ECS service, Cloud Run service) runs this container image (Inherit: the image's contents are the workload's own attack surface, not a hop away from it). Loaded and expand-traversable: it is the ONLY link from a container_image back to a running workload, so it is what answers \"which workloads run the image that contains package X\". Asset-labelled sources (ecs_service, cloudrun_service) reroute to RunsImageAsset in buildEdgeRows."},
@@ -475,8 +499,8 @@ var EdgeTypes = []EdgeType{
 	// is inert and the reverse half is the only one that ever moved a number.
 	{Type: "dns_points_to", Rel: "DnsPointsTo", Tier: TierBulk, Weight: defaultWeight, Dir: DirBoth,
 		Doc: "DNS record resolves to this asset"},
-	{Type: "depends_on", Rel: "DependsOn", Tier: TierBulk, Weight: defaultWeight, Dir: DirReverse,
-		Doc: "SBOM: repo depends on package"},
+	{Type: "depends_on", Rel: "DependsOn", Tier: TierUnsynced, OnDemand: true, Weight: defaultWeight, Dir: DirReverse,
+		Doc: "SBOM dependencies queried on demand from ClickHouse"},
 	// DirBoth is what the producer already asserts: collect/aws emits the pair of
 	// rows (requester→accepter AND accepter→requester) for every peering, so a
 	// one-directional index here would be undone by the data anyway.
@@ -609,8 +633,9 @@ var Rels = []Rel{
 		Doc: "CI/CD deploys to this k8s pod/deployment (dst is :K8sWorkload, NOT :Asset)"},
 	{Name: "DeploysToService", From: NodeRepo, To: NodeAsset, Loaded: true, Expand: true,
 		Doc: "CI/CD deploys to a non-k8s service (ECS/Lambda/Cloud Run/load balancer)"},
-	{Name: "DependsOn", From: NodeRepo, To: NodePackage, Loaded: true, Expand: true,
-		Doc: "SBOM repo dependency"},
+	{Name: "DependsOn", From: NodeRepo, To: NodePackage,
+		DropReason: "on_demand: package inventory is queried from ClickHouse",
+		Doc:        "SBOM repo dependency"},
 	{Name: "InVPC", From: NodeAsset, To: NodeAsset,
 		DropReason: "unfed: in_vpc is TierUnsynced, so nothing reaches this table — and nothing ever did, because every in_vpc destination type is in NeverSyncTypes (fetched but never loaded). The DDL stays because dropping a rel table is a checksum change with no benefit",
 		Doc:        "asset lives in this VPC"},
@@ -645,8 +670,9 @@ var Rels = []Rel{
 		Doc: "human identity is a member of this identity-provider group (src is :Asset — human_identity has no dedicated node label)"},
 	{Name: "MemberOfGroup", From: NodeSSOGroup, To: NodeSSOGroup, Loaded: true, Expand: true,
 		Doc: "Okta group maps to the AWS Identity Center group of the same name (SCIM display-name match) — the join that connects a person to a permission set"},
-	{Name: "RunsPackage", From: NodeAsset, To: NodePackage, Loaded: true, Expand: true,
-		Doc: "asset runs this package. Expand-traversable, so a Package node has an inbound branch and \"where is this package used\" answers through the structured query path."},
+	{Name: "RunsPackage", From: NodeAsset, To: NodePackage,
+		DropReason: "on_demand: runtime package inventory is queried from ClickHouse",
+		Doc:        "asset runs this package; available through bounded inventory exploration"},
 	{Name: "RunsIn", From: NodePackage, To: NodeAsset,
 		DropReason: "bfs_only: package→asset placement from scanner feeds — no named query traverses it; kept for BFS",
 		Doc:        "package runs in this asset"},

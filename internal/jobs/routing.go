@@ -17,6 +17,7 @@ func allJobArgs() []river.JobArgs {
 		AdjudicateArgs{},
 		CorrelateArgs{},
 		DanglingSweepArgs{},
+		InventoryRetirementArgs{},
 		DecideArgs{},
 		DiscoverAWSOrgsArgs{},
 		DiskScanPlanArgs{},

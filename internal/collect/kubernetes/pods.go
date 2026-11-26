@@ -23,8 +23,9 @@ import (
 
 func podAsset(pod corev1.Pod, cluster string, now time.Time) (asset.Asset, []asset.Asset, []asset.Edge) {
 	id := fmt.Sprintf("%s/pod/%s/%s", cluster, pod.Namespace, pod.Name)
+	containers := podContainers(pod)
 	var images []string
-	for _, c := range pod.Spec.Containers {
+	for _, c := range containers {
 		images = append(images, c.Image)
 	}
 	// Security context signals for RBAC/privilege checks.
@@ -46,21 +47,7 @@ func podAsset(pod corev1.Pod, cluster string, now time.Time) (asset.Asset, []ass
 	hostNetwork = pod.Spec.HostNetwork
 	hostPID = pod.Spec.HostPID
 
-	// Init containers run BEFORE the app containers and are routinely the most
-	// privileged thing in the pod (sysctl tuning, volume chown, CNI setup), so
-	// excluding them from the security-context signals below would be a false
-	// negative across the privileged / run_as_root / allow_priv_escalation
-	// / dangerous_capabilities checks. They are part of the same pod, run with
-	// the same service account on the same node, so they aggregate identically.
-	//
-	// Only the security-context aggregation folds them in: images and resource
-	// limits stay app-container-only, since init containers are short-lived and
-	// their images are not what the pod is running when a finding lands.
-	securityContexts := make([]corev1.Container, 0, len(pod.Spec.InitContainers)+len(pod.Spec.Containers))
-	securityContexts = append(securityContexts, pod.Spec.InitContainers...)
-	securityContexts = append(securityContexts, pod.Spec.Containers...)
-
-	for _, c := range securityContexts {
+	for _, c := range containers {
 		csc := c.SecurityContext
 
 		if csc != nil {
@@ -99,10 +86,12 @@ func podAsset(pod corev1.Pod, cluster string, now time.Time) (asset.Asset, []ass
 		}
 	}
 
-	// Resource limits: missing cpu OR memory limit = flag the whole pod. App
-	// containers only — an init container runs to completion in seconds and its
-	// limits are not what causes a steady-state OOMKill or CPU runaway.
-	for _, c := range pod.Spec.Containers {
+	// Long-running containers need steady-state limits. Ephemeral containers
+	// cannot declare resource limits, and ordinary init containers terminate.
+	for _, c := range containers {
+		if c.kind != "application" && c.kind != "sidecar" {
+			continue
+		}
 		lim := c.Resources.Limits
 		if lim.Cpu().IsZero() || lim.Memory().IsZero() {
 			hasResourceLimits = false
@@ -120,6 +109,7 @@ func podAsset(pod corev1.Pod, cluster string, now time.Time) (asset.Asset, []ass
 
 	meta := map[string]string{
 		"namespace":             pod.Namespace,
+		"pod_uid":               string(pod.UID),
 		"phase":                 string(pod.Status.Phase),
 		"node":                  pod.Spec.NodeName,
 		"images":                strings.Join(images, ","),
@@ -166,34 +156,25 @@ func podAsset(pod corev1.Pod, cluster string, now time.Time) (asset.Asset, []ass
 		EdgeType: "runs_in",
 	}}
 
-	// Emit a container asset + runs_container edge per pod.Spec.Containers entry.
-	// spec.containers[] is already fetched as part of the pod object (no extra
-	// API call), it's just not promoted to a graph node today — so a GuardDuty
-	// container-level finding (ContainerDetails) can never join to an asset and
-	// gets zero graph context (attack-path scoring, must-fix, reachability,
-	// lifecycle sweep all skip it). ID keys on container NAME (stable across pod
-	// restarts within the same spec), not the ephemeral runtime container ID.
+	// Container names keep their stable IDs across runtime restarts.
 	var containerAssets []asset.Asset
-	for _, c := range pod.Spec.Containers {
+	for _, c := range containers {
 		containerID := fmt.Sprintf("%s/container/%s", id, c.Name)
 		containerAssets = append(containerAssets, asset.Asset{
-			ID:       containerID,
-			Name:     c.Name,
-			Type:     "container",
-			Provider: asset.ProviderKubernetes,
-			Region:   cluster,
-			Metadata: map[string]string{
-				"namespace": pod.Namespace,
-				"pod":       pod.Name,
-				"image":     c.Image,
-			},
+			ID:           containerID,
+			Name:         c.Name,
+			Type:         "container",
+			Provider:     asset.ProviderKubernetes,
+			Region:       cluster,
+			Metadata:     c.metadata(pod),
 			DiscoveredAt: now, LastSeen: now,
 		})
 		edges = append(edges, asset.Edge{
 			SrcID: id, SrcType: "k8s_pod",
-			DstID:    containerID,
-			DstType:  "container",
-			EdgeType: "runs_container",
+			DstID:      containerID,
+			DstType:    "container",
+			EdgeType:   "runs_container",
+			Properties: map[string]string{"container_kind": c.kind, "state": containerState(c.status)},
 		})
 	}
 
@@ -202,7 +183,7 @@ func podAsset(pod corev1.Pod, cluster string, now time.Time) (asset.Asset, []ass
 	// across restarts and uniquely identifies the exact image layer.
 	var imageAssets []asset.Asset
 	imageIDs := make(map[string]string) // sha256 digest → image ref
-	for _, cs := range pod.Status.ContainerStatuses {
+	for _, cs := range podImageStatuses(pod) {
 		if cs.ImageID == "" {
 			continue
 		}

@@ -9,6 +9,7 @@ package jobs
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -197,7 +198,7 @@ func isRegistryCheck(registry *checks.Registry, checkID string) bool {
 // deletionApplier is the slice of connector.Service a sweep's deletion
 // decision is applied through.
 type deletionApplier interface {
-	RecordAssetDeletions(ctx context.Context, connectorID string, ids []string, at time.Time) error
+	RecordAssetDeletions(ctx context.Context, connectorID string, ids []string, at time.Time) ([]string, error)
 	DeleteAssetHashes(ctx context.Context, connectorID string, ids []string) error
 }
 
@@ -210,25 +211,24 @@ type deletionApplier interface {
 // the asset is no longer a deletion candidate, and its derived findings would
 // wait out the absence fallback instead.
 //
-// Two connectors collecting the same asset share one record (keyed by asset):
-// the later deletion overwrites connector_id. Only a COMPLETE sweep of the
-// asset's scope writes it, and readers compare deleted_at with the asset's
-// last_seen — a connector that still sees the asset keeps re-stamping
-// last_seen past the record — so the overwrite cannot turn a live asset into a
-// deleted one.
+// Other connectors' ownership prevents a global deletion record. This
+// connector still drops its own absent hashes, allowing the final owner to
+// establish deletion when its complete listing also stops returning the asset.
 func applyDeletions(ctx context.Context, conns deletionApplier, findings findingLifecycler, connectorID string, ids []string, at time.Time) {
 	logger := log.FromContext(ctx).With().Str("connector_id", connectorID).Logger()
-	if err := conns.RecordAssetDeletions(ctx, connectorID, ids, at); err != nil {
+	proven, err := conns.RecordAssetDeletions(ctx, connectorID, ids, at)
+	if err != nil {
 		logger.Warn().Err(err).Int("assets", len(ids)).
 			Msg("sync: deletion record failed — hashes kept, the next complete sweep re-decides")
+		return
+	}
+	if err := resolveFindingsForDeletedAssets(ctx, findings, proven); err != nil {
+		logger.Warn().Err(err).Msg("sync: deleted-asset reconciliation failed; hashes kept for retry")
 		return
 	}
 	if err := conns.DeleteAssetHashes(ctx, connectorID, ids); err != nil {
 		logger.Warn().Err(err).Msg("sync: hash delete failed")
 	}
-	// A deleted resource cannot have open findings — resolve them (bar derived
-	// group findings, see derivedFromGroup), so they leave worklists with it.
-	resolveFindingsForDeletedAssets(ctx, findings, ids)
 }
 
 // derivedFromGroup reports whether f is a projection over a group rather than
@@ -257,16 +257,15 @@ func derivedFromGroup(f finding.Finding) bool {
 // resolveFindingsForDeletedAssets resolves every open finding about a resource
 // the collector no longer returns — a deleted resource cannot have open
 // findings. Derived group findings (derivedFromGroup) are left to their own
-// job: the group outlives any one member. Best-effort.
-func resolveFindingsForDeletedAssets(ctx context.Context, svc findingLifecycler, deletedIDs []string) {
+// job: the group outlives any one member.
+func resolveFindingsForDeletedAssets(ctx context.Context, svc findingLifecycler, deletedIDs []string) error {
 	logger := log.FromContext(ctx)
 	var toResolve []finding.Finding
 	for start := 0; start < len(deletedIDs); start += reconcileBatch {
 		end := min(start+reconcileBatch, len(deletedIDs))
 		stored, err := svc.ByResourceIDs(ctx, deletedIDs[start:end])
 		if err != nil {
-			logger.Warn().Err(err).Msg("sync: deleted-asset finding read failed (batch skipped)")
-			continue
+			return fmt.Errorf("read deleted-asset findings: %w", err)
 		}
 		for _, f := range stored {
 			if !f.Resolved() && !derivedFromGroup(f) {
@@ -275,13 +274,13 @@ func resolveFindingsForDeletedAssets(ctx context.Context, svc findingLifecycler,
 		}
 	}
 	if len(toResolve) == 0 {
-		return
+		return nil
 	}
 	if err := svc.Resolve(ctx, toResolve, finding.ReasonResourceGone); err != nil {
-		logger.Warn().Err(err).Int("findings", len(toResolve)).Msg("sync: deleted-asset resolve failed")
-		return
+		return fmt.Errorf("resolve deleted-asset findings: %w", err)
 	}
 	logger.Info().Int("findings", len(toResolve)).Msg("sync: findings resolved for deleted assets")
+	return nil
 }
 
 // recordCheckEvaluability publishes graph_check_evaluable_ratio for one

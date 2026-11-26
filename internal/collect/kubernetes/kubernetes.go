@@ -317,17 +317,12 @@ func (c *Collector) Collect(ctx context.Context, cfg map[string]string) (collect
 			result.Assets = append(result.Assets, jobAsset(job, clusterName, now))
 		}
 
-		// Ingress resources define externally-reachable hostnames — the primary
-		// K8s external attack surface. Each rule host becomes a k8s_ingress asset
-		// with Domain set so it appears in ListExternal() as a Nuclei scan target.
+		// Retain ingress hosts and default backends, including private topology.
 		ingresses, err := client.ListIngresses(ctx, nsName)
 		if err != nil {
 			return collect.Result{}, fmt.Errorf("Collect: list ingresses %s: %w", nsName, err)
 		}
-		// Count assets actually produced, not len(ingresses): one Ingress maps
-		// to zero (no rule host resolves) or several (one per rule host)
-		// k8s_ingress assets, so the enumerated Ingress count is not the
-		// k8s_ingress asset count this scope needs to claim.
+		// One Ingress can produce several host assets and a default route.
 		var ingressAssetCount int
 		for _, ing := range ingresses {
 			assets, edges := ingressAssets(ing, clusterName, now)

@@ -52,11 +52,11 @@ func (s SupplyChainExposure) vmDeployExposure(ctx context.Context, vmEdges []ass
 	if truncated {
 		vmIDs = vmIDs[:maxSupplyChainVMs]
 	}
-	out, err := s.Graph.EdgesOutBatch(ctx, vmIDs, "exposed_to_internet")
+	exposed, unknown, err := s.workloadExposure(ctx, vmIDs)
 	if err != nil {
 		return deployExposure{lineage: true, deployed: true}, err
 	}
-	return deployExposure{lineage: true, deployed: true, exposed: len(out) > 0, truncated: truncated}, nil
+	return deployExposure{lineage: true, deployed: true, exposed: exposed, truncated: truncated || unknown}, nil
 }
 
 // One finding per vulnerable VM package. The VM fleet job (jobs/vmvuln.go)

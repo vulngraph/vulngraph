@@ -1,6 +1,6 @@
 # Security Policy
 
-Vulngraph is a security product that also, like any software, can have security
+Vulngraph is security software that, like any software, can have security
 bugs of its own. We treat reports about this repo the same way we'd want a
 report about a finding it surfaced treated: fast, and without demanding a
 public disclosure first.

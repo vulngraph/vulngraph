@@ -2,7 +2,7 @@
 
 The Graph page lists 46 ready-made queries: 38 Cypher queries, shown below, and 8 point-and-click
 presets. Pick one from **Browse all queries**, or paste it into any MCP client's `run_cypher` tool.
-They are read-only and run against the graph the product builds from your connectors. Node labels are
+They are read-only and run against the graph Vulngraph builds from your connectors. Node labels are
 `Asset`, `IamRole`, `Repo` and `Package`; [`architecture.md`](architecture.md) describes the graph.
 Score thresholds are the current bands (page 81, high 61, pipeline 50).
 

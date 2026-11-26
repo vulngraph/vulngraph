@@ -5,7 +5,7 @@
   <img alt="Vulngraph" src="docs/images/logo-light.svg" width="420">
 </picture>
 
-**See the attack path, not just the alert list.**
+**A graph of your cloud, for seeing what an attacker could reach.**
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/vulngraph/vulngraph/badge)](https://scorecard.dev/viewer/?uri=github.com/vulngraph/vulngraph)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -27,12 +27,12 @@ request runs only with a grant from a human admin. It runs in your environment.
   "must fix" list stays short and shows its evidence on every row.
 - **One graph across tools.** Which internet-exposed workload can reach an administrator role? Where is
   this vulnerable package running, and which repository ships it? Ask in Cypher, in plain English, or over MCP.
-- **Honest about what it cannot see.** Data it could not read is shown as unknown, never as passing.
-- **Built for agents.** An MCP endpoint and read-scoped keys let an agent fleet ask questions and pull
+- **Unknown is not clean.** Data it could not read is shown as unknown, never as passing.
+- **Works with agents.** An MCP endpoint and read-scoped keys let an agent fleet ask questions and pull
   context for a finding without any access to your cloud. When the graph is unsure, an admin can have
   it verified live, read-only and audited. A key can never approve its own change: a real action needs a
   grant from a different human admin.
-- **Safe by design.** Read-only collectors, no autonomous remediation, isolated credentials and an audit trail.
+- **Read-only by default.** Collectors only read, nothing changes your cloud without a person's approval, credentials are isolated and actions are audited.
 - **Yours to run.** One Go binary with Postgres and ClickHouse. Every outbound connection is documented.
 
 Connects to AWS, GCP, Azure, Kubernetes, GitHub, Okta and Google Workspace.

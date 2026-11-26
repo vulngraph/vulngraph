@@ -1,6 +1,6 @@
 # Examples
 
-Every image on this page is the real product running against the bundled demo account, Acme. Its data
+Every image on this page is Vulngraph running against the bundled demo account, Acme. Its data
 is fictional. Load it yourself with the **demo** connector ([`demo.md`](demo.md)). Where a step uses an
 LLM, the page says so, and the domain-monitor verdicts are fixed sample text.
 
@@ -77,8 +77,8 @@ An illustrative exchange (the demo account has no live cloud behind it, so this 
 > **Agent** (calls `live_aws_describe` with `action: describe_security_group`, `resource: sg-0a1b2c3d4e5f60001`,
 > audited, admin only): the rule allowing `0.0.0.0/0` on port 22 is still there.
 
-The graph answers fast and for everyone. The live call is the exception: it costs an audited cloud API call
-and needs an admin, so it is used when the graph says it is not sure.
+The graph can be read by anyone with access. A live call costs an audited cloud API call and needs an admin,
+so use it when the graph says it is not sure.
 
 ## Ask the graph
 
@@ -224,7 +224,7 @@ verdicts below are fixed sample text, not model output.
 
 ![Two suspected phishing domains for acme.example, with the AI's verdict and reasoning, and Confirm and Dismiss buttons](images/domain-monitor-dark.png)
 
-## Compliance that does not round up
+## Compliance and unknown controls
 
 A control that cannot be assessed because the data is missing is shown as unknown, never as passing.
 

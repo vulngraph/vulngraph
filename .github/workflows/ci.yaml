@@ -1102,7 +1102,7 @@ jobs:
           echo "OK: binary loads its shared libraries (graph version exited 0)"
 
   pipeline-throughput:
-    uses: ./.github/workflows/pipeline-throughput.yaml
+    uses: $/.github/workflows/pipeline-throughput.yaml
 
   required:
     name: CI required

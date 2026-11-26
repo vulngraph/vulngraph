@@ -76,9 +76,8 @@ type GraphStats struct {
 	// build. Empty when the process doesn't build the graph.
 	EdgeTypeParity []EdgeTypeParityStat
 	// NodeTableRows is the served graph's row count per node table, and
-	// NodeGroupRows the engine node-group size the multi-hop guard compares
-	// them against (graphstore.LadybugNodeGroupRows). Nil NodeTableRows means
-	// no build was published: the guard is unknown and no gauge is emitted.
+	// NodeGroupRows the storage node-group size, not a correctness limit.
+	// Nil NodeTableRows means no build was published: no gauge is emitted.
 	NodeTableRows map[string]int64
 	NodeGroupRows int64
 }

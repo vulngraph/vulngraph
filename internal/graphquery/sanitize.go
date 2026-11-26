@@ -9,8 +9,8 @@ import "strings"
 //
 // It returns ok=false for any input whose lexing could differ from Ladybug's lexer
 // (src/antlr4/Cypher.g4 in the LadybugDB source at the tag pinned in
-// scripts/fetch-ladybug.sh, e.g. v0.21.2:
-// https://github.com/LadybugDB/ladybug/blob/v0.21.2/src/antlr4/Cypher.g4).
+// scripts/fetch-ladybug.sh, e.g. v0.22.3:
+// https://github.com/LadybugDB/ladybug/blob/v0.22.3/src/antlr4/Cypher.g4).
 // Every such divergence is a potential
 // bypass: if the guard believes a region is a comment or literal while the
 // engine lexes it as code, the hidden region executes unchecked. Two such

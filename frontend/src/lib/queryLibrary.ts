@@ -11,7 +11,7 @@
 // Repo, Package) and relationship types mirror the Ladybug schema DDL in
 // internal/app/graphstore/repo.go — keep them in sync.
 //
-// QUERY CONSTRAINTS (LadybugDB v0.21.2, ADR 095) — keep in sync with the named
+// QUERY CONSTRAINTS (LadybugDB v0.22.3, ADR 095) — keep in sync with the named
 // queries in internal/app/graphstore/named_queries.go:
 //   - Read-only Cypher only; the API's read-only guard rejects writes.
 //   - Boolean flags (exposed, has_kev, exploitable, toxic_combo) are INT32 —

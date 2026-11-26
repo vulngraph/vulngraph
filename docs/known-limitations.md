@@ -3,29 +3,6 @@
 Gaps that affect what Vulngraph reports, with what it does about each. Per-feature
 limits are in [capabilities](capabilities.md).
 
-- **Multi-hop Cypher once a graph node table holds more than 131,072 rows.** The pinned
-  LadybugDB release (v0.21.2) can miss relationships in multi-hop and variable-length matches
-  once a node table holds more than 131,072 rows (one node group) and its last groups have no
-  outgoing edges of the queried type
-  ([ladybug#1341](https://github.com/LadybugDB/ladybug/issues/1341)). The limit is per node
-  table, not per estate. Most assets load into the catch-all `Asset` table, but packages, IAM
-  principals, Kubernetes workloads, repositories, subnets, cloud accounts and a few other types
-  have tables of their own, and some asset types are not loaded into the graph at all. So an
-  estate with fewer than 131,072 assets can still cross the limit in one table (for example
-  `Package`, which the `RunsPackage` paths walk), and a larger one may not. Above the limit,
-  the named queries that walk more than one hop (the attack paths, `blast_radius_deep`), saved
-  queries and detections, NL-to-Cypher and raw Cypher (Explore, chat, MCP) can return fewer
-  paths than exist; the engine itself raises no error. Vulngraph counts every node table after
-  each graph load and reports when one is over the limit: `multi_hop_may_be_incomplete` and
-  `oversized_node_tables` on `GET /api/graph/status` and `/api/graph/stats` and in MCP
-  `get_graph_stats`, a `multi_hop_may_be_incomplete: true` flag on each Cypher result that graph
-  answers (the API, MCP `run_cypher` and the chat `run_cypher` tool), an `incomplete` status on
-  saved-query and detection runs, a banner in Explore, the `graph_ladybug_multihop_may_be_incomplete` metric (per-table
-  counts in `graph_ladybug_node_table_rows`) and the `GraphLadybugMultiHopMayBeIncomplete`
-  alert. Single-hop matches (explore neighbours, the hop-by-hop blast-radius walk) and risk
-  propagation, which runs in Go, are not affected. The fix
-  ([#1342](https://github.com/LadybugDB/ladybug/pull/1342)) was merged upstream on 2026-10-22
-  and is not in a release yet; Vulngraph will move to the first release that has it.
 - **Lateral reachability inside a network is partial.** The security-group path queries
   (`lateral_movement_via_sg`, `databases_reachable_from_internet`) follow AWS ingress rules that
   name a security group, including a group naming itself. Sharing a security group is not a
@@ -51,7 +28,7 @@ limits are in [capabilities](capabilities.md).
   to that role, so attack paths and blast radius stop at the pod, and CIS EKS 5.2.1 is listed
   as missing. This is about the clusters Vulngraph scans; running Vulngraph itself with Pod
   Identity (the default in [AWS org onboarding](onboarding-aws-org.md)) is unaffected.
-- **The LadybugDB binding has few tests of its own.** Its 11 tests cover opening and closing a
+- **The LadybugDB binding has few tests of its own.** Its tests cover opening and closing a
   database, memory safety, error surfacing, the `database/sql` driver and read-only statements
   ([details](../internal/graphdb/ladybug/README.md#tests)). Value conversion and result iteration
   are exercised through the graphstore tests that run Vulngraph's schema and loader on the
@@ -79,3 +56,14 @@ limits are in [capabilities](capabilities.md).
   or on an OS with no enabled advisory source is shown as unknown, never clean), the UI names the scanner
   that made the claim, and the effect stops at the one VM the key named
   ([bring your own agent](iam/byoa-inventory.md), [threat 16](threat-model.md)).
+
+## Resolved engine limitation
+
+The former multi-hop path-loss bug above 131,072 rows in a node table
+([LadybugDB #1341](https://github.com/LadybugDB/ladybug/issues/1341)) is fixed in the pinned
+**v0.22.3** library. The fix first shipped in v0.22.0. A normal-CI
+[regression test](../internal/graphdb/ladybug/multihop_regression_test.go) loads 131,112 nodes and checks
+variable-length paths, path counts and two-hop matches. It reproduces missing paths with v0.21.2 and
+passes with v0.22.3. Crossing a storage node group no longer triggers the incomplete-result warning.
+This resolves that specific correctness defect; it does not establish a supported estate size or
+sync throughput. The upgrade invalidates the old graph snapshot and rebuilds it from ClickHouse.

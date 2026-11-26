@@ -33,12 +33,9 @@ Checked before deciding:
   (131,072 rows) and its last groups have no outgoing edges of the queried type
   ([ladybug#1341](https://github.com/LadybugDB/ladybug/issues/1341)). The
   fix, [#1342](https://github.com/LadybugDB/ladybug/pull/1342), was merged on
-  2026-10-22 and is not yet in a release, so v0.21.2 still has the bug; the
-  pin moves to the first release that contains the fix. The fork had the bug
-  silently; on upstream it is tracked and fixed there. Until the bump, every
-  load counts its node tables and the graph reports a table over the limit
-  (`graphstore/node_group_guard.go`: API status, result flag, Explore banner,
-  metric); [`known-limitations.md`](../known-limitations.md) lists those signals.
+  2026-10-22. At initial adoption v0.21.2 still had the bug, so every graph load
+  counted its node tables and exposed a warning for potentially incomplete paths.
+  **This is resolved by the v0.22.3 upgrade below**; it is not a current size limit.
 
 ## Decision
 
@@ -87,3 +84,16 @@ Checked before deciding:
   database open/close, the driver, read-only statements). The upstream binding's
   other tests need its `tinysnb` fixture dataset, which this repository does not
   carry, so they are not part of it.
+
+## Amendment (2026-11-26) — adopt the released multi-hop fix
+
+Pin the unmodified v0.22.3 release, including verified checksums for all four supported library
+archives and its source/licence archive. Replace the C API header with that release's header and
+bump the graph schema version to reject old snapshots. LadybugDB #1342 first shipped in v0.22.0;
+the earlier statement that no release contained it is historical.
+
+`TestMultiHopAfterMissingRelationshipNodeGroup` exercises the original 131,112-node reproducer
+through the Go binding in normal CI. It fails against v0.21.2 and passes against v0.22.3. Remove the
+local size-based warning: node groups are storage units, not a query-correctness ceiling. Retain the
+legacy API fields and metric for existing clients and rolling upgrades; a newly loaded graph emits
+false/empty/zero, while consumers still respect a warning received from an older worker.

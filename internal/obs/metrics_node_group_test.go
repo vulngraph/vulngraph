@@ -24,9 +24,9 @@ func multiHopGauge(t *testing.T, g GraphStats) (value float64, present bool) {
 	return 0, false
 }
 
-// The guard is absent until a build is published (unknown is not 0), 0 when
-// every table fits in one node group, and 1 when one does not.
-func TestNodeGroupGuardGauge(t *testing.T) {
+// The legacy signal is absent until a build is published. The fixed engine
+// reports 0 even when a node table crosses a storage-group boundary.
+func TestFixedEngineNodeTableGauge(t *testing.T) {
 	_, present := multiHopGauge(t, GraphStats{NodeGroupRows: 131072})
 	require.False(t, present, "no published build: no series")
 
@@ -36,7 +36,7 @@ func TestNodeGroupGuardGauge(t *testing.T) {
 
 	v, present = multiHopGauge(t, GraphStats{NodeGroupRows: 131072, NodeTableRows: map[string]int64{"Asset": 5, "Package": 131073}})
 	require.True(t, present)
-	require.Equal(t, 1.0, v)
+	require.Equal(t, 0.0, v, "the engine fix removes the node-group correctness limit")
 
 	m := New()
 	m.RegisterSources(Sources{Graph: func() GraphStats {

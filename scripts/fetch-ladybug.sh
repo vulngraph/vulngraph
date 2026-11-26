@@ -24,12 +24,12 @@
 # Ubuntu 24.04 need libssl3t64 (libssl3 on older releases).
 set -euo pipefail
 
-LADYBUG_VERSION="0.21.2"
+LADYBUG_VERSION="0.22.3"
 # sha256 of https://github.com/LadybugDB/ladybug/archive/refs/tags/v$LADYBUG_VERSION.tar.gz
 # GitHub generates that archive on request. Should its bytes ever change, the
 # licence step fails closed (checksum mismatch) rather than shipping unverified
 # texts: re-download, diff against the tag, and re-pin.
-LADYBUG_SOURCE_SHA256="8b3f98df08a6a1a37ff9a45dc32f83b0a52fb063082b7875d9518654775ac150"
+LADYBUG_SOURCE_SHA256="af970748d21a20d5915f76b895272f8eda5b6b86a1cfb61e5b97f01f290f5036"
 
 # Bundled components with no licence file of their own: the file whose comment
 # blocks carry the copyright and licence. Paths are relative to the source root.
@@ -65,10 +65,10 @@ NO_LICENCE_DIRS=(ports)
 
 sha256_for() {
   case "$1" in
-    linux-x86_64)  echo "f3de0f9be86fffd0919bc7a7f65699d1b099d0a1df7115142fa1606ba83c94c4" ;;
-    linux-aarch64) echo "0dad6e03cf644491f7d50b9c218b9e85c983ceaed77a14338c33fb75f2ae39ee" ;;
-    osx-arm64)     echo "573a54126e2e1d4609680c8becee4399038ad82d3515f4d464bc481e4515c4b1" ;;
-    osx-x86_64)    echo "9ec18274694ed3cc312a6d6840b9261d94dcd0c34ca87ad024dc3c553acd3e6e" ;;
+    linux-x86_64)  echo "596167e79f3335f5a1a174cefe95c234ba0ac99ae8b692f0eca94db9f4290635" ;;
+    linux-aarch64) echo "8de461881348b670fabcfbc170a64c201a015c155ce74d68b243d838aaf3c5fe" ;;
+    osx-arm64)     echo "b60a13f4a5aeba0f10e68be8c524a2fd3920a8a683208fcee8507461537a92a3" ;;
+    osx-x86_64)    echo "6747b37b9ee017e8cce6f1456dab8468602682c8fbda2153a97b5a9706dfb250" ;;
     *) echo "no pinned checksum for $1" >&2; exit 1 ;;
   esac
 }

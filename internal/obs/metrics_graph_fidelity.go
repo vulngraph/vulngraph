@@ -36,9 +36,9 @@ var (
 	descEdgeDangle    = prometheus.NewDesc(namespace+"_ladybug_edge_dangling_over_budget", "1 for each edge_type whose endpoint_absent share exceeded the DanglingBudget declared for it in internal/graphschema (default 5% of fetched, floor 100 fetched rows). The verdict is computed in the worker, where the declared budget lives, so the alarm cannot drift from the declaration. Nonzero means a producer is writing edges to ids nothing collects, or an endpoint type is being excluded from the graph that should not be.", []string{"edge_type"}, nil)
 	descEdgeExpStep   = prometheus.NewDesc(namespace+"_ladybug_edge_expired_share_step_change", "1 for each edge_type whose endpoint_expired share of fetched rows moved by more than the ExpiredShareStepBudget declared for it in internal/graphschema (default 15 percentage points, floor 100 fetched rows on both builds being compared), since the PREVIOUS build. Always 0 on a process's first build, and 0 for any build whose expired/absent split was not verified against the asset table (a snapshot fast-boot). endpoint_expired has no absolute ceiling — it sits near 100% of drops for some edge types by design — so this is the alarm the level cannot be: a stable population that suddenly moves is the signature a load-set regression, a verification-query defect, or a collector losing its high-water mark would all share, though ordinary operational churn (a rolling deploy, a node pool upgrade) can also produce it — read graph_ladybug_edge_expired_share_step_delta and the worker's paired warn log before acting.", []string{"edge_type"}, nil)
 	descEdgeExpDelta  = prometheus.NewDesc(namespace+"_ladybug_edge_expired_share_step_delta", "The signed change (this build's endpoint_expired share of fetched minus the previous build's) that produced graph_ladybug_edge_expired_share_step_change for this edge_type. 0 when that gauge is 0.", []string{"edge_type"}, nil)
-	descNodeTableRows = prometheus.NewDesc(namespace+"_ladybug_node_table_rows", "Rows in each node table of the served graph, read back from the engine after the load. Compare against graph_ladybug_node_group_rows: a table above one node group is exposed to ladybug#1341.", []string{"label"}, nil)
-	descNodeGroupRows = prometheus.NewDesc(namespace+"_ladybug_node_group_rows", "Rows in one Ladybug node group (131072), the size above which the pinned engine release can miss relationships in multi-hop and variable-length matches (ladybug#1341).", nil, nil)
-	descMultiHopRisk  = prometheus.NewDesc(namespace+"_ladybug_multihop_may_be_incomplete", "1 when a node table of the served graph holds more rows than one engine node group, so multi-hop and variable-length Cypher (attack paths, blast_radius_deep, saved queries and detections, NL-to-Cypher, raw Cypher) can return fewer paths than exist with no engine error (ladybug#1341). 0 when every table fits. Absent until a build is published. Alert on 1: the API flags such results multi_hop_may_be_incomplete, and single-hop reads and risk propagation are unaffected.", nil, nil)
+	descNodeTableRows = prometheus.NewDesc(namespace+"_ladybug_node_table_rows", "Rows in each node table of the served graph, read back from the engine after the load.", []string{"label"}, nil)
+	descNodeGroupRows = prometheus.NewDesc(namespace+"_ladybug_node_group_rows", "Rows per LadybugDB storage node group; not a graph size or query correctness limit.", nil, nil)
+	descMultiHopRisk  = prometheus.NewDesc(namespace+"_ladybug_multihop_may_be_incomplete", "Legacy node-group bug signal. Zero after a graph is loaded by the fixed engine (v0.22.0+); absent before a load.", nil, nil)
 	descReachRate     = prometheus.NewDesc(namespace+"_ladybug_reachability_rate", "Fraction of node-signal-cache resources with a concrete internet-reach distance (hops 0..3). A sudden spike toward 1.0 is the leading symptom of reach-signal poisoning (every resource suddenly internet-reachable) — alert on a step change.", nil, nil)
 )
 
@@ -70,7 +70,7 @@ func (c *liveCollector) collectGraphFidelity(ch chan<- prometheus.Metric) {
 		return
 	}
 	g := c.s.Graph()
-	collectNodeGroupGuard(ch, g)
+	collectNodeTableStats(ch, g)
 	ch <- prometheus.MustNewConstMetric(descGraphNodes, prometheus.GaugeValue, float64(g.Nodes))
 	if g.NodeBudget > 0 {
 		ch <- prometheus.MustNewConstMetric(descNodeBudget, prometheus.GaugeValue, float64(g.NodeBudget))
@@ -142,19 +142,16 @@ func (c *liveCollector) collectGraphFidelity(ch chan<- prometheus.Metric) {
 	}
 }
 
-// collectNodeGroupGuard emits the multi-hop guard (graphstore/node_group_guard.go)
-// only for a published build: no counts means unknown, which must not read as 0.
-func collectNodeGroupGuard(ch chan<- prometheus.Metric, g GraphStats) {
+// collectNodeTableStats retains the legacy guard gauge for existing dashboards.
+// The upgraded engine fixes ladybug#1341: table size no longer sets it to 1.
+// No counts still means unknown, so emit nothing before the first graph load.
+func collectNodeTableStats(ch chan<- prometheus.Metric, g GraphStats) {
 	if g.NodeTableRows == nil || g.NodeGroupRows <= 0 {
 		return
 	}
 	ch <- prometheus.MustNewConstMetric(descNodeGroupRows, prometheus.GaugeValue, float64(g.NodeGroupRows))
-	risk := 0.0
 	for label, n := range g.NodeTableRows {
 		ch <- prometheus.MustNewConstMetric(descNodeTableRows, prometheus.GaugeValue, float64(n), label)
-		if n > g.NodeGroupRows {
-			risk = 1.0
-		}
 	}
-	ch <- prometheus.MustNewConstMetric(descMultiHopRisk, prometheus.GaugeValue, risk)
+	ch <- prometheus.MustNewConstMetric(descMultiHopRisk, prometheus.GaugeValue, 0)
 }

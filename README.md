@@ -70,26 +70,6 @@ with no database, see [quick scan](docs/quick-scan.md).
 
 Each, with its limits, is in [`docs/capabilities.md`](docs/capabilities.md).
 
-## Coming from Cartography
-
-[Cartography](https://github.com/cartography-cncf/cartography) inspired Vulngraph's inventory graph.
-Vulngraph brings collection, risk prioritisation, investigation and approval into one application:
-
-| What you want to do | Included in Vulngraph |
-|---|---|
-| Go from a finding to its context | A web UI with findings, graph exploration, exposure paths and evidence for risk scores. |
-| Investigate with your own agents | MCP, scoped API keys, investigation chat and natural-language graph queries. |
-| Review a proposed fix | Plans tied to findings, human approval, execution controls and an audit trail. |
-| Avoid repeating unchanged evaluations | Content diffs skip unchanged checks and enrichment; a graph-content digest skips unnecessary rebuilds. |
-| Keep inventory and history independently of graph traversal | ClickHouse stores inventory and findings; LadybugDB is a disposable in-memory graph projection. Postgres holds jobs, users and approvals. |
-
-Cartography has broader integrations, an established community, and its own security rules. Vulngraph
-is a fit when you want this investigation workflow built in. We have **not published a like-for-like
-sync benchmark**: concurrent jobs and change-aware evaluation are implementation choices, not proof
-of a speed advantage. Sync still collects and writes unchanged assets, and topology changes can
-require a full graph rebuild. See the [comparison and evaluation criteria](docs/comparing-cartography.md)
-and [architecture](docs/architecture.md).
-
 ## What it is not
 
 - **Not an agent on your hosts.** It reads cloud APIs. It does not watch syscalls or protect a running

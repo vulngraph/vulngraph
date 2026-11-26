@@ -26,7 +26,6 @@ import (
 	"github.com/vulngraph/vulngraph/internal/app/reasoncache"
 	"github.com/vulngraph/vulngraph/internal/app/respond"
 	"github.com/vulngraph/vulngraph/internal/app/savedquery"
-	"github.com/vulngraph/vulngraph/internal/app/scan"
 	"github.com/vulngraph/vulngraph/internal/app/suppress"
 	"github.com/vulngraph/vulngraph/internal/checks"
 	collectgithub "github.com/vulngraph/vulngraph/internal/collect/github"
@@ -37,7 +36,6 @@ import (
 	"github.com/vulngraph/vulngraph/internal/policy"
 	"github.com/vulngraph/vulngraph/internal/reason"
 	"github.com/vulngraph/vulngraph/internal/scanner/imagevuln"
-	"github.com/vulngraph/vulngraph/internal/scanner/nuclei"
 	"github.com/vulngraph/vulngraph/pkg/log"
 )
 
@@ -117,9 +115,6 @@ func worker(ctx context.Context, getenv func(string) string) error {
 	if err != nil {
 		return fmt.Errorf("worker: %w", err)
 	}
-	if err := nuclei.CheckEgressEnv(getenv); err != nil {
-		return fmt.Errorf("worker: %w", err)
-	}
 	takeoverHTTP, err := takeoverProbeHTTP(ctx, getenv) // nil (source off) under TAKEOVER_PROBE_DISABLED / OFFLINE_MODE
 	if err != nil {
 		return fmt.Errorf("worker: %w", err)
@@ -191,36 +186,6 @@ func worker(ctx context.Context, getenv func(string) string) error {
 	// audit sink anyway so no future worker-side write can be the one that is
 	// silently untraced.
 	suppressSvc := suppress.NewService(suppress.NewPGRepo(pool)).WithAudit(suppress.NewCHAuditRepo(ch))
-	// Scanners are pluggable connectors; nuclei is the bundled reference one.
-	// SCAN_SCANNERS optionally narrows the enabled set (comma-separated names);
-	// empty enables all bundled scanners — the OSS default. An unknown name
-	// refuses startup.
-	scanner, err := bundledScanner(getenv)
-	if err != nil {
-		return fmt.Errorf("worker: %w", err)
-	}
-	scanSvc := scan.NewService(scan.NewPGRepo(pool), assetSvc, assetSvc, scanner, findingSvc)
-	// profileSvc has two roles on the worker: it TRIGGERS scheduled profile runs
-	// (Deps.ProfileSchedules → ProfileScheduleWorker → TriggerProfileScan) and, in
-	// the all-in-one topology only, executes them (Deps.Profiles / Deps.DriftRunner;
-	// under SCAN_WORKER_DISABLED the scanner pod executes instead).
-	//
-	// The enqueuer must be non-nil for the triggering half: TriggerProfileScan
-	// calls s.enqueuer.EnqueueProfileScan unconditionally, after
-	// CreateRunForProfile has already inserted a `running` scan_runs row, so a
-	// nil enqueuer would panic and leave that run stuck forever.
-	profileEnqueueClient, err := jobs.InsertClient(pool)
-	if err != nil {
-		return fmt.Errorf("worker: profile enqueue client: %w", err)
-	}
-	profileSvc := scan.NewProfileService(
-		scan.NewPGProfileRepo(pool),
-		scan.NewPGRepo(pool),
-		nil, // ScannerRegistry — nil; worker uses profileScanner directly, not via registry
-		assetSvc,
-		jobs.NewEnqueuer(profileEnqueueClient),
-	)
-
 	// EPSS exploit-probability catalog: an in-memory cache refreshed by the
 	// periodic EPSS job and read by the enrich EPSS source. With the feed off it
 	// stays empty and the EPSS source contributes no factor.
@@ -250,19 +215,12 @@ func worker(ctx context.Context, getenv func(string) string) error {
 	// transitive internet_hops node signal from Ladybug. Nil when Ladybug is off → the
 	// InternetReach source and must-fix classifier no-op (fail-open).
 	var reachProvider enrich.ReachProvider
-	// cypherResolver resolves a scan profile's Cypher TargetQuery to scan
-	// targets (jobs.Deps.CypherResolver → ScanProfileWorker, registered on THIS
-	// pod only when ScanWorkerDisabled is false). Nil when Ladybug is off — a
-	// profile with a non-empty TargetQuery then fails its run with an explicit
-	// "not configured" error instead of silently scanning the wrong target set.
-	var cypherResolver cypherProfileResolver
 	if graphDB != nil {
 		blastSource.Counter = graphDB // ladybug primary for scoring (single count query)
 		respondBlast = &ladybugBlastProvider{graph: graphDB, assets: assetSvc}
 		peerFindings = &ladybugPeerFindings{graph: graphDB, fallback: findingSvc}
 		supplyChainLadybug = &ladybugDeployGraph{graph: graphDB}
 		reachProvider = &ladybugGraphCtx{graph: graphDB} // only InternetHops is used
-		cypherResolver = &ladybugCypherTargetResolver{cypher: graphDB, assets: assetSvc}
 	}
 	// supplyChainExposure is registered both as a scoring Source (below) and as
 	// the must-fix classifier's SupplyChainReachProvider (WithSupplyChainReach):
@@ -495,7 +453,7 @@ func worker(ctx context.Context, getenv func(string) string) error {
 
 	// Advisory drift analysis: dark unless DRIFT_ANALYSIS_ENABLED.
 	driftAnalysis, err := driftAnalysisService(ctx, getenv, pool,
-		llmUsage.Client(llmClient, llmusage.PurposeDriftAnalysis), profileSvc, findingSvc, assetSvc)
+		llmUsage.Client(llmClient, llmusage.PurposeDriftAnalysis), findingSvc, assetSvc)
 	if err != nil {
 		return fmt.Errorf("worker: %w", err)
 	}
@@ -526,7 +484,6 @@ func worker(ctx context.Context, getenv func(string) string) error {
 		Assets:             assetSvc,
 		Findings:           findingSvc,
 		Checks:             checks.Default(),
-		Scans:              scanSvc,
 		Enrich:             enrichSvc,
 		EnrichCache:        enrichCacheSvc,
 		AlertCarriers:      supplyChainExposure,
@@ -551,7 +508,6 @@ func worker(ctx context.Context, getenv func(string) string) error {
 		EPSSCache:              epssCache,
 		SCC:                    sccFetcher(getenv),
 		Correlate:              correlateSvc,
-		ScanInterval:           jobs.ScanIntervalFromEnv(getenv),
 		ScanWorkerDisabled:     scanWorkerOff,
 		SyncInterval:           parseDuration(getenv("SYNC_INTERVAL")),
 		CorrelateInterval:      parseDuration(getenv("CORRELATE_INTERVAL")),
@@ -571,30 +527,12 @@ func worker(ctx context.Context, getenv func(string) string) error {
 		}(),
 		LadybugSync:    ladybugSyncFn(graphDB, assetSvc, findingSvc, ch, epssCache, metrics),
 		TopologyBumper: topologyBumperFn(ch),
-		// Profiles/DriftRunner wire ScanProfileWorker and ScanAssetWorker.
-		// jobs.NewClient only REGISTERS them when ScanWorkerDisabled is false:
-		// they fan nuclei out, and under SCAN_WORKER_DISABLED a separate scanner
-		// pod registers them instead (jobs.NewScanClient), which is where the
-		// nuclei budget lives. Passing them unconditionally keeps the all-in-one
-		// topology working; the flag, not a nil dep, is the switch.
-		Profiles:       profileSvc,
-		DriftRunner:    profileSvc,
-		DriftAssets:    assetSvc,
-		ProfileScanner: scanSvc,
-		// Drift enqueues a scan per drift-enabled profile when a sync reports
-		// changed external assets (SyncWorker.drift) — a separate concern from
-		// DriftRunner above, which EXECUTES the resulting scan_asset job once
-		// enqueued. Both must be wired for drift scanning to do anything at all;
-		// leaving this half unwired disables drift scanning silently.
-		Drift:            jobs.NewEnqueuer(profileEnqueueClient).WithDriftProfiles(profileSvc),
-		CypherResolver:   cypherResolver,
-		Intel:            domainMonitor(feeds, pool, ch, llmUsage.Client(llmClient, llmusage.PurposeCTTriage)),
-		Notify:           notifySvc,
-		SavedQueries:     savedQuerySvc,
-		ProfileSchedules: profileSvc,
-		Adjudicator:      adjudicator,
-		DriftAnalysis:    driftAnalysis,
-		DiskScan:         diskScan,
+		Intel:          domainMonitor(feeds, pool, ch, llmUsage.Client(llmClient, llmusage.PurposeCTTriage)),
+		Notify:         notifySvc,
+		SavedQueries:   savedQuerySvc,
+		Adjudicator:    adjudicator,
+		DriftAnalysis:  driftAnalysis,
+		DiskScan:       diskScan,
 		// The advisory sources the collectors were built with, so the inventory
 		// overlay judges CVE-matchability against the same ones.
 		InventoryAdvisory: feeds.AdvisorySources(),
@@ -689,37 +627,6 @@ func worker(ctx context.Context, getenv func(string) string) error {
 				return
 			case <-ticker.C:
 				jobs.LogQueueStats(ctx, pool)
-			}
-		}
-	})
-
-	// Reap orphaned scan runs — runs stuck in 'running' whose worker died before
-	// recording a terminal status (pod eviction / OOM / deploy). Deliberately a
-	// worker-owned ticker, NOT a River periodic job: a River periodic is
-	// deduplicated by kind, so a single stuck reaper row on an unconsumed queue
-	// would block every future enqueue. A plain ticker
-	// has no such failure mode — it reaps on boot and every 30m regardless.
-	safego(ctx, "scan-run-reaper", func() {
-		reap := func() {
-			ids, err := scanSvc.ReapStaleRuns(ctx)
-			if err != nil {
-				log.FromContext(ctx).Warn().Err(err).Msg("worker: scan reap failed")
-				return
-			}
-			if len(ids) > 0 {
-				log.FromContext(ctx).Warn().Int("reaped", len(ids)).Strs("run_ids", ids).
-					Msg("failed scan runs orphaned in 'running' (worker died mid-scan)")
-			}
-		}
-		reap() // on boot — clears anything left by the eviction that restarted us
-		ticker := time.NewTicker(30 * time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				reap()
 			}
 		}
 	})

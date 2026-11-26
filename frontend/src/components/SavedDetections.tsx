@@ -8,7 +8,7 @@ import {
 import { Loading, Empty, ErrorNote } from "./ui";
 import { errorMessage } from "../lib/api";
 
-// Cron presets matching WorkflowBuilder's scan schedules, for consistency.
+// Common cron schedules for saved graph detections.
 // Exported so the unified Save dialog offers the same set (one vocabulary).
 export const SCHEDULES: { label: string; cron: string }[] = [
   { label: "Manual", cron: "" },

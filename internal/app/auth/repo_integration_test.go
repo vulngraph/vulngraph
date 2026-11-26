@@ -229,13 +229,13 @@ func TestPGRepo_AdminSinceTracksBecomingAdmin(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, adminSince(viewer.ID).IsZero())
 
-	// A legacy admin (role admin, no recorded promotion) stays unknown when
-	// re-set to admin, so the age floor keeps counting from created_at.
+	// A legacy admin with unknown tenure receives a new tenure start; an old
+	// account creation timestamp cannot satisfy the approval age floor.
 	_, err = pool.Exec(ctx, "UPDATE users SET role = 'admin', admin_since = NULL WHERE id = $1", viewer.ID)
 	require.NoError(t, err)
 	_, err = repo.SetUserRole(ctx, viewer.ID, RoleAdmin, false)
 	require.NoError(t, err)
-	require.True(t, adminSince(viewer.ID).IsZero(), "a legacy admin must not be reset to now by a no-op role set")
+	require.WithinDuration(t, time.Now(), adminSince(viewer.ID), time.Minute)
 }
 
 // CreateUserOrFirstAdmin: on a populated table it keeps the requested role; on

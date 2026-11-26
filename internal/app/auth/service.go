@@ -22,6 +22,7 @@ import (
 
 // Repo is the persistence the service needs. PGRepo implements it.
 type Repo interface {
+	WithUserAdministration(ctx context.Context, fn func(UserAdminRepo) error) error
 	CreateUser(ctx context.Context, email, passwordHash string, role Role) (User, error)
 	// CreateUserOrFirstAdmin is CreateUser, except that it provisions RoleAdmin
 	// when the users table is empty — decided atomically with the insert, so two

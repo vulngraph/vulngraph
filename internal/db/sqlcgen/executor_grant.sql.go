@@ -22,21 +22,36 @@ func (q *Queries) PurgeExpiredExecutorGrants(ctx context.Context, expiresAt time
 }
 
 const redeemExecutorGrant = `-- name: RedeemExecutorGrant :execrows
+WITH authorized AS MATERIALIZED (
+    SELECT id FROM users
+    WHERE id = $4 AND role = 'admin' AND disabled_at IS NULL
+      AND authority_version = $5
+    FOR SHARE
+)
 INSERT INTO executor_grant_redemptions (grant_hash, redeemed_by_id, expires_at)
-VALUES ($1, $2, $3)
+SELECT $1, $2, $3
+FROM authorized
 ON CONFLICT (grant_hash) DO NOTHING
 `
 
 type RedeemExecutorGrantParams struct {
-	GrantHash    string
-	RedeemedByID string
-	ExpiresAt    time.Time
+	GrantHash        string
+	RedeemedByID     string
+	ExpiresAt        time.Time
+	ApproverID       string
+	AuthorityVersion int64
 }
 
 // Records the first use of an approval grant. Zero rows affected means the
-// grant was already redeemed.
+// grant was already redeemed or its approver no longer has the issuing authority.
 func (q *Queries) RedeemExecutorGrant(ctx context.Context, arg RedeemExecutorGrantParams) (int64, error) {
-	result, err := q.db.Exec(ctx, redeemExecutorGrant, arg.GrantHash, arg.RedeemedByID, arg.ExpiresAt)
+	result, err := q.db.Exec(ctx, redeemExecutorGrant,
+		arg.GrantHash,
+		arg.RedeemedByID,
+		arg.ExpiresAt,
+		arg.ApproverID,
+		arg.AuthorityVersion,
+	)
 	if err != nil {
 		return 0, err
 	}

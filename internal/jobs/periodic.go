@@ -1,14 +1,11 @@
 package jobs
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/riverqueue/river"
-
-	"github.com/vulngraph/vulngraph/pkg/log"
 )
 
 // PeriodicConfig is the deps-free description of the periodic schedule. Both the
@@ -23,7 +20,6 @@ type PeriodicConfig struct {
 	SyncInterval      time.Duration // 0 → defaultSyncInterval, but see above
 	CorrelateInterval time.Duration // 0 → defaultCorrelateInterval
 	EnrichInterval    time.Duration // 0 → defaultEnrichInterval
-	ScanInterval      time.Duration // 0 → no periodic scan
 	// Feature periodics. In the worker these mirror dep presence (see periodicConfig);
 	// the scanner has no deps to read, so it derives them from env
 	// (PeriodicConfigFromEnv). TestScannerSchedulesSameKindsAsWorker locks the two
@@ -36,7 +32,6 @@ type PeriodicConfig struct {
 	SCC              bool
 	DomainMonitor    bool
 	SavedQueries     bool
-	ProfileSchedules bool
 	Adjudicator      bool
 	DriftAnalysis    bool
 	DiskScan         bool
@@ -85,7 +80,6 @@ func PeriodicConfigFromEnv(getenv func(string) string) (PeriodicConfig, error) {
 		SyncInterval:      envDuration(getenv, "SYNC_INTERVAL"),
 		CorrelateInterval: envDuration(getenv, "CORRELATE_INTERVAL"),
 		EnrichInterval:    envDuration(getenv, "ENRICH_INTERVAL"),
-		ScanInterval:      ScanIntervalFromEnv(getenv),
 		KEV:               feeds.KEV,
 		OSV:               feeds.OSV,
 		MalFeed:           feeds.MalFeed,
@@ -94,7 +88,6 @@ func PeriodicConfigFromEnv(getenv func(string) string) (PeriodicConfig, error) {
 		SCC:               set("SCC_ORG_ID"),
 		DomainMonitor:     feeds.DomainMonitor,
 		SavedQueries:      true, // the worker always wires the saved-query scheduler
-		ProfileSchedules:  true, // the worker always wires the profile cron tick
 		Adjudicator:       adjudicator,
 		DriftAnalysis:     driftAnalysis,
 		DiskScan:          diskScan,
@@ -103,34 +96,6 @@ func PeriodicConfigFromEnv(getenv func(string) string) (PeriodicConfig, error) {
 		// goes to OSV, so the sweep is also off whenever the OSV feed is.
 		ImageVuln: feeds.OSV && !imageScanOff,
 	}, nil
-}
-
-// ScanIntervalFromEnv reads SCAN_INTERVAL, the switch that decides whether the
-// periodic estate scan exists at all (scanPeriodicJobs is empty at zero). It lives
-// here rather than in cmd/graph because BOTH the worker (via Deps.ScanInterval)
-// and the scanner derive it, and a second copy is a second thing to drift.
-//
-// SCAN_INTERVAL is a Go duration, e.g. "168h" for weekly; unset or unparseable
-// yields 0. Sub-hour values are rejected with a warning: a nuclei estate scan takes
-// 20-60 minutes, so a shorter interval schedules the next run before the current
-// one finishes — the uniqueness lock helps, but a 5-minute interval still queues
-// up multiple concurrent jobs.
-func ScanIntervalFromEnv(getenv func(string) string) time.Duration {
-	raw := strings.TrimSpace(getenv("SCAN_INTERVAL"))
-	if raw == "" {
-		return 0
-	}
-	d, err := time.ParseDuration(raw)
-	if err != nil || d <= 0 {
-		return 0
-	}
-	if d < time.Hour {
-		log.FromContext(context.Background()).Warn().
-			Str("SCAN_INTERVAL", raw).
-			Msg("SCAN_INTERVAL < 1h rejected — nuclei scans take 20-60 min; use ≥1h (e.g. 168h for weekly)")
-		return 0
-	}
-	return d
 }
 
 // envDuration parses a duration env var, treating unset/unparseable as zero —
@@ -150,7 +115,6 @@ func (deps Deps) periodicConfig() PeriodicConfig {
 		SyncInterval:      deps.SyncInterval,
 		CorrelateInterval: deps.CorrelateInterval,
 		EnrichInterval:    deps.EnrichInterval,
-		ScanInterval:      deps.ScanInterval,
 		KEV:               deps.KEVFetcher != nil,
 		OSV:               deps.OSV != nil,
 		MalFeed:           deps.MalFeed != nil,
@@ -159,7 +123,6 @@ func (deps Deps) periodicConfig() PeriodicConfig {
 		SCC:               deps.SCC != nil,
 		DomainMonitor:     deps.Intel != nil,
 		SavedQueries:      deps.SavedQueries != nil,
-		ProfileSchedules:  deps.ProfileSchedules != nil,
 		Adjudicator:       deps.Adjudicator != nil,
 		DriftAnalysis:     deps.driftAnalysisOn(),
 		DiskScan:          deps.DiskScan != nil,
@@ -305,9 +268,6 @@ func buildPeriodicJobs(cfg PeriodicConfig) []*river.PeriodicJob {
 			&river.PeriodicJobOpts{RunOnStart: false},
 		),
 	}
-	// scanPeriodicJobs self-gates on interval (empty when <= 0); the leader enqueues
-	// ScanArgs onto queueScan, which the scanner pod consumes.
-	periodic = append(periodic, scanPeriodicJobs(cfg.ScanInterval)...)
 	// The intel feeds are on by default; each has an opt-out (feeds.go).
 	if cfg.KEV {
 		// RunOnStart: true — KEV and OSV fire on every worker boot, offset past the
@@ -426,14 +386,6 @@ func buildPeriodicJobs(cfg PeriodicConfig) []*river.PeriodicJob {
 		periodic = append(periodic, river.NewPeriodicJob(
 			river.PeriodicInterval(time.Minute),
 			func() (river.JobArgs, *river.InsertOpts) { return RunSavedQueriesArgs{}, nil },
-			&river.PeriodicJobOpts{RunOnStart: false},
-		))
-	}
-	if cfg.ProfileSchedules {
-		// Per-minute tick: fire scan profiles whose cron schedule is due.
-		periodic = append(periodic, river.NewPeriodicJob(
-			river.PeriodicInterval(time.Minute),
-			func() (river.JobArgs, *river.InsertOpts) { return RunScheduledProfilesArgs{}, nil },
 			&river.PeriodicJobOpts{RunOnStart: false},
 		))
 	}

@@ -174,36 +174,13 @@ This answer was written by a model, so wording and details vary between runs and
 claim against the finding or the graph before you act on it. The fixed versions in this recording are the
 model's reading of the advisories. The finding pages show each advisory's own fixed version.
 
-## What changed, and do I need to scan?
+## What changed, and does it need investigation?
 
-With `DRIFT_ANALYSIS_ENABLED` on, the worker reads each connector's new inventory changes every five minutes
-and an LLM writes down what changed and whether a scan looks worthwhile. The Drift page shows the latest one
-above the changes, and the MCP tools `list_drift_analyses` and `get_drift_analysis` return the same fields
-to an agent. It is advice only: it never starts a scan, and a profile with drift enabled scans exactly as
-before. A failed or over-budget analysis reads as unknown, never as "no scan needed".
-
-An illustrative exchange (not a recording; ids and wording are made up):
-
-> **You:** Did anything change that I should scan?
->
-> **Agent** (calls `list_drift_analyses` with `since: 24h`): two batches. `enabled: true`.
-> The newer one has `status: unknown`, `unknown_reason: budget`, `scan_recommendation: unknown`. The LLM
-> budget ran out before it was read, so I cannot tell you whether it needs a scan. I will not read that as
-> "no scan needed".
->
-> **Agent** (calls `get_drift_analysis` with `batch_id` of the older batch): `status: analysed`,
-> `scan_recommendation: recommended`, `exposure_judgement: increased`, `confidence: medium`,
-> `advisory: true`. Summary: acme-web-2 gained a public IP. Evidence: `acme-web-2` has `public_ip` set.
-> Suggested profile: `external-web`. This is the model's reading, so I would open the asset first.
->
-> **You:** Start it.
->
-> **Agent** (calls `start_profile_scan` with `profile_id: external-web` and `drift_batch_id`): refused,
-> because this key is read-scoped and the tool is admin only. A person with an admin session or an admin key
-> can run it. The tool does not look at the analysis, and the run is audited either way.
-
-An admin sees the same suggestion in the UI as a **Start profile scan** button with a confirm step, which
-calls the ordinary scan-profile trigger.
+With `DRIFT_ANALYSIS_ENABLED`, the Drift page and the read-only MCP tools
+`list_drift_analyses` and `get_drift_analysis` describe inventory changes and
+cite the affected assets. Advice is LLM-derived. A failed or over-budget
+analysis remains unknown; it never starts a scan or changes cloud resources.
+Open the cited asset to inspect the evidence before acting.
 
 ## Identity
 
@@ -229,15 +206,6 @@ verdicts below are fixed sample text, not model output.
 A control that cannot be assessed because the data is missing is shown as unknown, never as passing.
 
 ![Compliance: 2 of 31 controls passing, with the failing CIS and SOC 2 controls and the findings behind them](images/compliance-dark.png)
-
-## Scans and templates
-
-An LLM drafts a template, the editor lints it by loading it through Nuclei, and one click fires it at a
-URL. In the recording the target is a local test page we control, so the match is real. Drafts are never
-saved or run on their own. Scan profiles can also run on a schedule or when a sync finds a changed
-internet-facing asset.
-
-![Describing a check, getting a valid Nuclei template, and testing it against a local page for one match](images/ai-template-dark.gif)
 
 ## Disk scan results
 

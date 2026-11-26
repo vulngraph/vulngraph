@@ -14,6 +14,7 @@ digest=sha256:0000000000000000000000000000000000000000000000000000000000000000
 # Strings and lists only: Helm applies --set-json before --set-string, so a
 # case overrides one of these with the same flag, and a bool with --set.
 operator=(
+  --set config.diskScanEnabled=true
   --set-string "image.digest=$digest,ingress.host=graph.example.com"
   --set-string "networkPolicy.ingressNamespace=ingress-nginx,networkPolicy.metricsNamespace=monitoring"
   --set-string "config.trustedProxyCidrs=10.244.0.0/16,postgres.tlsSecret=pg-tls,clickhouse.tlsSecret=ch-tls"

@@ -244,12 +244,13 @@ func NewPGGrantLedger(pool *pgxpool.Pool) *PGGrantLedger {
 // there. Redemptions of grants that expired a day ago are purged first — they
 // guard nothing, an expired grant is refused on its expiry — and a failed purge
 // only delays that cleanup, so it is logged rather than refusing the execution.
-func (r *PGGrantLedger) Redeem(ctx context.Context, grantHash, byID string, expiresAt time.Time) (bool, error) {
+func (r *PGGrantLedger) Redeem(ctx context.Context, grantHash, byID, approverID string, authorityVersion int64, expiresAt time.Time) (bool, error) {
 	if err := r.q.PurgeExpiredExecutorGrants(ctx, time.Now().Add(-24*time.Hour)); err != nil {
 		log.FromContext(ctx).Warn().Err(err).Msg("executor: purging expired grant redemptions failed")
 	}
 	n, err := r.q.RedeemExecutorGrant(ctx, sqlcgen.RedeemExecutorGrantParams{
 		GrantHash: grantHash, RedeemedByID: byID, ExpiresAt: expiresAt,
+		ApproverID: approverID, AuthorityVersion: authorityVersion,
 	})
 	if err != nil {
 		return false, fmt.Errorf("Redeem: %w", err)

@@ -36,7 +36,6 @@ import (
 	"github.com/vulngraph/vulngraph/internal/app/policy"
 	"github.com/vulngraph/vulngraph/internal/app/respond"
 	"github.com/vulngraph/vulngraph/internal/app/savedquery"
-	"github.com/vulngraph/vulngraph/internal/app/scan"
 	"github.com/vulngraph/vulngraph/internal/app/suppress"
 	"github.com/vulngraph/vulngraph/internal/app/webhook"
 	"github.com/vulngraph/vulngraph/internal/obs"
@@ -48,30 +47,27 @@ import (
 // Handlers carries the per-domain HTTP handlers New wires together. A struct
 // (rather than positional args) keeps the signature stable as domains are added.
 type Handlers struct {
-	Auth         *auth.Handler
-	Asset        *asset.Handler
-	Connector    *connector.Handler
-	Finding      *finding.Handler
-	FindingCtx   *findingctx.Handler
-	AlertCtx     *alertctx.Handler // POST /api/context/alert; nil skips registration
-	Belief       *belief.Handler
-	Suppress     *suppress.Handler
-	Scan         *scan.Handler
-	ScanTemplate *scan.TemplateHandler
-	ScanProfile  *scan.ProfileHandler
-	Respond      *respond.Handler
-	Refine       *respond.RefineHandler
-	Compliance   *compliance.Handler
-	Govern       *govern.Handler
-	MCP          *mcp.Handler
-	Explore      *explore.Handler
-	Webhook      *webhook.Handler
-	Executor     *executor.Handler
-	Policy       *policy.Handler
-	APIKey       *apikey.Handler
-	Chat         *chat.Handler
-	CostData     *costdata.Handler
-	DriftData    *asset.DriftHandler
+	Auth       *auth.Handler
+	Asset      *asset.Handler
+	Connector  *connector.Handler
+	Finding    *finding.Handler
+	FindingCtx *findingctx.Handler
+	AlertCtx   *alertctx.Handler // POST /api/context/alert; nil skips registration
+	Belief     *belief.Handler
+	Suppress   *suppress.Handler
+	Respond    *respond.Handler
+	Refine     *respond.RefineHandler
+	Compliance *compliance.Handler
+	Govern     *govern.Handler
+	MCP        *mcp.Handler
+	Explore    *explore.Handler
+	Webhook    *webhook.Handler
+	Executor   *executor.Handler
+	Policy     *policy.Handler
+	APIKey     *apikey.Handler
+	Chat       *chat.Handler
+	CostData   *costdata.Handler
+	DriftData  *asset.DriftHandler
 	// DriftAnalysis serves the advisory drift verdicts; read-only, nil skips registration.
 	DriftAnalysis *driftanalysis.Handler
 	// PkgInv takes package inventories from a customer's own agent
@@ -296,7 +292,6 @@ func New(addr string, h Handlers) *http.Server {
 	// /api/context/alert (mcp/limits.go).
 	if h.MCP != nil {
 		h.MCP.WithLimits(llmLimiter, alertLimiter).
-			WithScanLimit(auth.NewKeyedLimiter(DefaultMCPScanStartPerUserPerMinute, DefaultMCPScanStartPerUserPerMinute)).
 			WithCypherLimit(cypherLimiter)
 	}
 	mux.HandleFunc("POST /api/mcp", authH.RequireAuth(h.MCP.ServeHTTP))
@@ -330,30 +325,6 @@ func New(addr string, h Handlers) *http.Server {
 	// /api/ paths get a problem response instead of index.html.
 	mux.Handle(apiFallbackPattern, apiFallback(mux))
 	mux.Handle("/", web.Handler())
-
-	mux.HandleFunc("GET /api/scans", authH.RequireAuth(h.Scan.List))
-	mux.HandleFunc("GET /api/scans/{id}", authH.RequireAuth(h.Scan.Get))
-	mux.HandleFunc("GET /api/scans/{id}/findings", authH.RequireAuth(h.Scan.GetFindings))
-	mux.HandleFunc("POST /api/scans", authH.RequireAuth(auth.RequireRole(auth.RoleAdmin, h.Scan.Trigger)))
-	mux.HandleFunc("POST /api/scans/import", authH.RequireAuth(auth.RequireRole(auth.RoleAdmin, h.Scan.ImportFindings)))
-	mux.HandleFunc("DELETE /api/scans/{id}", authH.RequireAuth(auth.RequireRole(auth.RoleAdmin, h.Scan.Cancel)))
-	// Template editor — admin-only throughout: validate builds a nuclei engine
-	// per call, test runs active nuclei probes against live URLs, and generate
-	// makes up to three LLM calls per request.
-	mux.HandleFunc("POST /api/scans/templates/validate", authH.RequireAuth(auth.RequireRole(auth.RoleAdmin, h.ScanTemplate.Validate)))
-	mux.HandleFunc("POST /api/scans/templates/test", authH.RequireAuth(auth.RequireRole(auth.RoleAdmin, h.ScanTemplate.Test)))
-	mux.HandleFunc("POST /api/scans/templates/generate", authH.RequireAuth(auth.RequireRole(auth.RoleAdmin, llm(h.ScanTemplate.Generate))))
-
-	// Scan profiles — /api/scan-profiles/ (not /api/scans/profiles/ which conflicts
-	// with /api/scans/{id}/findings in Go 1.22 ServeMux pattern matching).
-	mux.HandleFunc("GET /api/scan-profiles", authH.RequireAuth(h.ScanProfile.ListProfiles))
-	mux.HandleFunc("POST /api/scan-profiles", authH.RequireAuth(auth.RequireRole(auth.RoleAdmin, h.ScanProfile.CreateProfile)))
-	mux.HandleFunc("GET /api/scan-profiles/{id}", authH.RequireAuth(h.ScanProfile.GetProfile))
-	mux.HandleFunc("PUT /api/scan-profiles/{id}", authH.RequireAuth(auth.RequireRole(auth.RoleAdmin, h.ScanProfile.UpdateProfile)))
-	mux.HandleFunc("DELETE /api/scan-profiles/{id}", authH.RequireAuth(auth.RequireRole(auth.RoleAdmin, h.ScanProfile.DeleteProfile)))
-	mux.HandleFunc("POST /api/scan-profiles/{id}/trigger", authH.RequireAuth(auth.RequireRole(auth.RoleAdmin, h.ScanProfile.TriggerProfileScan)))
-	// Workflow presets — static catalog, no auth needed.
-	mux.HandleFunc("GET /api/workflows/presets", scan.WorkflowPresets)
 
 	mux.HandleFunc("GET /api/connectors", authH.RequireAuth(h.Connector.List))
 	mux.HandleFunc("POST /api/connectors", authH.RequireAuth(auth.RequireRole(auth.RoleAdmin, h.Connector.Create)))
@@ -446,10 +417,7 @@ func withRecover(next http.Handler) http.Handler {
 // instead of a reset connection.
 const requestDeadline = 45 * time.Second
 
-// longRequestDeadline bounds routes that legitimately outlive requestDeadline:
-// nuclei template tests (the handler allows 5 minutes), LLM template
-// generation (up to three model calls), streamed plan refinement, and scan
-// imports (a 32 MiB upload can take longer than the server's ReadTimeout).
+// longRequestDeadline bounds streamed plan refinement.
 const longRequestDeadline = 10 * time.Minute
 
 // isLongRunning reports whether r targets one of the longRequestDeadline routes.
@@ -458,9 +426,7 @@ func isLongRunning(r *http.Request) bool {
 		return false
 	}
 	p := r.URL.Path
-	return p == "/api/scans/templates/test" || p == "/api/scans/templates/generate" ||
-		p == "/api/scans/import" ||
-		(strings.HasPrefix(p, "/api/decisions/") && strings.HasSuffix(p, "/refine"))
+	return strings.HasPrefix(p, "/api/decisions/") && strings.HasSuffix(p, "/refine")
 }
 
 // extendConnDeadlines lifts the server-wide ReadTimeout/WriteTimeout for one

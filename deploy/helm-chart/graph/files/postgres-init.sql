@@ -13,7 +13,7 @@
 -- The scanner connects as graph_scanner, which owns nothing. Its grants cannot
 -- be made here: this runs before migrate has created the tables, and they are
 -- graph's to grant. migrate grants them after every run
--- (internal/migrate/scanner.go): River's job tables and the scan tables, and
+-- (internal/migrate/scanner.go): River's job tables, disk results and the connector-mode view, and
 -- nothing on users, API keys or connectors.
 --
 -- GRAPH_DB_PASSWORD and GRAPH_SCANNER_DB_PASSWORD are their passwords. When

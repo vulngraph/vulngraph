@@ -22,7 +22,7 @@ import (
 // MaxConnsServe and MaxConnsScanner are deliberately smaller than the
 // worker's: neither runs anywhere near as many concurrent job workers (serve
 // answers HTTP/MCP requests plus its own periodic Ladybug-replica sync; scanner
-// fans out a bounded number of nuclei targets). Serve also holds one
+// executes bounded disk-volume reads). Serve also holds one
 // connection outside its pool for its readiness check (Readiness). Each pod type is sized
 // independently rather than sharing one constant, because the sum across all
 // replicas of all pod types must stay under Postgres's max_connections.

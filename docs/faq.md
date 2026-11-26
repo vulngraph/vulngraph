@@ -6,7 +6,7 @@ connector to `read_write`, give its role the permissions, and then approve each 
 admin for destructive ones.
 
 **Do I need an LLM?** No. Inventory, checks, scanning and scoring work without one. An LLM adds the
-plain-English query box, chat, drafted Nuclei templates and fix proposals, and it only proposes
+plain-English query box, chat and fix proposals, and it only proposes
 ([providers and what is sent](llm-providers.md)).
 
 **What leaves my network?** Only what [the egress list](configuration.md#network-egress) shows, each
@@ -23,7 +23,7 @@ is recorded as unknown and is never reported as clean or fixed.
 minutes if you set `SYNC_INTERVAL`, and the graph is re-correlated after every sync. GitHub changes sync
 immediately through a signed webhook, and any other event, such as an EventBridge rule on a security-group
 change, can trigger a sync with one API call. Native AWS and GCP event sources are not built, so cloud
-connectors otherwise run on the schedule. A changed internet-facing asset can start a Nuclei scan, and
+connectors otherwise run on the schedule. Inventory changes can receive advisory drift analysis, and
 **Verify live** checks a finding against the cloud right now. [Set it up](getting-started.md#5-keep-the-data-fresh).
 
 **Can I try it without installing a database?** Yes: `graph scan` checks one account from environment

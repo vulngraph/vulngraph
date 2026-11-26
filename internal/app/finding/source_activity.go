@@ -43,7 +43,6 @@ var ExpectedActivitySources = []string{
 	"aws_guardduty",
 	"ghas_code_scanning",
 	"ghas_secrets",
-	"nuclei",
 	"gcp_scc",
 	"iac",
 	"iac_terraform",
@@ -59,10 +58,6 @@ var ExpectedActivitySources = []string{
 // just used internally) because the guard test that reads it lives in an
 // external finding_test package to avoid the coverage->enrich->finding cycle.
 var ExcludedActivitySources = map[string]string{
-	"openvas": "human-triggered scan import (scan.validImportSources) — no periodicity to be dark against",
-	"qualys":  "human-triggered scan import (scan.validImportSources) — no periodicity to be dark against",
-	"burp":    "human-triggered scan import (scan.validImportSources) — no periodicity to be dark against",
-	"custom":  "human-triggered scan import (scan.validImportSources) — no periodicity to be dark against",
 	"vm_vuln": "derived VM fleet CVEs (internal/jobs/vmvuln.go) — silent by construction in any estate with no " +
 		"SSM/OS Config inventory or no vulnerable VM package; inventory liveness is the package_inventory stamp's job, not a dark-source alert",
 	"base_image": "derived container base-image findings (internal/jobs/baseimage.go) — silent by construction in any estate whose " +
@@ -167,5 +162,16 @@ func (s *Service) SourceActivity(ctx context.Context) ([]SourceActivity, error) 
 	if err != nil {
 		return nil, fmt.Errorf("SourceActivity: %w", err)
 	}
-	return mergeExpectedSources(live, ExpectedActivitySources), nil
+	active := make([]SourceActivity, 0, len(live))
+	for _, activity := range live {
+		switch activity.Source {
+		case "nuclei", "openvas", "qualys", "burp", "custom":
+			// Retired producers retain historical findings, but cannot produce fresh
+			// activity and must not trigger a permanently stale-source alert.
+			continue
+		default:
+			active = append(active, activity)
+		}
+	}
+	return mergeExpectedSources(active, ExpectedActivitySources), nil
 }

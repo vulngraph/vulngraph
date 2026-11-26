@@ -92,8 +92,8 @@ test("the drift page shows the analysis panel above the events, labelled advisor
         analyses: [{
           batch_id: "b1", connector_id: "c1", window_start: "2026-06-14T00:00:00Z", window_end: "2026-06-14T01:00:00Z",
           status: "unknown", unknown_reason: "llm_error", summary: "", changes: [], exposure_judgement: "",
-          scan_recommendation: "unknown", reason: "", suggested_profile_id: "", suggested_template_tags: [],
-          confidence: "low", evidence: [], auto_scan_profile_ids: [], truncated: false, source: "llm", advisory: true,
+          scan_recommendation: "unknown", reason: "",
+          confidence: "low", evidence: [], truncated: false, source: "llm", advisory: true,
         }],
       }),
     ),

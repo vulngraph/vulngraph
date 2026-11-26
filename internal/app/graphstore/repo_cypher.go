@@ -2,6 +2,7 @@ package graphstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -112,6 +113,10 @@ func execCypher(conn *ladybug.Connection, query string, budget QueryBudget) (exp
 	var rows []map[string]any
 	scalarCols := map[string]bool{}
 	truncated := false
+	conversion := &ladybug.ResultBudget{
+		Bytes: 4 << 20, Values: 65536, MaxCellBytes: 64 << 10,
+		MaxCollectionItems: 4096, MaxDepth: 16,
+	}
 
 	for res.HasNext() {
 		if len(nodes) >= budget.MaxNodes || len(edges) >= budget.MaxEdges || len(rows) >= budget.MaxNodes {
@@ -124,8 +129,12 @@ func execCypher(conn *ladybug.Connection, query string, budget QueryBudget) (exp
 		if err != nil {
 			return explore.Result{}, fmt.Errorf("execCypher: next row: %w", err)
 		}
-		m, err := row.GetAsMap()
+		m, err := row.GetAsMapBounded(conversion)
 		row.Close()
+		if errors.Is(err, ladybug.ErrResultLimit) {
+			truncated = true
+			break
+		}
 		if err != nil {
 			return explore.Result{}, fmt.Errorf("execCypher: read row: %w", err)
 		}

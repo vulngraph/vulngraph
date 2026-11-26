@@ -29,7 +29,7 @@ password. Open **http://localhost:8080** and sign in with it.
 The stack is Postgres (state), ClickHouse (assets, edges, findings, audit log), `serve` (API and UI) and
 `worker` (sync, correlation, enrichment, scans). The compose stack generates its own secrets on first start
 and keeps them in Docker volumes ([details](../deploy/docker-compose/README.md#secrets)). It is an
-evaluation setup: Nuclei runs inside the worker, next to the connector credentials. Use the Helm chart for
+evaluation setup. Opted-in disk reads run in the worker there. Use the Helm chart for
 anything real ([Production](#6-production)).
 
 Two local-only notes:
@@ -90,7 +90,7 @@ Google Workspace account from environment credentials and stores nothing.
 ## 4. Turn on the LLM (optional)
 
 Inventory, checks, scanning and scoring work without an LLM. An LLM adds the plain-English query box,
-the chat panel, AI-drafted Nuclei templates, remediation proposals and the triage of look-alike domains.
+the chat panel, remediation proposals and the triage of look-alike domains.
 
 Put the provider in `deploy/docker-compose/app.env` (git-ignored) and run `docker compose up -d` again:
 
@@ -133,10 +133,9 @@ cloud connectors run on the schedule.
 finding, or the `live_aws_describe` and `get_cloudtrail_events` MCP tools. Calls assume the connector's
 read-only role through STS, are admin-gated, and are audited.
 
-**Scans on drift.** A scan profile with drift enabled runs a Nuclei scan when a sync finds a changed
-internet-facing asset. Optionally, `DRIFT_ANALYSIS_ENABLED=true` adds an advisory LLM read of what changed
-and whether a scan looks worthwhile, on the Drift page and over MCP; it never starts a scan
-([examples](examples.md#what-changed-and-do-i-need-to-scan)).
+**Drift analysis.** `DRIFT_ANALYSIS_ENABLED=true` adds advisory LLM analysis of
+inventory changes on the Drift page and over MCP. It cites affected assets and
+never starts an external scan or changes cloud resources.
 
 ## 6. Production
 

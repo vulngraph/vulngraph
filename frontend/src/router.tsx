@@ -11,10 +11,6 @@ import { Findings } from "./routes/Findings";
 import { FindingDetail } from "./routes/FindingDetail";
 import { Assets } from "./routes/Assets";
 import { AssetDetail } from "./routes/AssetDetail";
-import { Scans } from "./routes/Scans";
-import { ScanDetail } from "./routes/ScanDetail";
-import { ScanTemplates } from "./routes/ScanTemplates";
-import { ScanProfiles } from "./routes/ScanProfiles";
 import { Decisions } from "./routes/Decisions";
 import { Compliance } from "./routes/Compliance";
 import { Explore } from "./routes/Explore";
@@ -24,7 +20,6 @@ import { Cost } from "./routes/Cost";
 import { Identity } from "./routes/Identity";
 import { DSPM } from "./routes/DSPM";
 import { DomainMonitor } from "./routes/DomainMonitor";
-import { ScansLayout } from "./components/ScansSubNav";
 import { Drift } from "./routes/Drift";
 
 const rootRoute = createRootRoute({
@@ -73,12 +68,6 @@ const exploreRedirect = createRoute({
   path: "/explore",
   beforeLoad: () => { throw redirect({ to: "/investigate/graph" }); },
 });
-// /investigate/scans is an alias for the top-level Scans section.
-const investigateScansRedirect = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/investigate/scans",
-  beforeLoad: () => { throw redirect({ to: "/scans" }); },
-});
 const connectorsRedirect = createRoute({
   getParentRoute: () => rootRoute,
   path: "/connectors",
@@ -115,16 +104,6 @@ function investigateChild<const P extends string>(path: P, component: () => Reac
   return createRoute({ getParentRoute: () => investigateRoute, path, component });
 }
 
-// Scans layout route — renders the section sub-nav once + Outlet for children.
-const scansRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/scans",
-  component: ScansLayout,
-});
-
-function scansChild<const P extends string>(path: P, component: () => React.ReactNode) {
-  return createRoute({ getParentRoute: () => scansRoute, path, component });
-}
 
 export const routeTree = rootRoute.addChildren([
   rootRedirect,
@@ -132,7 +111,6 @@ export const routeTree = rootRoute.addChildren([
   findingsRedirect,
   assetsRedirect,
   exploreRedirect,
-  investigateScansRedirect,
   connectorsRedirect,
   signalsRedirect,
   hygieneRedirect,
@@ -143,13 +121,6 @@ export const routeTree = rootRoute.addChildren([
   route("/compliance", Compliance),
   route("/settings", Settings),
 
-  // Scans — top-level section.
-  scansRoute.addChildren([
-    scansChild("/", Scans),
-    scansChild("/templates", ScanTemplates),
-    scansChild("/profiles", ScanProfiles),
-    scansChild("/$id", ScanDetail),
-  ]),
 
   investigateRoute.addChildren([
     investigateChild("/graph", Explore),

@@ -173,9 +173,9 @@ func TestRun_GrantsTheScannerRoleOnlyItsTables(t *testing.T) {
 		"SELECT count(*) FROM river_job",
 		"SELECT count(*) FROM river_leader",
 		"SELECT count(*) FROM river_queue",
-		"SELECT count(*) FROM scan_profiles",
-		"SELECT count(*) FROM scan_runs",
-		"SELECT count(*) FROM scan_findings",
+		"SELECT count(*) FROM disk_scan_runs",
+		"SELECT count(*) FROM disk_scan_volumes",
+		"SELECT count(*) FROM disk_scan_connector_modes",
 	} {
 		_, err := conn.ExecContext(ctx, q)
 		require.NoError(t, err, q)
@@ -186,7 +186,10 @@ func TestRun_GrantsTheScannerRoleOnlyItsTables(t *testing.T) {
 		"INSERT INTO api_keys DEFAULT VALUES",
 		"SELECT count(*) FROM sessions",
 		"SELECT count(*) FROM connectors",
-		"DELETE FROM scan_profiles",
+		"SELECT count(*) FROM scan_profiles",
+		"SELECT count(*) FROM scan_runs",
+		"SELECT count(*) FROM scan_findings",
+		"DELETE FROM disk_scan_runs",
 		"CREATE TABLE scanner_probe (a int)",
 	} {
 		_, err := conn.ExecContext(ctx, q)

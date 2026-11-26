@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { useDriftAnalyses, useIsAdmin, useTriggerProfileScan, type DriftAnalysis } from "../lib/queries";
+import { useDriftAnalyses, type DriftAnalysis } from "../lib/queries";
 
 const DOCS_URL = "https://github.com/vulngraph/vulngraph/blob/main/docs/configuration.md";
 
@@ -38,50 +37,8 @@ function AdvisoryLabel() {
   );
 }
 
-function StartScan({ profileId, batchId }: { profileId: string; batchId: string }) {
-  const trigger = useTriggerProfileScan();
-  const [confirming, setConfirming] = useState(false);
-
-  if (trigger.isSuccess) {
-    return <p className="text-[11px] text-emerald">Scan started. Follow it on the Scans page.</p>;
-  }
-  if (!confirming) {
-    return (
-      <button
-        onClick={() => setConfirming(true)}
-        className="rounded border border-teal/40 px-2.5 py-1 text-[11px] font-medium text-teal transition-colors hover:bg-teal/10"
-      >
-        Start profile scan
-      </button>
-    );
-  }
-  return (
-    <div className="flex flex-wrap items-center gap-2 text-[11px]" data-batch={batchId}>
-      <span className="text-text-2">
-        Start a scan with profile <span className="font-mono">{profileId}</span>? This is your decision; the analysis only suggested it.
-      </span>
-      <button
-        onClick={() => trigger.mutate(profileId)}
-        disabled={trigger.isPending}
-        className="rounded border border-teal/40 px-2.5 py-1 font-medium text-teal hover:bg-teal/10 disabled:opacity-50"
-      >
-        {trigger.isPending ? "Starting…" : "Confirm"}
-      </button>
-      <button
-        onClick={() => setConfirming(false)}
-        disabled={trigger.isPending}
-        className="rounded px-2.5 py-1 text-text-3 hover:text-text-2"
-      >
-        Cancel
-      </button>
-      {trigger.isError && <span className="text-red">{(trigger.error as Error).message}</span>}
-    </div>
-  );
-}
-
 export function DriftAnalysisPanel({ since, onOpenAsset }: { since: string; onOpenAsset: (id: string) => void }) {
   const { data, isLoading, isError } = useDriftAnalyses(since);
-  const isAdmin = useIsAdmin();
 
   if (isLoading) return null;
 
@@ -124,7 +81,6 @@ export function DriftAnalysisPanel({ since, onOpenAsset }: { since: string; onOp
   const state = scanState(latest);
   const scan = SCAN_BADGE[state];
   const exposure = latest.status === "analysed" ? EXPOSURE_BADGE[latest.exposure_judgement] : undefined;
-  const canStart = isAdmin && state === "recommended" && latest.suggested_profile_id !== "";
 
   return shell(
     <div className="space-y-2">
@@ -185,13 +141,6 @@ export function DriftAnalysisPanel({ since, onOpenAsset }: { since: string; onOp
         </p>
       )}
 
-      {latest.auto_scan_profile_ids.length > 0 && (
-        <p className="text-[11px] text-text-3">
-          Profiles that already scan on drift: <span className="font-mono">{latest.auto_scan_profile_ids.join(", ")}</span>
-        </p>
-      )}
-
-      {canStart && <StartScan profileId={latest.suggested_profile_id} batchId={latest.batch_id} />}
     </div>,
   );
 }

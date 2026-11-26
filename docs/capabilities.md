@@ -190,28 +190,10 @@ existing full-pass mechanism recalculates findings previously suppressed by name
 
 ## Scanning
 
-Active scanning of internet-facing assets uses
-[Nuclei](https://github.com/projectdiscovery/nuclei), with a template editor, scan profiles
-and schedules. Starting a scan, editing profiles and testing templates are admin-only; link-local
-and cloud-metadata addresses are always refused as targets, private ones unless
-`SCAN_ALLOW_INTERNAL_TARGETS=true`, and a scan is capped at 500
-targets, 150 requests a second and 30 minutes. A template test, which runs in serve, gets the same
-rate limit and runs one template against one host at a time, for at most 2 minutes, reading at most 1 MiB of each response. Scans run one pinned nuclei-templates release,
-verified by sha256 before use (`NUCLEI_TEMPLATES_VERSION` with `NUCLEI_TEMPLATES_SHA256`
-picks another, `NUCLEI_TEMPLATES_DIR` your own copy). Out-of-band (interactsh) testing is off unless
-`NUCLEI_INTERACTSH_ENABLED=true`, so templates that detect an issue only through a callback do
-not match. A scan an admin starts is recorded in
-`audit_events`; scheduled runs and template tests are not. With an LLM provider configured,
-admins can also ask for a template from a plain-language description
-(`POST /api/scans/templates/generate`): the result is returned for review, never saved or run on
-its own, and passes the same structural validation as a hand-written template (no file, code,
-headless or workflow templates; javascript only when signed). Nothing reviews what a generated
-template's requests actually do, and there is no global scan kill switch.
-`POST /api/scans/import` accepts findings from other scanners in one generic JSON
-format, tagged by source (`openvas`, `qualys`, `burp`, `custom`). A tool that reports installed
-packages rather than findings submits them through
-[`PUT /api/assets/{id}/package-inventory`](iam/byoa-inventory.md) instead, with an `inventory`-scoped
-API key; Vulngraph matches the vulnerabilities itself and decides whether the list is believed.
+Vulngraph analyzes container images and package inventories and supports opt-in
+VM disk inventory. Active external probing, Nuclei templates, scan profiles and
+the generic scan-import API have been retired. Historical findings remain
+available. Use the scoped package-inventory API for external VM inventory.
 
 ## IaC
 
@@ -254,11 +236,8 @@ for any model.
 **Drift analysis** is an LLM reading of each connector's new inventory changes (the `drift_analysis`
 purpose). It is off by default (`DRIFT_ANALYSIS_ENABLED`), advisory, and never starts a scan: it writes a
 summary, an exposure judgement and a recommended, not needed or unknown scan call, shown on the Drift page
-and over MCP. Evidence is checked against the assets and profiles in the prompt, a suggested profile must be
-an enabled one, and a "not needed" is only kept when every input was known and the batch was not truncated.
-A failure or an exhausted budget gives unknown, never "no scan needed". Scan profiles with drift enabled
-work exactly as before, and the MCP tool `start_profile_scan` is admin-only, audited and does not read the
-analysis. Its quality is checked only by a six-case opt-in drift set.
+and over MCP. Evidence is checked against the assets in the prompt, and a "not needed" is only kept when every input was known and the batch was not truncated.
+A failure or an exhausted budget gives unknown, never "no scan needed". It has no scan-start tool or executable profile suggestion. Its quality is checked only by a six-case opt-in drift set.
 
 ## Detections, alerting, MCP
 
@@ -266,7 +245,7 @@ Scheduled Cypher detections, outbound Slack and webhook alerts,
 and a JSON-RPC 2.0 MCP endpoint (`POST /api/mcp`) with scoped `gph_` keys, so any MCP client
 can query the graph. Sign-ins (and refused ones), sign-outs, live cloud reads (over MCP and in
 chat), executions, suppressions, manual finding resolves, and changes to connectors, users, API
-keys, alert channels, the approval policy, saved queries and scan profiles are written to
+keys, alert channels, the approval policy, saved queries are written to
 `audit_events` ([list](security-hardening.md#what-is-recorded)); other reads are not audited
 per call, and an API key records only `last_used_at` (and an `auth.api_key_refused` row when a
 session-only route turns it away).
@@ -279,11 +258,11 @@ tracing (`OTEL_EXPORTER_OTLP_ENDPOINT`).
 ## Process modes and sign-in
 
 The binary has three long-running modes: `serve` (HTTP API + UI), `worker` (sync, correlate, enrich,
-respond and scan jobs) and `scanner` (runs the Nuclei scan jobs in a pod of its own; in the
+respond and inventory jobs) and `scanner` (runs opt-in disk-volume reads in isolation; in the
 Helm chart it gets neither `GRAPH_SECRET_KEY`, the LLM key nor a cloud identity, see
 [`security-hardening.md`](security-hardening.md#credential-isolation)). Its
-datastore users are its own (`graph_scanner`): River's job tables and the scan tables on
-Postgres, reads of assets and findings and inserts of findings on ClickHouse, and nothing on
+datastore users are its own (`graph_scanner`): River's job tables and the disk-scan tables on
+Postgres, and the schema readiness ledger on ClickHouse, and nothing on
 users, API keys or connectors, so code running in the scanner cannot make itself a Vulngraph
 admin through the database. It can still enqueue or delete River jobs and write scan results
 and findings. Docker Compose has no scanner pod; there scans run inside the worker, which holds
@@ -293,5 +272,5 @@ email/password accounts (`graph user create`; turned off behind IAP or oauth2-pr
 oauth2-proxy. `BYPASS_AUTH` turns authentication off; see
 [`docs/security-hardening.md`](security-hardening.md) before using it. Some layering
 rules are lint-enforced (storage imports in domain, handler and service files;
-the nuclei and LLM SDK quarantines) and the rest are checked in review; see
+the LLM SDK quarantine) and the rest are checked in review; see
 [`CONTRIBUTING.md`](../CONTRIBUTING.md).

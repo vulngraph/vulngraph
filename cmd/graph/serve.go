@@ -39,7 +39,6 @@ import (
 	"github.com/vulngraph/vulngraph/internal/app/reasoncache"
 	"github.com/vulngraph/vulngraph/internal/app/respond"
 	"github.com/vulngraph/vulngraph/internal/app/savedquery"
-	"github.com/vulngraph/vulngraph/internal/app/scan"
 	"github.com/vulngraph/vulngraph/internal/app/suppress"
 	"github.com/vulngraph/vulngraph/internal/app/webhook"
 	"github.com/vulngraph/vulngraph/internal/checks"
@@ -49,7 +48,6 @@ import (
 	"github.com/vulngraph/vulngraph/internal/migrate"
 	"github.com/vulngraph/vulngraph/internal/obs"
 	"github.com/vulngraph/vulngraph/internal/reason"
-	nuclei "github.com/vulngraph/vulngraph/internal/scanner/nuclei"
 	"github.com/vulngraph/vulngraph/pkg/log"
 )
 
@@ -228,9 +226,6 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	if err != nil {
 		return fmt.Errorf("serve: %w", err)
 	}
-	if err := nuclei.CheckEgressEnv(getenv); err != nil {
-		return fmt.Errorf("serve: %w", err)
-	}
 	pool, err := db.NewPool(ctx, pgDSN(getenv), int32(envInt(getenv, "PG_MAX_CONNS_SERVE", db.MaxConnsServe)))
 	if err != nil {
 		return fmt.Errorf("serve: %w", err)
@@ -350,32 +345,12 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	// audit_events table, alongside every other audited human action.
 	suppressSvc := suppress.NewService(suppress.NewPGRepo(pool)).WithAudit(suppress.NewCHAuditRepo(ch)).
 		WithFindingGate(suppressAgentGate{findings: findingSvc})
-	// The server only reads scan runs and enqueues scans; scanners live in the
-	// worker, so a nil scanner here is correct and never invoked.
-	scanSvc := scan.NewService(scan.NewPGRepo(pool), assetSvc, assetSvc, nil, findingSvc).WithAudit(adminAudit)
-	// Template editor: validate + test run in the serve pod (nuclei SDK embedded).
-	// Generate requires an LLM provider; nil generator returns 503 gracefully.
-	templateSvc := nuclei.NewTemplateService()
-	var templateGen scan.TemplateAIGenerator
-	if llmClient != nil {
-		templateGen = nuclei.NewTemplateGeneratorAdapter(llmUsage.Client(llmClient, llmusage.PurposeTemplateGen), getenv("TEMPLATE_GEN_MODEL"))
-	}
 	complianceCatalog, err := compliance.LoadCatalog()
 	if err != nil {
 		return fmt.Errorf("serve: %w", err)
 	}
 	complianceSvc := compliance.NewService(findingSvc, compliance.NewCHInventory(ch), checks.Default(), connectorSvc).
 		WithRequirements(complianceCatalog, findingSvc)
-	// Scan profile service — CRUD + triggering of named scan profiles.
-	// The serve pod enqueues profile scan jobs; the scanner pod executes them.
-	profileSvc := scan.NewProfileService(
-		scan.NewPGProfileRepo(pool),
-		scan.NewPGRepo(pool),
-		nil, // ScannerRegistry — nil; serve pod only enqueues, never runs
-		assetSvc,
-		enqueuer,
-	).WithAudit(adminAudit)
-
 	// Serve-pod Ladybug replica — independent of the worker, syncs from ClickHouse
 	// every 30 minutes. Ensures the Graph tab never goes dark when the worker pod
 	// restarts (otherwise Cypher is unavailable until the worker's graph reloads).
@@ -701,17 +676,14 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		adminAudit, auth.NewKeyedLimiter(1, 10), feeds.AdvisorySources)
 	diskScanSvc := serveDiskScan(pool)
 	srv := httpsrv.New(addr, httpsrv.Handlers{
-		Security:     security,
-		Auth:         authHandler,
-		Asset:        asset.NewHandler(assetSvc, httpsrv.AssetRiskProvider(findingSvc)).WithOwnerTagKeys(ownerTagKeys(getenv)),
-		Connector:    connector.NewHandler(connectorSvc, enqueuer),
-		Finding:      finding.NewHandler(findingSvc, suppressSvc),
-		FindingCtx:   findingctx.NewHandler(findingCtxSvc),
-		Belief:       belief.NewHandler(belief.NewService(belief.NewCHRepo(ch))),
-		Suppress:     suppress.NewHandler(suppressSvc),
-		Scan:         scan.NewHandler(scanSvc, enqueuer),
-		ScanProfile:  scan.NewProfileHandler(profileSvc),
-		ScanTemplate: scan.NewTemplateHandler(templateSvc, templateSvc, templateGen),
+		Security:   security,
+		Auth:       authHandler,
+		Asset:      asset.NewHandler(assetSvc, httpsrv.AssetRiskProvider(findingSvc)).WithOwnerTagKeys(ownerTagKeys(getenv)),
+		Connector:  connector.NewHandler(connectorSvc, enqueuer),
+		Finding:    finding.NewHandler(findingSvc, suppressSvc),
+		FindingCtx: findingctx.NewHandler(findingCtxSvc),
+		Belief:     belief.NewHandler(belief.NewService(belief.NewCHRepo(ch))),
+		Suppress:   suppress.NewHandler(suppressSvc),
 		Respond: respond.NewHandler(respond.NewCHRepo(ch), findingSvc).
 			WithRepeatHotspots(repeatHotspotsAdapter(reasonCacheSvc)).
 			WithRemediationGuide(respond.RemediationGuideFunc(remediationGuide)),
@@ -721,7 +693,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		MCP: mcp.NewHandler(assetSvc, findingSvc, findingCtxSvc, complianceSvc, exploreSvc, cypherRunner, graphStats, suppressSvc, liveAWS, connectorSvc, executorSvc).
 			WithLiveRole(liveRole).WithAudit(liveAudit).WithAlertContext(alertCtxSvc).
 			WithResourceResolver(alertCtxSvc, assetSvc, findingSvc).
-			WithDriftAnalysis(driftAnalyses, profileSvc).WithPackageInventory(pkgInvSvc).
+			WithDriftAnalysis(driftAnalyses).WithPackageInventory(pkgInvSvc).
 			WithDiskScan(diskScanSvc, diskScanStamps{assets: assetSvc}),
 		DriftAnalysis: driftanalysis.NewHandler(driftAnalyses),
 		PkgInv:        pkginv.NewHandler(pkgInvSvc),

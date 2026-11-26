@@ -21,10 +21,8 @@ import (
 // NextRetry are ever called) so the rescuer applies that worker's Timeout. The
 // rescuer leaves a running job alone while it is younger than its kind's
 // Timeout, and a zero Timeout (WorkerDefaults) means "stuck at
-// RescueStuckJobsAfter", 1h. Without this, a worker-pod leader would declare a
-// 4h nuclei scan running on the scanner pod stuck after 1h: `scan` would be
-// retried from scratch (up to 25 attempts, its completion dropped) and
-// `scan_profile` (MaxAttempts 1) discarded mid-run, freeing its uniqueness slot.
+// RescueStuckJobsAfter", 1h. Reporting each real timeout prevents a leader
+// from retrying or discarding work that is still within its allowed runtime.
 type rescueOnlyWorker[T river.JobArgs] struct {
 	river.Worker[T]
 }
@@ -62,7 +60,6 @@ func rescueRegistrations() map[string]rescueRegistration {
 	for _, entry := range []func() (string, rescueRegistration){
 		rescueEntry[SyncConnectorArgs](&SyncWorker{}),
 		rescueEntry[EnqueueSyncsArgs](&EnqueueWorker{}),
-		rescueEntry[ScanArgs](&ScanWorker{}),
 		rescueEntry[EnrichArgs](&EnrichWorker{}),
 		rescueEntry[EnrichSweepArgs](&EnrichSweepWorker{}),
 		rescueEntry[DanglingSweepArgs](&DanglingSweepWorker{}),
@@ -78,11 +75,8 @@ func rescueRegistrations() map[string]rescueRegistration {
 		rescueEntry[CorrelateArgs](&CorrelateWorker{}),
 		rescueEntry[LadybugRebuildArgs](&LadybugRebuildWorker{}),
 		rescueEntry[ReenrichAllArgs](&ReenrichWorker{}),
-		rescueEntry[ScanProfileJobArgs](&ScanProfileWorker{}),
-		rescueEntry[ScanAssetArgs](&ScanAssetWorker{}),
 		rescueEntry[DomainMonitorArgs](&DomainMonitorWorker{}),
 		rescueEntry[RunSavedQueriesArgs](&SavedQueryWorker{}),
-		rescueEntry[RunScheduledProfilesArgs](&ProfileScheduleWorker{}),
 		rescueEntry[RefreshImageVulnArgs](&ImageVulnWorker{}),
 		rescueEntry[AdjudicateArgs](&AdjudicateWorker{}),
 		rescueEntry[DriftSweepArgs](&DriftSweepWorker{}),

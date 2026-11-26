@@ -1,6 +1,6 @@
 {{- if .Values.networkPolicy.enabled }}
 {{- $np := .Values.networkPolicy }}
-{{- $scanner := .Values.scanner.enabled }}
+{{- $scanner := and .Values.scanner.enabled .Values.config.diskScanEnabled }}
 # Who may open a connection to each graph pod. Ingress only: egress is
 # untouched, because the collectors must reach the AWS, GCP, GitHub and Okta
 # APIs, and constraining that is a separate exercise with a much larger blast
@@ -87,11 +87,6 @@ spec:
         - podSelector:
             matchLabels:
               {{- include "graph.selectorLabels" (dict "component" "serve") | nindent 14 }}
-        {{- if $scanner }}
-        - podSelector:
-            matchLabels:
-              {{- include "graph.selectorLabels" (dict "component" "scanner") | nindent 14 }}
-        {{- end }}
       ports:
         - protocol: TCP
           port: 8090

@@ -98,9 +98,6 @@ type Analyst interface {
 // FactsSource supplies the deterministic facts around a batch. Each method
 // failing sets the matching Facts.*Known flag false.
 type FactsSource interface {
-	// Profiles returns the enabled scan profiles and the ids of those that
-	// already scan on drift.
-	Profiles(ctx context.Context) (profiles []ProfileFact, autoScanIDs []string, err error)
 	// Findings returns open finding facts keyed by asset id; assets without
 	// findings may be absent.
 	Findings(ctx context.Context, assetIDs []string) (map[string]AssetFact, error)
@@ -253,7 +250,7 @@ func (s *Service) Analyze(ctx context.Context, batchID string) error {
 	}
 
 	at := s.now()
-	v.Model, v.AnalysedAt, v.AutoScanProfileIDs = s.model, at, in.Facts.AutoScanProfileIDs
+	v.Model, v.AnalysedAt = s.model, at
 	if err := s.repo.Save(ctx, b.ID, StatusAnalysed, &v, "", at); err != nil {
 		return fmt.Errorf("Analyze: %w", err)
 	}
@@ -291,12 +288,6 @@ func (s *Service) gatherFacts(ctx context.Context, b Batch, changes []AssetChang
 		log.FromContext(ctx).Warn().Err(err).Str("batch_id", b.ID).Msg("driftanalysis: " + what + " lookup failed")
 	}
 
-	profiles, auto, perr := s.facts.Profiles(ctx)
-	if perr != nil {
-		logFail("profiles", perr)
-	} else {
-		f.ProfilesKnown, f.Profiles, f.AutoScanProfileIDs = true, profiles, auto
-	}
 	findings, ferr := s.facts.Findings(ctx, ids)
 	if ferr != nil {
 		logFail("findings", ferr)

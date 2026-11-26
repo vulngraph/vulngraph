@@ -18,7 +18,6 @@ import (
 	"github.com/vulngraph/vulngraph/internal/app/finding"
 	"github.com/vulngraph/vulngraph/internal/app/intel"
 	"github.com/vulngraph/vulngraph/internal/app/respond"
-	"github.com/vulngraph/vulngraph/internal/app/scan"
 	"github.com/vulngraph/vulngraph/internal/app/suppress"
 	"github.com/vulngraph/vulngraph/internal/checks"
 	"github.com/vulngraph/vulngraph/internal/collect"
@@ -29,13 +28,10 @@ import (
 )
 
 const (
-	queueSync      = "sync"
-	queueEnrich    = "enrich"
-	queueRespond   = "respond"
-	queueCorrelate = "correlate"
-	// queueScan carries every kind that EXECUTES NUCLEI: the estate scan, profile
-	// runs and drift scans. They share one lane on purpose — see queueContentScan.
-	queueScan       = "scan"
+	queueSync       = "sync"
+	queueEnrich     = "enrich"
+	queueRespond    = "respond"
+	queueCorrelate  = "correlate"
 	queueAdjudicate = "adjudicate" // dedicated lane: the 20-min sweep must not block the respond queue
 	queueDrift      = "drift"      // dedicated lane: LLM drift analysis must not wait behind the adjudicator sweep
 	queueDangling   = "dangling"   // dedicated lane: the resolve sweep must not block enrich/correlate
@@ -59,27 +55,7 @@ const (
 	// per-MINUTE schedules, so sitting behind a backlog would make the graph
 	// stale and turn "every minute" into "whenever correlate drains".
 	queueGraph = "graph"
-	// queueContentScan is the second heavy-scan lane. There is one heavy lane per
-	// kind of heavy work and per pod-affinity: queueScan and queueDiskScan run on
-	// the scanner pod, queueContentScan on the worker.
-	//
-	// The routing problem: River's producer fetches by QUEUE, not by kind. Every
-	// kind sharing a queue is fetched by every pod consuming that queue, whether
-	// or not it can work it — and a kind it cannot work resolves to
-	// rescueOnlyWorker, which errors fast and can starve the pod that CAN work
-	// it. This is a STRUCTURAL argument, not a volume one.
-	//
-	// The split is by POD, not by kind, and each lane's MaxWorkers 1 (see
-	// queueWorkerCounts) is what bounds concurrency:
-	//   queueScan        nuclei execution — scan, scan_profile, scan_asset
-	//   queueContentScan image content — refresh_image_vuln
-	//   queueDiskScan    VM disk reads — disk_scan_volume
-	// So a lane runs at most ONE heavy scan at a time; the scanner pod, which
-	// consumes two lanes, can run one nuclei scan and one disk read together. Four
-	// separate lanes for the nuclei kinds would have quadrupled the budget silently.
-	//
-	// consumedQueues derives the consumed set from the kinds a client registered a
-	// REAL worker for, so a lane whose kinds this pod cannot work is not consumed.
+	// Image pulls and VM disk reads have separate lanes and bounded concurrency.
 	queueContentScan = "content_scan"
 	// graphWorkers = 2: ladybug_rebuild is unique-gated (see LadybugRebuildArgs
 	// InsertOpts) so at most one ever runs, and the second slot keeps the light
@@ -105,10 +81,7 @@ const (
 	// passes racing to enqueue the same stale findings — doubling enrich queue depth
 	// against the pacing this design depends on.
 	reenrichWorkers = 1
-	// heavyScanWorkers: one resource-heavy scan at a time per lane. A nuclei run
-	// saturates the scanner pod's CPU and memory; an image sweep pulls and unpacks
-	// registry images for tens of minutes on the memory-bound worker pod. Neither is
-	// something to run two of.
+	// heavyScanWorkers serializes image pulls and extraction on the worker.
 	heavyScanWorkers = 1
 
 	// defaultSyncInterval is the fallback when SYNC_INTERVAL is unset. 2h gives
@@ -186,8 +159,8 @@ const (
 	// not "error".
 	workerSoftStopTimeout = 20 * time.Second
 	// scannerSoftStopTimeout: same mechanism, sized to deployment-scanner.yaml's
-	// terminationGracePeriodSeconds: 120 — a full nuclei profile fanout (up to
-	// 4h) is not rescued either, only whatever shorter scan job fits the margin.
+	// terminationGracePeriodSeconds: 120. Volume reads beyond this margin are
+	// cancelled and retried through River.
 	scannerSoftStopTimeout = 100 * time.Second
 
 	// hardStopDrain is how long Stop waits, after the soft-stop timeout has
@@ -247,7 +220,6 @@ type Deps struct {
 	Assets      *asset.Service
 	Findings    *finding.Service
 	Checks      *checks.Registry
-	Scans       *scan.Service
 	Enrich      *enrich.Service
 	EnrichCache EnrichCache
 	// AlertCarriers names the root-cause finding carrying a package finding's
@@ -265,13 +237,7 @@ type Deps struct {
 	// enforcement WOULD forget. Nil disables the evaluation entirely —
 	// correct for any pod that does not sync connectors, and the default until
 	// the worker wires it.
-	Forget scopeForgetter
-	// Drift enqueues drift-triggered scans (SyncWorker.drift) for the external
-	// assets a connector sync reports as newly changed. Nil disables the
-	// enqueue entirely — a field that compiles but is never assigned disables
-	// drift scans silently (worker_wiring_guard_test.go guards that shape).
-	// See jobs.NewEnqueuer(...).WithDriftProfiles(...).
-	Drift    driftScanner
+	Forget   scopeForgetter
 	Suppress *suppress.Service
 	Respond  *respond.Service
 	// KEVFetcher, OSV and MalFeed are outbound feeds that are on by default.
@@ -298,20 +264,7 @@ type Deps struct {
 	// feed (e.g. SCC_ORG_ID unset), so the worker/periodic aren't registered.
 	SCC       SCCFetcher
 	Correlate Correlator
-	// ScanInterval schedules a periodic active scan. Zero (the default) means no
-	// periodic scan is registered — active scanning then only runs when enqueued
-	// explicitly. Set via SCAN_INTERVAL so scanning is never on by accident.
-	ScanInterval time.Duration
-	// ScanWorkerDisabled prevents the main worker from registering ANY nuclei-
-	// executing worker — ScanWorker, ScanProfileWorker and ScanAssetWorker — and
-	// therefore from consuming queueScan at all. Set to true when a dedicated
-	// scanner pod handles scans; the main worker then owns all other queues and
-	// every nuclei fan-out is isolated on the scanner.
-	//
-	// Profiles/DriftRunner stay wired on the worker even then: the flag, not a nil
-	// dep, is what decides. A nil dep would also silently disable the pod's ability
-	// to be the all-in-one worker, and cmd/graph/worker.go cannot express a typed
-	// nil for these unexported interfaces anyway.
+	// ScanWorkerDisabled delegates VM volume reads to the isolated scanner.
 	ScanWorkerDisabled bool
 	// SyncInterval overrides how often the reconciliation sweep runs. Zero uses
 	// defaultSyncInterval (2h). Set via SYNC_INTERVAL env var.
@@ -342,28 +295,6 @@ type Deps struct {
 	// topology to the next successful bump or a worker restart. Nil disables
 	// version bumping.
 	TopologyBumper TopologyBumper
-	// Profiles drives scan-profile runs (target resolution, template selection,
-	// lifecycle reconciliation). Nil disables ScanProfileWorker registration, and so
-	// does ScanWorkerDisabled — a profile run fans nuclei out over its whole target
-	// set, so it registers only where nuclei is allowed to run.
-	Profiles profileRunner
-	// ProfileScanner executes a scan over a resolved target set on behalf of a
-	// profile run. Required when Profiles is non-nil; ignored otherwise.
-	ProfileScanner profileScanner
-	// DriftRunner drives drift-triggered single-asset scans (ScanAssetWorker).
-	// Nil disables ScanAssetWorker registration, as does ScanWorkerDisabled (a drift
-	// scan is a nuclei run). *scan.ProfileService satisfies it.
-	DriftRunner assetDriftRunner
-	// DriftAssets reads individual assets by ID for drift scan target resolution.
-	// Required when DriftRunner is non-nil. *asset.Service satisfies it.
-	DriftAssets singleAssetReader
-	// CypherResolver resolves a profile's Cypher TargetQuery to scan targets.
-	// Nil means a profile with a non-empty TargetQuery fails its run with an
-	// explicit "not configured" error rather than silently scanning the wrong
-	// (all-externals) target set — see ScanProfileWorker.Work. cmd/graph wires
-	// this from the pod's local *graphstore.Service when one is available, or
-	// from an explore.LadybugRPCRepo dialed at LADYBUG_RPC_URL otherwise.
-	CypherResolver cypherTargetResolver
 	// Intel drives domain squatting / phishing domain monitoring. Nil disables
 	// DomainMonitorWorker registration.
 	Intel *intel.Service
@@ -373,9 +304,6 @@ type Deps struct {
 	// SavedQueries runs scheduled Cypher detections. Nil disables the
 	// SavedQueryWorker + its per-minute schedule tick.
 	SavedQueries SavedQueryScheduler
-	// ProfileSchedules fires scan profiles on their cron schedule. Nil disables
-	// the ProfileScheduleWorker + its per-minute tick.
-	ProfileSchedules ScheduledProfiles
 	// Metrics instruments every job with a span + run/duration metric via a global
 	// River middleware. Nil disables job instrumentation (spans/metrics off).
 	Metrics *obs.Metrics
@@ -397,7 +325,7 @@ type Deps struct {
 	// the default until DRIFT_ANALYSIS_ENABLED wires an analyst.
 	DriftAnalysis *driftanalysis.Service
 	// DiskScan wires the agentless VM disk scan: the plan and sweep workers and,
-	// when this pod also runs nuclei (ScanWorkerDisabled false), the volume
+	// when ScanWorkerDisabled is false, the volume
 	// worker. Nil leaves disk scanning off and unscheduled.
 	DiskScan *DiskScanDeps
 	// InventorySources are package-inventory sources applied after every
@@ -467,14 +395,11 @@ func newWorkerRegistry(pool *pgxpool.Pool, deps Deps) (*river.Workers, map[strin
 // Split out from newWorkerRegistry so the queue guards can read the real registry
 // before the rescue-only fill-in blurs the two together (see newPod in
 // queue_registration_test.go).
-//
-// Returns the *ScanProfileWorker it registered (nil if profile fan-out is
-// disabled on this pod) — a test seam, see addNucleiFanoutWorkers.
-func registerRealWorkers(workers *river.Workers, pool *pgxpool.Pool, deps Deps) *ScanProfileWorker {
+func registerRealWorkers(workers *river.Workers, pool *pgxpool.Pool, deps Deps) {
 	river.AddWorker(workers, &SyncWorker{
 		connectors: deps.Connectors, registry: deps.Registry, assets: deps.Assets,
 		findings: deps.Findings, checks: deps.Checks, metrics: deps.Metrics,
-		forget: deps.Forget, drift: deps.Drift, suppressions: suppressionCarrier(deps.Suppress),
+		forget: deps.Forget, suppressions: suppressionCarrier(deps.Suppress),
 		inventory: deps.inventoryOverlay(),
 	})
 	// baseSyncInterval mirrors buildPeriodicJobs' own SYNC_INTERVAL-or-default
@@ -486,11 +411,6 @@ func registerRealWorkers(workers *river.Workers, pool *pgxpool.Pool, deps Deps) 
 	}
 	river.AddWorker(workers, &EnqueueWorker{connectors: deps.Connectors, baseSyncInterval: baseSyncInterval})
 	river.AddWorker(workers, &DiscoverAWSOrgsWorker{orgs: deps.Connectors})
-	if !deps.ScanWorkerDisabled {
-		river.AddWorker(workers, &ScanWorker{scans: deps.Scans})
-	}
-	// Stale-scan reaping is a worker-owned ticker (cmd/graph/worker.go), not a
-	// River job — see the note in scan.go for why.
 	river.AddWorker(workers, &EnrichWorker{
 		enrich: deps.Enrich, findings: deps.Findings, suppress: deps.Suppress,
 		cache: deps.EnrichCache, maxAge: deps.EnrichMaxAge,
@@ -549,18 +469,6 @@ func registerRealWorkers(workers *river.Workers, pool *pgxpool.Pool, deps Deps) 
 			gceResolver: newGCEIDResolver(deps.Assets), closer: deps.Findings,
 		})
 	}
-	// Profile runs and drift scans FAN OUT NUCLEI (scanProfileConcurrency = 10, up
-	// to 4h per run). They belong wherever the nuclei budget is, which is precisely
-	// what ScanWorkerDisabled names — so they are registered on the same terms as
-	// ScanWorker above and never on a pod that has disowned nuclei. The scanner pod
-	// registers them instead (NewScanClient / addNucleiWorkers).
-	var profileWorker *ScanProfileWorker
-	if !deps.ScanWorkerDisabled {
-		profileWorker = addNucleiFanoutWorkers(workers, nucleiFanout{
-			profiles: deps.Profiles, drift: deps.DriftRunner, driftAssets: deps.DriftAssets,
-			scanSvc: deps.ProfileScanner, finder: deps.Findings, cypherResolver: deps.CypherResolver,
-		})
-	}
 	if deps.EPSSFetcher != nil && deps.EPSSCache != nil {
 		river.AddWorker(workers, &EPSSWorker{fetcher: deps.EPSSFetcher, cache: deps.EPSSCache})
 	}
@@ -569,9 +477,6 @@ func registerRealWorkers(workers *river.Workers, pool *pgxpool.Pool, deps Deps) 
 	}
 	if deps.SavedQueries != nil {
 		river.AddWorker(workers, &SavedQueryWorker{queries: deps.SavedQueries})
-	}
-	if deps.ProfileSchedules != nil {
-		river.AddWorker(workers, &ProfileScheduleWorker{profiles: deps.ProfileSchedules})
 	}
 	if deps.ImageVuln != nil {
 		river.AddWorker(workers, &ImageVulnWorker{
@@ -596,59 +501,9 @@ func registerRealWorkers(workers *river.Workers, pool *pgxpool.Pool, deps Deps) 
 			metrics:      deps.Metrics,
 		})
 	}
-	return profileWorker
 }
 
-// nucleiFanout are the dependencies of the two workers that fan NUCLEI out over a
-// resolved target set: ScanProfileWorker (a whole profile) and ScanAssetWorker (one
-// drifted asset). Both pods that may execute nuclei — the all-in-one worker and the
-// dedicated scanner — register them through this one function, so the registration
-// decision cannot differ between them.
-type nucleiFanout struct {
-	profiles       profileRunner
-	drift          assetDriftRunner
-	driftAssets    singleAssetReader
-	scanSvc        profileScanner
-	finder         profileFindingRecorder
-	cypherResolver cypherTargetResolver
-}
-
-// addNucleiFanoutWorkers registers the two nuclei-fanout workers and returns the
-// *ScanProfileWorker it just registered (nil if deps.profiles was nil). The
-// return value exists purely as a test seam: river.Workers keeps registered
-// workers behind an unexported map, so without handing the constructed worker
-// back there would be no way for a test to observe, on the real registration
-// path, whether deps.cypherResolver actually reached it — see
-// TestRegisterRealWorkers_PropagatesCypherResolver and
-// TestRegisterScanWorkers_PropagatesCypherResolver in queue_registration_test.go.
-func addNucleiFanoutWorkers(workers *river.Workers, deps nucleiFanout) *ScanProfileWorker {
-	var profileWorker *ScanProfileWorker
-	if deps.profiles != nil {
-		profileWorker = &ScanProfileWorker{
-			profiles:       deps.profiles,
-			scanSvc:        deps.scanSvc,
-			finder:         deps.finder,
-			cypherResolver: deps.cypherResolver,
-		}
-		river.AddWorker(workers, profileWorker)
-	}
-	if deps.drift != nil && deps.driftAssets != nil {
-		river.AddWorker(workers, &ScanAssetWorker{
-			profiles: deps.drift,
-			scanSvc:  deps.scanSvc,
-			finder:   deps.finder,
-			assets:   deps.driftAssets,
-		})
-	}
-	return profileWorker
-}
-
-// NewScanClient builds the isolated scanner pod's River client: it registers
-// every nuclei-executing worker (estate scan, profile runs, drift scans) and
-// consumes only queueScan, keeping nuclei's resource spike contained on this
-// pod and off the worker's own budget. queueScan gets ONE worker, so the three
-// kinds share a single nuclei slot.
-//
+// NewScanClient runs the isolated VM disk-volume worker.
 // The scanner is electable as River leader like any queue-consuming client,
 // and the leader is the only pod that enqueues periodics — so it registers the
 // SAME full periodic schedule (buildPeriodicJobs) as the worker. Otherwise a
@@ -681,7 +536,7 @@ func NewScanClient(pool *pgxpool.Pool, deps ScanDeps, cfg PeriodicConfig) (*rive
 		middleware = append(middleware, &obsMiddleware{m: deps.Metrics})
 	}
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
-		Queues:            consumedQueues(rescueOnly), // one nuclei job at a time
+		Queues:            consumedQueues(rescueOnly), // one disk-volume job at a time
 		Workers:           workers,
 		ErrorHandler:      jobErrorLogger{},
 		Middleware:        middleware,

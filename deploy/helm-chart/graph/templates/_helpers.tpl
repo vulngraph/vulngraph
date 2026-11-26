@@ -32,7 +32,7 @@ for migrate, CLI and operator sessions.
 {{- $perPod := int (default "8" .Values.config.chMaxConcurrent) -}}
 {{- $pods := int .Values.serve.replicas -}}
 {{- if .Values.worker.enabled }}{{ $pods = add $pods .Values.worker.replicas }}{{ end -}}
-{{- if .Values.scanner.enabled }}{{ $pods = add $pods .Values.scanner.replicas }}{{ end -}}
+{{- if and .Values.scanner.enabled .Values.config.diskScanEnabled }}{{ $pods = add $pods .Values.scanner.replicas }}{{ end -}}
 {{ add (mul $pods $perPod) 8 }}
 {{- end -}}
 {{- end -}}
@@ -282,13 +282,6 @@ metadata:
 - name: DISK_SCAN_ENVELOPE_KEY
   valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: disk-scan-envelope-key } }
 {{- end }}
-{{- if .Values.scanner.scanInterval }}
-# In podEnv, not the scanner's env: the worker and the scanner are both
-# leader-electable River clients and whichever holds leadership enqueues the
-# periodic jobs, so both must build the same schedule (internal/jobs/periodic.go).
-- name: SCAN_INTERVAL
-  value: {{ .Values.scanner.scanInterval | quote }}
-{{- end }}
 {{- if .Values.config.syncInterval }}
 - name: SYNC_INTERVAL
   value: {{ .Values.config.syncInterval | quote }}
@@ -329,7 +322,7 @@ metadata:
 - name: GOOGLE_MAX_PAGES
   value: {{ .Values.config.googleMaxPages | quote }}
 {{- end }}
-{{- if .Values.ladybug.enabled }}
+{{- if and .Values.ladybug.enabled (not (.scanner | default false)) }}
 - name: LADYBUG_RPC_URL
   value: http://graph-ladybug-internal:8090
 - name: LADYBUG_RPC_SECRET
@@ -566,14 +559,13 @@ Container-level security context.
 readOnlyRootFilesystem is the load-bearing one and the one with a real failure
 mode: the binary DOES write outside its volumes — the worker stages Ladybug COPY
 CSVs in os.TempDir() when /dev/shm has no headroom (graphstore/copy_load.go
-copyTmpDir), and nuclei template validation writes os.CreateTemp files
-(scanner/nuclei/template_service.go). Every deployment that uses this helper
+copyTmpDir), and disk readers stage bounded temporary data. Every deployment that uses this helper
 therefore also mounts graph.tmpVolume at /tmp; a read-only root without that
 mount turns a graph rebuild into a crash loop.
 
 Paths the app writes, and where they come from:
-  /tmp              emptyDir (graph.tmpVolume) — worker CSV staging, nuclei temp files
-  /home/nonroot     emptyDir (graph.tmpVolume) — nuclei config and template download
+  /tmp              emptyDir (graph.tmpVolume) — worker CSV staging, disk-reader scratch files
+  /home/nonroot     emptyDir (graph.tmpVolume) — runtime library scratch files
   /dev/shm          provided by the container runtime, unaffected by this flag
   /data/ladybug        PVC, group-owned via fsGroup
   /data/serve-ladybug  PVC, group-owned via fsGroup
@@ -602,21 +594,7 @@ a runaway write cannot fill the node's ephemeral storage.
 - name: tmp
   emptyDir:
     sizeLimit: {{ .Values.securityContext.tmpSizeLimit }}
-# nuclei writes its template config to $HOME/.config/nuclei on first run, and
-# the pinned nuclei-templates release is downloaded into
-# $HOME/nuclei-templates-<version>-<sha256> unless NUCLEI_TEMPLATES_DIR is set, so
-# homeSizeLimit must hold the whole template set.
-# It does not fall back to a temp dir. Under readOnlyRootFilesystem without this volume
-# it logs:
-#
-#   failed to create config directory at /home/nonroot/.config/nuclei got:
-#   mkdir /home/nonroot/.config: read-only file system
-#
-# Non-fatal — the pod stays ready — but the scanner cannot persist template
-# state, which is exactly the kind of quiet degradation that reads as "nuclei is
-# just quiet". A separate volume rather than HOME=/tmp: HOME is read by more than
-# nuclei, and redirecting it to a shared scratch dir is a wider blast radius than
-# the problem.
+# Bounded writable home for runtime libraries; no template corpus is downloaded.
 - name: home
   emptyDir:
     sizeLimit: {{ .Values.securityContext.homeSizeLimit | default "1Gi" }}
@@ -673,7 +651,7 @@ Usage: {{ include "graph.clusterScopedName" (dict "suffix" "policy-engine-reader
 A graph container's env: the chart-set entries (.chart, a rendered YAML list)
 plus operator-supplied extraEnv — chart-wide first, then the component's own
 (serve.extraEnv, worker.extraEnv, scanner.extraEnv). The scanner takes only its
-own: it runs nuclei and holds no app secret, so a chart-wide entry carrying
+own: it parses untrusted disks and holds no app secret, so a chart-wide entry carrying
 GRAPH_SECRET_KEY or the LLM key must not reach it. Every name is emitted once:
 an extraEnv entry replaces a chart-set entry of the same name, and a component
 entry replaces a chart-wide one, so the operator's value is the only one in the

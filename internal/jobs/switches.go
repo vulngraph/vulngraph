@@ -10,7 +10,7 @@ import (
 // value stops the pod at startup, so a typo is never silently read either way.
 const (
 	// ScanWorkerDisabledEnv stops the main worker from consuming the scan
-	// queue; the dedicated scanner pod (or nothing) runs nuclei instead.
+	// queue; the dedicated scanner pod runs disk-volume reads instead.
 	ScanWorkerDisabledEnv = "SCAN_WORKER_DISABLED"
 	// ImageScanDisabledEnv turns off the container-image vulnerability sweep.
 	ImageScanDisabledEnv = "IMAGE_SCAN_DISABLED"

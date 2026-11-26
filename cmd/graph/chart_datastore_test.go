@@ -383,9 +383,6 @@ func TestClickHouseUsersHaveNoAdmin(t *testing.T) {
 		"the bootstrap logs in as graph_migrate before graph exists, and a login to a missing default database fails")
 	require.Equal(t, []string{
 		"GRANT SELECT ON graph.goose_db_version",
-		"GRANT SELECT ON graph.assets",
-		"GRANT SELECT, INSERT ON graph.findings",
-		"GRANT SELECT ON graph.finding_enrichment",
 	}, u.Users.Scanner.Grants)
 
 	envs := map[string]string{

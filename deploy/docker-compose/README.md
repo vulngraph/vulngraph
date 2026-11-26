@@ -34,13 +34,12 @@ Firefox are fine. For local Safari use, set `COOKIE_INSECURE=true` in `app.env` 
 `docker compose up -d` again. Never set it behind a real hostname.
 
 **Sizing.** The compose stack sets no memory or CPU limits. For the same
-components (serve, the worker with nuclei inside it, Postgres and ClickHouse)
+components (serve, the worker, Postgres and ClickHouse)
 the Helm chart's defaults request about 5 GiB of memory and 2.25 CPUs and cap
 them at 13 GiB and 7 CPUs, so give Docker at least 6 GB and 4 CPUs; the worker
 alone reserves 1280 MiB for the graph engine's buffer pool. On a small machine,
 set `IMAGE_SCAN_DISABLED=true` (no container-image sweep),
-`SCAN_WORKER_DISABLED=true` (no nuclei scans at all, since Compose has no
-scanner pod) or a lower `LADYBUG_BUFFER_MB` in `app.env`.
+or a lower `LADYBUG_BUFFER_MB` in `app.env`.
 
 ## What runs
 
@@ -125,7 +124,7 @@ docker compose exec clickhouse sh -c '. /secrets/env; clickhouse-client --passwo
 The `graph` users can still write the rows the app itself writes, users and API
 keys included, so their credentials are still Vulngraph admin access
 ([Credential isolation](../../docs/security-hardening.md#credential-isolation)).
-This stack has no scanner container: nuclei runs in the worker, as `graph`. The
+This stack has no isolated disk reader: opted-in disk reads run in the worker, as `graph`. The
 Postgres users exist from the first start on, with the passwords the `init`
 service generated; to change one later, `ALTER ROLE graph PASSWORD '...'`
 (`docker compose exec postgres psql -U postgres -d graph`) and update the

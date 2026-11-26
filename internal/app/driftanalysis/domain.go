@@ -137,17 +137,12 @@ type Verdict struct {
 	ExposureJudgement string       `json:"exposure_judgement"`
 	ScanRecommended   bool         `json:"scan_recommended"`
 	// ScanRecommendedKnown false means unknown, not "no scan needed".
-	ScanRecommendedKnown  bool          `json:"scan_recommended_known"`
-	Reason                string        `json:"reason"`
-	SuggestedProfileID    string        `json:"suggested_profile_id"`
-	SuggestedTemplateTags []string      `json:"suggested_template_tags"`
-	Confidence            string        `json:"confidence"`
-	Evidence              []EvidenceRef `json:"evidence"`
-	Model                 string        `json:"model"`
-	AnalysedAt            time.Time     `json:"analysed_at"`
-	// AutoScanProfileIDs is stamped by the service from the profiles that
-	// already scan on drift; the model never sets it.
-	AutoScanProfileIDs []string `json:"auto_scan_profile_ids"`
+	ScanRecommendedKnown bool          `json:"scan_recommended_known"`
+	Reason               string        `json:"reason"`
+	Confidence           string        `json:"confidence"`
+	Evidence             []EvidenceRef `json:"evidence"`
+	Model                string        `json:"model"`
+	AnalysedAt           time.Time     `json:"analysed_at"`
 }
 
 // Recommendation maps the bool and its Known flag to the three-state value
@@ -177,13 +172,6 @@ type AssetChange struct {
 	DetectedAt time.Time
 }
 
-// ProfileFact is an enabled scan profile the analyst may suggest.
-type ProfileFact struct {
-	ID           string
-	Name         string
-	TemplateTags []string
-}
-
 // AssetFact is what the platform measured about one changed asset. It is only
 // meaningful when the matching Facts.*Known flag is true.
 type AssetFact struct {
@@ -199,11 +187,7 @@ type AssetFact struct {
 type Facts struct {
 	ExposureKnown bool
 	FindingsKnown bool
-	ProfilesKnown bool
-	Profiles      []ProfileFact
-	// AutoScanProfileIDs are the profiles that already scan on drift.
-	AutoScanProfileIDs []string
-	Assets             []AssetFact
+	Assets        []AssetFact
 	// ExternalChangedIDs are changed assets that gained or have a public IP.
 	ExternalChangedIDs []string
 }
@@ -230,14 +214,12 @@ func ExternalChanged(changes []AssetChange) []string {
 // succeeded and the whole batch was read.
 func (in AnalysisInput) allKnown() bool {
 	f := in.Facts
-	return f.ExposureKnown && f.FindingsKnown && f.ProfilesKnown && !in.Batch.Truncated
+	return f.ExposureKnown && f.FindingsKnown && !in.Batch.Truncated
 }
 
 // Gate is the deterministic check on a model verdict; the model is never
-// trusted. Evidence must cite an asset or profile id the model was shown, and
-// at least one citation must survive, else ErrUngrounded. A suggested profile
-// must be one of Facts.Profiles and its tags a subset of that profile's, else
-// they are cleared: the model invents no templates. "No scan needed" survives
+// trusted. Evidence must cite an asset id the model was shown, and at least
+// one citation must survive, else ErrUngrounded. "No scan needed" survives
 // only when every fact is known and the batch was not truncated; otherwise it
 // becomes unknown. A "yes" is always allowed. Confidence drops to low
 // whenever a fact is missing.
@@ -246,15 +228,10 @@ func Gate(v Verdict, in AnalysisInput) (Verdict, error) {
 	for _, c := range in.Changes {
 		assets[c.AssetID] = true
 	}
-	profiles := make(map[string]ProfileFact, len(in.Facts.Profiles))
-	for _, p := range in.Facts.Profiles {
-		profiles[p.ID] = p
-	}
 
 	var evidence []EvidenceRef
 	for _, e := range v.Evidence {
-		known := (e.Source == EvidenceAsset && assets[e.Ref]) ||
-			(e.Source == EvidenceProfile && profiles[e.Ref].ID != "")
+		known := e.Source == EvidenceAsset && assets[e.Ref]
 		if known && e.Fact != "" {
 			evidence = append(evidence, e)
 		}
@@ -276,12 +253,6 @@ func Gate(v Verdict, in AnalysisInput) (Verdict, error) {
 		v.ExposureJudgement = ExposureUnknown
 	}
 
-	if p, ok := profiles[v.SuggestedProfileID]; !ok {
-		v.SuggestedProfileID, v.SuggestedTemplateTags = "", nil
-	} else if !isSubset(v.SuggestedTemplateTags, p.TemplateTags) {
-		v.SuggestedTemplateTags = nil
-	}
-
 	if v.ScanRecommendedKnown && !v.ScanRecommended && !in.allKnown() {
 		v.ScanRecommended, v.ScanRecommendedKnown = false, false
 	}
@@ -293,13 +264,4 @@ func Gate(v Verdict, in AnalysisInput) (Verdict, error) {
 		v.Confidence = ConfidenceLow
 	}
 	return v, nil
-}
-
-func isSubset(sub, of []string) bool {
-	for _, s := range sub {
-		if !slices.Contains(of, s) {
-			return false
-		}
-	}
-	return true
 }

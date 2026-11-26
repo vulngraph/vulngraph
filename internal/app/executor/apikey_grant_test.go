@@ -27,8 +27,8 @@ const (
 func adminKeys() ownerKeys {
 	old := time.Now().Add(-365 * 24 * time.Hour)
 	return ownerKeys{
-		aliceKey: {ID: "k1", UserID: "uid:alice@example.com", Scope: "admin", OwnerEmail: "alice@example.com", OwnerRole: auth.RoleAdmin, OwnerCreatedAt: old},
-		bobKey:   {ID: "k2", UserID: "uid:bob@example.com", Scope: "admin", OwnerEmail: "bob@example.com", OwnerRole: auth.RoleAdmin, OwnerCreatedAt: old},
+		aliceKey: {ID: "k1", UserID: "uid:alice@example.com", Scope: "admin", OwnerEmail: "alice@example.com", OwnerRole: auth.RoleAdmin, OwnerCreatedAt: old, OwnerAdminSince: old, OwnerAuthorityVersion: 1},
+		bobKey:   {ID: "k2", UserID: "uid:bob@example.com", Scope: "admin", OwnerEmail: "bob@example.com", OwnerRole: auth.RoleAdmin, OwnerCreatedAt: old, OwnerAdminSince: old, OwnerAuthorityVersion: 1},
 	}
 }
 

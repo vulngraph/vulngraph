@@ -57,9 +57,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY internal/graphdb/ladybug/go.mod internal/graphdb/ladybug/go.sum ./internal/graphdb/ladybug/
-# Local replace target for the GPL-2.0 ldapserver (see third_party/ldapserver-stub).
-COPY third_party/ldapserver-stub ./third_party/ldapserver-stub
-COPY third_party/censys-sdk-stub ./third_party/censys-sdk-stub
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 COPY --from=frontend /app/web/dist ./web/dist

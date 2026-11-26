@@ -32,7 +32,7 @@ const module = "github.com/vulngraph/vulngraph/"
 // scannerSourcePkgs are the packages the walk reads: the scanner's entry
 // point, its job workers, and every domain the scanner runs SQL through.
 var scannerSourcePkgs = []string{
-	"cmd/graph", "internal/jobs", "internal/migrate", "internal/app/scan", "internal/app/asset",
+	"cmd/graph", "internal/jobs", "internal/migrate", "internal/app/asset",
 	"internal/app/finding", "internal/app/enrichcache", "internal/app/explore", "internal/app/diskscan", "internal/db/sqlcgen",
 }
 
@@ -41,9 +41,8 @@ var scannerSourcePkgs = []string{
 // internal/db may import a datastore driver. Reaching any other unread
 // module package fails the walk.
 var scannerOpaquePkgs = map[string]string{
-	"internal/db":             "the pools and the ClickHouse client; they run the SQL their callers pass",
-	"internal/obs":            "metrics and tracing",
-	"internal/scanner/nuclei": "runs templates against targets",
+	"internal/db":  "the pools and the ClickHouse client; they run the SQL their callers pass",
+	"internal/obs": "metrics and tracing",
 	// The disk scan's cloud and disk code: no SQL, and no datastore import (checked above).
 	"internal/app/diskscan/envelope":        "AES-GCM seal of the disk-scan credential envelope",
 	"internal/scanner/diskscan":             "the disk reader and the opt-in check",
@@ -53,12 +52,9 @@ var scannerOpaquePkgs = map[string]string{
 	"internal/scanner/pkginventory":         "package-database parsers and the CVE-gap rule",
 	"internal/collect/aws":                  "AWS credential chain (BaseConfig)",
 	"internal/intel/updateinfo":             "the advisory feeds' static source list, for the periodic schedule",
-	"pkg/db":                                "deterministic IDs and the IN-clause helper",
 	"pkg/egress":                            "the egress switches",
 	"pkg/envswitch":                         "environment flag parsing",
-	"pkg/errs":                              "RFC 9457 error codes",
 	"pkg/log":                               "logging",
-	"pkg/safenet":                           "the SSRF host check",
 }
 
 // datastoreImports are the packages through which code reaches a datastore.
@@ -70,8 +66,7 @@ var datastoreImports = []string{
 // the scanner builds implements, with why. Any other such interface means
 // the walk lost track of what implements it, and fails.
 var scannerUnwiredIfaces = map[string]string{
-	"internal/db/sqlcgen.DBTX":            "the pgx pool or transaction sqlc's queries run on",
-	"internal/app/scan.profileRowScanner": "a pgx row being scanned",
+	"internal/db/sqlcgen.DBTX": "the pgx pool or transaction sqlc's queries run on",
 }
 
 // scannerLibraryGrants are the scanner role's grants on tables only library
@@ -650,9 +645,7 @@ func TestScannerGrantsMatchWhatTheScannerRuns(t *testing.T) {
 		require.True(t, ok && !c.resolved, "stale scannerUnwiredIfaces entry %s", name)
 	}
 	for _, key := range []string{
-		module + "internal/jobs.ScanProfileWorker.Work",
-		module + "internal/app/finding.CHRepo.Upsert",
-		module + "internal/app/scan.PGRepo.CreateRun",
+		module + "internal/jobs.DiskScanVolumeWorker.Work",
 	} {
 		require.True(t, r.seen[key], "the walk missed %s: it is broken", key)
 	}

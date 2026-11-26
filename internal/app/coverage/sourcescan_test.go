@@ -87,10 +87,10 @@ func TestDeclaredSourcesFailsOnUnparseableGo(t *testing.T) {
 // The real tree is the case that matters: these have been discussed as
 // "sources we have" for months. Whether they have produced anything is the live
 // half; that the code declares them must be derivable here.
-func TestDeclaredSourcesOnThisTreeFindsTheDormantScanners(t *testing.T) {
+func TestDeclaredSourcesOnThisTreeFindsActiveProducers(t *testing.T) {
 	got, err := DeclaredSources("../../..")
 	require.NoError(t, err)
-	for _, want := range []string{"burp", "cspm", "nuclei", "openvas", "qualys", "supply_chain"} {
+	for _, want := range []string{"cspm", "supply_chain", "vm_vuln", "base_image"} {
 		assert.Contains(t, got, want)
 	}
 }

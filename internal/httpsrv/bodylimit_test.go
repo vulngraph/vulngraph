@@ -70,7 +70,7 @@ func TestWithBodyLimit_LargerRoutesAcceptMoreThanDefault(t *testing.T) {
 		require.NoError(t, readErr, path)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/scans/import", bytes.NewReader(make([]byte, (32<<20)+1)))
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", bytes.NewReader(make([]byte, (8<<20)+1)))
 	rec := httptest.NewRecorder()
 	var readErr error
 	withBodyLimit(readAllHandler(t, &readErr)).ServeHTTP(rec, req)

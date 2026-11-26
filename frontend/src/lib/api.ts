@@ -190,14 +190,6 @@ export type DiskScanMode = Schemas["DiskScanMode"];
 // aws_org connectors (ADR 091): discovered accounts and the connection test.
 export type OrgAccount = Schemas["OrgAccount"];
 export type OrgTestReport = Schemas["OrgTestReport"];
-export type ScanRun = Schemas["ScanRun"];
-export type ScanRunFinding = Schemas["ScanRunFinding"];
-export type ScanRunFindings = Schemas["ScanRunFindings"];
-export type ScanProfile = Schemas["ScanProfile"];
-export type ImportRequest = Schemas["ImportRequest"];
-export type ImportFinding = Schemas["ImportFinding"];
-export type TemplateValidation = Schemas["TemplateValidation"];
-export type TemplateInfo = Schemas["TemplateInfo"];
 export type Decision = Schemas["Decision"];
 // Approve-and-run from the decision panel (/api/decisions/{id}/execution*).
 export type DecisionExecutionPlan = Schemas["DecisionExecutionPlan"];

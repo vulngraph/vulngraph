@@ -1,5 +1,5 @@
 # Keeps the build context small and secrets out of image layers. The Dockerfile
-# COPYs go.mod/go.sum, internal/graphdb/ladybug/go.*, third_party/*-stub,
+# COPYs go.mod/go.sum, internal/graphdb/ladybug/go.*,
 # scripts/fetch-ladybug.sh, scripts/collect-licenses.sh, frontend/ and then `.` — everything a go:embed
 # directive reads (deploy/aws/*.yaml, migrations/, internal/**, web/web.go)
 # must stay in the context.

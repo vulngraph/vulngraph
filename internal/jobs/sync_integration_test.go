@@ -4,7 +4,6 @@ package jobs
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/vulngraph/vulngraph/internal/app/asset"
 	"github.com/vulngraph/vulngraph/internal/app/connector"
 	"github.com/vulngraph/vulngraph/internal/app/finding"
-	"github.com/vulngraph/vulngraph/internal/app/scan"
 	"github.com/vulngraph/vulngraph/internal/checks"
 	"github.com/vulngraph/vulngraph/internal/collect"
 	"github.com/vulngraph/vulngraph/internal/db"
@@ -140,67 +138,6 @@ func (s driftStubCollector) Collect(context.Context, map[string]string) (collect
 		{ID: s.assetID, Name: "ext-host", Type: "ec2_instance", Provider: asset.ProviderAWS,
 			PublicIP: "203.0.113.10", DiscoveredAt: now, LastSeen: now},
 	}}, nil
-}
-
-// TestSyncWorker_Work_DriftScanEnqueuesRealJob exercises the drift-scan
-// wiring end-to-end: a real jobs.Enqueuer, a real drift-enabled scan profile
-// row in Postgres, a sync that reports one changed externally-reachable
-// asset, and an assertion that a real scan_asset River job lands in
-// river_job — not just that EnqueueDriftScans was called with the right
-// arguments. The whole path was once dead: driftProfileLister could not be
-// satisfied from outside this package, so nothing wired it, and no test
-// exercised the wiring either — see queue_registration_test.go's
-// producer-reachability guard for the systemic half of this fix.
-func TestSyncWorker_Work_DriftScanEnqueuesRealJob(t *testing.T) {
-	ctx := context.Background()
-
-	pool, err := db.NewPool(ctx, pgDSN, db.MaxConnsWorker)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	ch, err := db.NewCH(ctx, chDSN, 0)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = ch.Close() })
-
-	cipher, err := connector.NewCipher(testKey(t))
-	require.NoError(t, err)
-	connSvc := connector.NewService(connector.NewPGRepo(pool), cipher)
-	assetSvc := asset.NewService(asset.NewCHRepo(ch))
-	findingSvc := finding.NewService(finding.NewCHRepo(ch))
-
-	insertClient, err := InsertClient(pool)
-	require.NoError(t, err)
-	profileSvc := scan.NewProfileService(scan.NewPGProfileRepo(pool), scan.NewPGRepo(pool), nil, nil, NewEnqueuer(insertClient))
-	enqueuer := NewEnqueuer(insertClient).WithDriftProfiles(profileSvc)
-
-	suffix := time.Now().Format("150405.000000")
-	profile, err := profileSvc.CreateProfile(ctx, "it-drift-"+suffix, "", nil, true, "", true, "", "nuclei", "all")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = profileSvc.DeleteProfile(ctx, profile.ID) })
-
-	assetID := "ext-" + suffix
-	created, err := connSvc.Create(ctx, connector.TypeGitHub, "it-drift-conn-"+suffix,
-		map[string]string{"app_id": "1", "installation_id": "2", "private_key_pem": "k"}, "")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, _ = pool.Exec(ctx, "DELETE FROM connectors WHERE id = $1", created.ID)
-		_ = ch.Exec(ctx, "ALTER TABLE assets DELETE WHERE id = ?", assetID)
-	})
-
-	registry := collect.NewRegistry()
-	registry.Register(connector.TypeGitHub, driftStubCollector{assetID: assetID})
-
-	w := &SyncWorker{connectors: connSvc, registry: registry, assets: assetSvc,
-		findings: findingSvc, checks: checks.Default(), drift: enqueuer}
-	require.NoError(t, w.Work(ctx, &river.Job[SyncConnectorArgs]{Args: SyncConnectorArgs{ConnectorID: created.ID}}))
-
-	require.Eventually(t, func() bool {
-		var args string
-		row := pool.QueryRow(ctx,
-			`SELECT args::text FROM river_job WHERE kind = 'scan_asset' AND args->>'asset_id' = $1 ORDER BY id DESC LIMIT 1`,
-			assetID)
-		return row.Scan(&args) == nil && strings.Contains(args, profile.ID)
-	}, 5*time.Second, 100*time.Millisecond,
-		"expected a real scan_asset river_job row for the drift-triggered asset, referencing the drift-enabled profile")
 }
 
 func testKey(t *testing.T) string {

@@ -8,7 +8,7 @@ import {
   Settings as SettingsIcon,
   ShieldCheck,
   Crosshair,
-  Radar,
+
   LogOut,
   Sun,
   Moon,
@@ -30,7 +30,6 @@ const tabs: { to: string; label: string; icon: LucideIcon; shortcut: string }[] 
   { to: "/home",        label: "Home",        icon: Crosshair,  shortcut: "h" },
   { to: "/decisions",   label: "Decisions",   icon: Activity,   shortcut: "d" },
   { to: "/investigate", label: "Investigate", icon: Telescope,  shortcut: "i" },
-  { to: "/scans",       label: "Scans",       icon: Radar,      shortcut: "s" },
   { to: "/compliance",  label: "Compliance",  icon: ShieldCheck, shortcut: "c" },
 ];
 

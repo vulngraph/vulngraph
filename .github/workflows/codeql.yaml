@@ -67,7 +67,7 @@ jobs:
           echo 'CGO_LDFLAGS=-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib' >> "$GITHUB_ENV"
 
       # Autobuild compiles every package at full parallelism under the CodeQL tracer, and
-      # the AWS SDK and Nuclei packages are large enough to starve a hosted runner
+      # the cloud SDK packages are large enough to starve a hosted runner
       # ("lost communication with the server"). Build with limited parallelism and a
       # memory limit instead.
       - name: Build

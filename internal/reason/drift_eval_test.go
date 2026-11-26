@@ -33,8 +33,7 @@ type driftCase struct {
 
 func driftFacts() driftanalysis.Facts {
 	return driftanalysis.Facts{
-		ExposureKnown: true, FindingsKnown: true, ProfilesKnown: true,
-		Profiles: []driftanalysis.ProfileFact{{ID: "prof-web", Name: "Web exposure", TemplateTags: []string{"exposure", "cve"}}},
+		ExposureKnown: true, FindingsKnown: true,
 	}
 }
 

@@ -12,13 +12,19 @@ type UserUpdate struct {
 	Disabled *bool
 }
 
-// UpdateUser applies an admin's role and/or disabled change to targetID.
-// Disabling also deletes the user's sessions in the same transaction (they are
-// already refused by the session lookup; deleting them keeps the table honest).
-// Guards:
-//   - an admin never changes their own row (ErrSelfAction) — locking yourself
-//     out is never what a click on your own row meant;
-//   - the last active admin can be neither demoted nor disabled (ErrLastAdmin).
+// UserAdminRepo is the state accessed while the administrator invariant is locked.
+type UserAdminRepo interface {
+	GetUserByID(context.Context, string) (User, error)
+	SetUserRole(context.Context, string, Role, bool) (int64, error)
+	SetUserDisabledAt(context.Context, string, *time.Time, bool) (int64, error)
+	DeleteUser(context.Context, string) error
+	DeleteUserSessions(context.Context, string) (int64, error)
+	CountActiveAdmins(context.Context) (int64, error)
+}
+
+// UpdateUser applies all changes under the same lock as the last-admin check.
+// Promotion under REQUIRE_ADMIN_TOTP and disablement also revoke sessions in
+// that transaction. Audit records describe only successfully committed changes.
 func (s *Service) UpdateUser(ctx context.Context, actorID, targetID string, upd UserUpdate) (User, error) {
 	if actorID == targetID {
 		return User{}, ErrSelfAction
@@ -26,80 +32,88 @@ func (s *Service) UpdateUser(ctx context.Context, actorID, targetID string, upd 
 	if upd.Role != nil && !upd.Role.Valid() {
 		return User{}, ErrInvalidRole
 	}
-	target, err := s.repo.GetUserByID(ctx, targetID)
+	var target, updated User
+	var roleRevoked, disabledRevoked int64
+	var revokePromotion bool
+	err := s.repo.WithUserAdministration(ctx, func(repo UserAdminRepo) error {
+		var err error
+		target, err = repo.GetUserByID(ctx, targetID)
+		if err != nil {
+			return fmt.Errorf("read user: %w", err)
+		}
+		demoting := upd.Role != nil && *upd.Role != RoleAdmin
+		disabling := upd.Disabled != nil && *upd.Disabled && target.DisabledAt == nil
+		if demoting || disabling {
+			if err := ensureNotLastAdmin(ctx, repo, target); err != nil {
+				return err
+			}
+		}
+		if upd.Role != nil {
+			revokePromotion = s.requireAdminTOTP && *upd.Role == RoleAdmin && target.Role != RoleAdmin
+			roleRevoked, err = repo.SetUserRole(ctx, targetID, *upd.Role, revokePromotion)
+			if err != nil {
+				return fmt.Errorf("set role: %w", err)
+			}
+		}
+		if upd.Disabled != nil {
+			var at *time.Time
+			if *upd.Disabled {
+				now := s.now()
+				at = &now
+				if target.DisabledAt != nil {
+					at = target.DisabledAt
+				}
+			}
+			disabledRevoked, err = repo.SetUserDisabledAt(ctx, targetID, at, *upd.Disabled)
+			if err != nil {
+				return fmt.Errorf("set disabled: %w", err)
+			}
+		}
+		updated, err = repo.GetUserByID(ctx, targetID)
+		if err != nil {
+			return fmt.Errorf("read updated user: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
 		return User{}, fmt.Errorf("UpdateUser: %w", err)
 	}
-	demoting := upd.Role != nil && *upd.Role != RoleAdmin
-	disabling := upd.Disabled != nil && *upd.Disabled && target.DisabledAt == nil
-	if demoting || disabling {
-		if err := s.ensureNotLastAdmin(ctx, target); err != nil {
-			return User{}, fmt.Errorf("UpdateUser: %w", err)
-		}
-	}
 	if upd.Role != nil {
-		if err := s.setRole(ctx, target, *upd.Role); err != nil {
-			return User{}, fmt.Errorf("UpdateUser: %w", err)
+		details := map[string]any{"email": target.Email, "before": string(target.Role), "after": string(*upd.Role)}
+		if revokePromotion {
+			details["sessions_revoked"] = roleRevoked
 		}
+		s.record(ctx, AuditActionUserRoleChange, targetID, details)
 	}
 	if upd.Disabled != nil {
-		var at *time.Time
-		if *upd.Disabled {
-			now := s.now()
-			at = &now
-			if target.DisabledAt != nil {
-				at = target.DisabledAt // keep the original offboarding time
-			}
-		}
-		n, err := s.repo.SetUserDisabledAt(ctx, targetID, at, *upd.Disabled)
-		if err != nil {
-			return User{}, fmt.Errorf("UpdateUser: %w", err)
-		}
 		details := map[string]any{"email": target.Email, "was_disabled": target.DisabledAt != nil}
 		action := AuditActionUserEnable
 		if *upd.Disabled {
-			action, details["sessions_revoked"] = AuditActionUserDisable, n
+			action, details["sessions_revoked"] = AuditActionUserDisable, disabledRevoked
 		}
 		s.record(ctx, action, targetID, details)
-	}
-	updated, err := s.repo.GetUserByID(ctx, targetID)
-	if err != nil {
-		return User{}, fmt.Errorf("UpdateUser: %w", err)
 	}
 	return updated, nil
 }
 
-// setRole stores target's new role. Under REQUIRE_ADMIN_TOTP a promotion to
-// admin also ends target's sessions, in the same transaction: one signed in by password without a
-// TOTP code must not carry the admin role.
-func (s *Service) setRole(ctx context.Context, target User, role Role) error {
-	revoke := s.requireAdminTOTP && role == RoleAdmin && target.Role != RoleAdmin
-	n, err := s.repo.SetUserRole(ctx, target.ID, role, revoke)
-	if err != nil {
-		return fmt.Errorf("setRole: %w", err)
-	}
-	details := map[string]any{"email": target.Email, "before": string(target.Role), "after": string(role)}
-	if revoke {
-		details["sessions_revoked"] = n
-	}
-	s.record(ctx, AuditActionUserRoleChange, target.ID, details)
-	return nil
-}
-
-// DeleteUser removes targetID with its sessions and API keys. Prefer
-// disabling: audit history refers to users by id.
+// DeleteUser preserves the last active administrator and commits before auditing.
 func (s *Service) DeleteUser(ctx context.Context, actorID, targetID string) error {
 	if actorID == targetID {
 		return ErrSelfAction
 	}
-	target, err := s.repo.GetUserByID(ctx, targetID)
+	var target User
+	err := s.repo.WithUserAdministration(ctx, func(repo UserAdminRepo) error {
+		var err error
+		target, err = repo.GetUserByID(ctx, targetID)
+		if err != nil {
+			return fmt.Errorf("read user: %w", err)
+		}
+		if err := ensureNotLastAdmin(ctx, repo, target); err != nil {
+			return err
+		}
+		return repo.DeleteUser(ctx, targetID)
+	})
 	if err != nil {
-		return fmt.Errorf("DeleteUser: %w", err)
-	}
-	if err := s.ensureNotLastAdmin(ctx, target); err != nil {
-		return fmt.Errorf("DeleteUser: %w", err)
-	}
-	if err := s.repo.DeleteUser(ctx, targetID); err != nil {
 		return fmt.Errorf("DeleteUser: %w", err)
 	}
 	s.record(ctx, AuditActionUserDelete, targetID, map[string]any{"email": target.Email, "role": string(target.Role)})
@@ -126,11 +140,11 @@ func (s *Service) RevokeSessions(ctx context.Context, actorID, targetID string) 
 
 // ensureNotLastAdmin refuses to remove target's admin access when it is the
 // only active admin left.
-func (s *Service) ensureNotLastAdmin(ctx context.Context, target User) error {
+func ensureNotLastAdmin(ctx context.Context, repo UserAdminRepo, target User) error {
 	if target.Role != RoleAdmin || target.DisabledAt != nil {
 		return nil
 	}
-	n, err := s.repo.CountActiveAdmins(ctx)
+	n, err := repo.CountActiveAdmins(ctx)
 	if err != nil {
 		return fmt.Errorf("ensureNotLastAdmin: %w", err)
 	}

@@ -104,7 +104,7 @@ components:
       properties:
         purpose:
           type: string
-          description: 'One of chat, nl_query, refine, template_gen, reason, adjudicate, ct_triage.'
+          description: 'One of chat, nl_query, refine, reason, adjudicate, ct_triage. Historical template_gen usage may also be returned.'
         model: { type: string }
         interactive: { type: boolean }
         calls: { type: integer }

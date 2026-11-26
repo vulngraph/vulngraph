@@ -125,3 +125,5 @@ unused). Each ADR's own status line carries the dates and detail.
 | [094](094-node-posture-reader.md) | Kubernetes control-plane and node posture without new privileges | accepted |
 | [095](095-upstream-ladybugdb.md) | Run upstream LadybugDB, unmodified | accepted |
 | [096](096-opt-in-vm-disk-scanning.md) | Opt-in VM disk scanning, and the one cloud write it needs | accepted |
+
+| [097](097-retire-external-scanning.md) | Retire active external scanning; preserve opt-in disk inventory | accepted |

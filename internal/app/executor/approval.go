@@ -50,8 +50,8 @@ type Approver struct {
 // implements it.
 type GrantLedger interface {
 	// Redeem records the first use of the grant with this hash; ok is false
-	// when the grant was already redeemed.
-	Redeem(ctx context.Context, grantHash, byID string, expiresAt time.Time) (ok bool, err error)
+	// when the grant was already redeemed or the approver authority was revoked.
+	Redeem(ctx context.Context, grantHash, byID, approverID string, authorityVersion int64, expiresAt time.Time) (ok bool, err error)
 }
 
 // WithLedger attaches the ledger that makes grants single-use.
@@ -91,9 +91,10 @@ type Principal struct {
 	// CreatedAt is when the principal's account was created; zero = unknown,
 	// which the approver account-age check refuses.
 	CreatedAt time.Time
-	// AdminSince is when the principal's role last became admin; zero =
-	// unknown (an admin that predates the column), which counts from CreatedAt.
-	AdminSince time.Time
+	// AdminSince starts the current uninterrupted, enabled admin tenure.
+	// Zero means unknown; the approver eligibility check refuses it.
+	AdminSince       time.Time
+	AuthorityVersion int64
 }
 
 // adminTenureStart is when the principal's two-person eligibility clock
@@ -130,11 +131,12 @@ type Approval struct {
 // spent on "stop i-def", because a different plan hashes differently and the
 // signature covers the hash.
 type grantClaims struct {
-	ConnectorID string `json:"c"`
-	Action      string `json:"a"`
-	PlanHash    string `json:"p"`
-	Approver    string `json:"by"`
-	ApproverID  string `json:"uid"`
+	ConnectorID      string `json:"c"`
+	Action           string `json:"a"`
+	PlanHash         string `json:"p"`
+	Approver         string `json:"by"`
+	ApproverID       string `json:"uid"`
+	AuthorityVersion int64  `json:"av"`
 	// ApproverIP is a hash of the approver's client address ("" if unknown),
 	// so an execution from the same address can be flagged for review.
 	ApproverIP string `json:"iph,omitempty"`
@@ -157,7 +159,7 @@ type Grant struct {
 
 // Mint signs a grant for one resolved plan.
 func (a *Approver) Mint(connectorID string, action Action, plan string, approver Principal) (Approval, error) {
-	if !approver.attributed() {
+	if !approver.attributed() || approver.AuthorityVersion <= 0 {
 		return Approval{}, fmt.Errorf("%w: an approval must name the approving admin", ErrApprovalInvalid)
 	}
 	exp := a.now().UTC().Add(ApprovalTTL)
@@ -166,14 +168,15 @@ func (a *Approver) Mint(connectorID string, action Action, plan string, approver
 		return Approval{}, fmt.Errorf("Mint: nonce: %w", err)
 	}
 	claims := grantClaims{
-		ConnectorID: connectorID,
-		Action:      string(action),
-		PlanHash:    hashPlan(plan),
-		Approver:    approver.Name,
-		ApproverID:  approver.ID,
-		ApproverIP:  a.hashIP(approver.IP),
-		ExpiresAt:   exp.Unix(),
-		Nonce:       base64.RawURLEncoding.EncodeToString(nonce),
+		ConnectorID:      connectorID,
+		Action:           string(action),
+		PlanHash:         hashPlan(plan),
+		Approver:         approver.Name,
+		ApproverID:       approver.ID,
+		AuthorityVersion: approver.AuthorityVersion,
+		ApproverIP:       a.hashIP(approver.IP),
+		ExpiresAt:        exp.Unix(),
+		Nonce:            base64.RawURLEncoding.EncodeToString(nonce),
 	}
 	payload, err := json.Marshal(claims)
 	if err != nil {
@@ -217,12 +220,12 @@ func (a *Approver) Redeem(ctx context.Context, token, connectorID string, action
 	if a.ledger == nil {
 		return Grant{}, fmt.Errorf("%w: no grant ledger is configured, so a grant cannot be spent", ErrApprovalRequired)
 	}
-	ok, err := a.ledger.Redeem(ctx, grantKey(payload), executor.ID, g.ExpiresAt)
+	ok, err := a.ledger.Redeem(ctx, grantKey(payload), executor.ID, claims.ApproverID, claims.AuthorityVersion, g.ExpiresAt)
 	if err != nil {
 		return Grant{}, fmt.Errorf("Redeem: %w", err)
 	}
 	if !ok {
-		return Grant{}, fmt.Errorf("%w: this approval grant was already used; ask for a new one", ErrApprovalInvalid)
+		return Grant{}, fmt.Errorf("%w: this approval grant was already used or its approver authority was revoked; ask for a new one", ErrApprovalInvalid)
 	}
 	return g, nil
 }
@@ -272,7 +275,10 @@ func (a *Approver) verify(token, connectorID string, action Action, plan string,
 		return grantClaims{}, nil, fmt.Errorf("%w: malformed approval claims", ErrApprovalInvalid)
 	}
 
-	if a.now().UTC().Unix() > claims.ExpiresAt {
+	if claims.AuthorityVersion <= 0 {
+		return grantClaims{}, nil, fmt.Errorf("%w: approval has no current authority version", ErrApprovalInvalid)
+	}
+	if a.now().UTC().Unix() >= claims.ExpiresAt {
 		return grantClaims{}, nil, fmt.Errorf("%w: approval expired", ErrApprovalInvalid)
 	}
 	if claims.ConnectorID != connectorID || claims.Action != string(action) {

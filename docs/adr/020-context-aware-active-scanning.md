@@ -1,5 +1,7 @@
 # ADR 020 — Context-aware active scanning: scope, fingerprinting, and safety rails
 
+> Superseded for active external scanning by [ADR 097](097-retire-external-scanning.md). The remainder is historical.
+
 **Status:** partially implemented · superseded in part by what shipped (see the 2026-10-24 amendment) · amended 2026-07-18 (implementation drift) · amended 2026-10-05 (unwired seams removed) · amended 2026-10-23 (rails unbuilt) · amended 2026-10-24 (the rails that exist)
 
 > **Amendment (2026-10-24) — what is built, and the rails it has.** The context-aware verify

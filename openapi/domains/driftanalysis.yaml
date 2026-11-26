@@ -66,11 +66,8 @@ components:
         - exposure_judgement
         - scan_recommendation
         - reason
-        - suggested_profile_id
-        - suggested_template_tags
         - confidence
         - evidence
-        - auto_scan_profile_ids
         - truncated
         - source
         - advisory
@@ -98,22 +95,12 @@ components:
           enum: [recommended, not_needed, unknown]
           description: 'unknown means not analysed or not established. It is never "no scan needed".'
         reason: { type: string }
-        suggested_profile_id:
-          type: string
-          description: 'An enabled scan profile the agent suggests; empty when none. A suggestion, not an action.'
-        suggested_template_tags:
-          type: array
-          items: { type: string }
         confidence:
           type: string
           description: 'low, medium or high; low whenever a fact was missing.'
         evidence:
           type: array
           items: { $ref: '#/components/schemas/DriftAnalysisEvidence' }
-        auto_scan_profile_ids:
-          type: array
-          items: { type: string }
-          description: 'Profiles that already scan on drift. Set by the platform, not the model.'
         truncated:
           type: boolean
           description: 'More assets changed than one batch holds; the rest were not analysed.'
@@ -136,6 +123,6 @@ components:
       type: object
       required: [source, ref, fact]
       properties:
-        source: { type: string, enum: [asset, profile] }
-        ref: { type: string, description: 'The asset id or profile id the fact is about.' }
+        source: { type: string, enum: [asset] }
+        ref: { type: string, description: 'The asset id the fact is about.' }
         fact: { type: string }

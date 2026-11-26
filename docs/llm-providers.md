@@ -2,7 +2,7 @@
 
 Vulngraph uses an LLM for remediation reasoning, the severity adjudicator, natural-language →
 graph query translation, the investigation chat, plan refinement, CT-log phishing triage
-and AI nuclei template generation. **All of it is optional** — with no provider configured
+and advisory drift analysis. **All of it is optional** — with no provider configured
 those features are off (503 / heuristic triage) and inventory, graph, checks, scanning and
 scoring all run normally.
 

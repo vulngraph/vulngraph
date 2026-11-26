@@ -20,11 +20,9 @@ const ScannerRole = "graph_scanner"
 // scannerGrants is everything the scanner process does on Postgres:
 //   - goose_db_version, river_migration: the readiness wait (migrate.Status).
 //   - river_job, river_leader, river_queue: River's client. The scanner works
-//     queueScan, enqueues enrich jobs, and as the elected leader enqueues the
+//     queueDiskScan and as the elected leader enqueues the
 //     periodic jobs and runs River's maintenance (rescue, cleanup, scheduling).
 //     The reindexer, which needs the owner, is off (jobs.reindexerSchedule).
-//   - scan_profiles, scan_runs, scan_findings: the scan workers, which read a
-//     profile and record runs and their per-target findings.
 //   - disk_scan_*: the disk scan's volume jobs record their results, packages,
 //     snapshot registry rows and cache. The runs table is read and updated so the
 //     last volume of a run can close it. A connector is visible only through the
@@ -38,8 +36,6 @@ var scannerGrants = []string{
 	"GRANT SELECT ON goose_db_version, river_migration TO " + ScannerRole,
 	"GRANT SELECT, INSERT, UPDATE, DELETE ON river_job, river_leader, river_queue TO " + ScannerRole,
 	"GRANT USAGE ON SEQUENCE river_job_id_seq TO " + ScannerRole,
-	"GRANT SELECT ON scan_profiles TO " + ScannerRole,
-	"GRANT SELECT, INSERT, UPDATE ON scan_runs, scan_findings TO " + ScannerRole,
 	"GRANT SELECT, UPDATE ON disk_scan_runs TO " + ScannerRole,
 	"GRANT SELECT, INSERT, UPDATE ON disk_scan_volumes, disk_scan_snapshots, disk_scan_cache, disk_scan_packages TO " + ScannerRole,
 	"GRANT SELECT ON disk_scan_connector_modes TO " + ScannerRole,

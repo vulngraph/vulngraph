@@ -14,8 +14,8 @@ a comment to be followed, simplify it first; comment only constraints the code c
 ## What enforces these rules
 
 - **golangci-lint** (`.golangci.yml`; lefthook at commit, and CI): the storage and driver
-  bans in `domain.go`, handler files and `service.go`/`service_*.go`; the nuclei and LLM
-  SDK quarantines; `http.DefaultClient` and `fmt.Print*` outside tests;
+  bans in `domain.go`, handler files and `service.go`/`service_*.go`; the LLM
+  SDK quarantine; `http.DefaultClient` and `fmt.Print*` outside tests;
   the 800-line Go file limit; gofmt and goimports.
 - **Tests** (the unit suite, which lefthook and CI run): the guards named in the sections
   below, among them `TestEveryWriteRouteIsGatedOrExempt`,
@@ -50,15 +50,14 @@ handler.go   transport only: parse request → call service → map domain error
 
 - Services hold **interfaces**, never concrete repo types.
 - Domains talk to each other through service interfaces, never each other's repos.
-- The nuclei SDK is imported ONLY by `internal/scanner/nuclei`.
 - golangci-lint (depguard/forbidigo/revive) enforces the storage and driver bans in
   `domain.go`, handler files and `service.go`/`service_*.go` (other files, such as
-  `scan/profile_service.go`, are not checked), and the nuclei and LLM SDK quarantines, at
+  `asset/purge.go`, are not checked), and the LLM SDK quarantine, at
   commit and in CI.
-  The interface and cross-domain rules are checked in review only. Known exceptions: 13 non-repo
+  The interface and cross-domain rules are checked in review only. Known exceptions: 12 non-repo
   files query storage directly (`asset/{drift,optimize,purge,staleness}.go`,
-  `finding/{age,clusters,quality,reenrich,risk,source_activity,summary,unenriched}.go`,
-  `scan/profile_service.go`); do not add to them. If the linter blocks you, fix the design —
+  `finding/{age,clusters,quality,reenrich,risk,source_activity,summary,unenriched}.go`);
+  do not add to them. If the linter blocks you, fix the design —
   do not loosen the config.
 
 ## Errors

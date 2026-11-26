@@ -28,13 +28,17 @@ func testApprover(t *testing.T) *Approver {
 
 // memLedger is an in-memory GrantLedger.
 type memLedger struct {
-	spent map[string]bool
-	err   error
+	spent     map[string]bool
+	err       error
+	authority map[string]int64
 }
 
-func (m *memLedger) Redeem(_ context.Context, grantHash, _ string, _ time.Time) (bool, error) {
+func (m *memLedger) Redeem(_ context.Context, grantHash, _, approverID string, version int64, _ time.Time) (bool, error) {
 	if m.err != nil {
 		return false, m.err
+	}
+	if m.authority != nil && m.authority[approverID] != version {
+		return false, nil
 	}
 	if m.spent[grantHash] {
 		return false, nil
@@ -92,8 +96,8 @@ func TestApproval_UnattributedExecutorIsRefused(t *testing.T) {
 }
 
 var (
-	alice = Principal{ID: "u-alice", Name: "alice@example.com"}
-	bob   = Principal{ID: "u-bob", Name: "bob@example.com"}
+	alice = Principal{ID: "u-alice", Name: "alice@example.com", AuthorityVersion: 1}
+	bob   = Principal{ID: "u-bob", Name: "bob@example.com", AuthorityVersion: 1}
 )
 
 // The same user under a different display name (their API key) is still the
@@ -461,7 +465,7 @@ func TestExecute_SessionApproveThenOwnAPIKeyExecuteIsRefused(t *testing.T) {
 	req := ExecutionRequest{ConnectorID: "conn-1", Action: ActionEC2Stop, Params: map[string]string{ParamInstanceID: "i-abc"}}
 
 	session := auth.ContextWithUser(context.Background(), auth.User{ID: "u-alice", Email: "alice@example.com",
-		Role: auth.RoleAdmin, CreatedAt: time.Now().Add(-48 * time.Hour)})
+		Role: auth.RoleAdmin, CreatedAt: time.Now().Add(-48 * time.Hour), AdminSince: adminTime(time.Now().Add(-48 * time.Hour)), AuthorityVersion: 1})
 	grant, err := svc.Approve(session, req)
 	require.NoError(t, err)
 
@@ -473,7 +477,7 @@ func TestExecute_SessionApproveThenOwnAPIKeyExecuteIsRefused(t *testing.T) {
 	// A different user's API key passes the approval gate (and then fails on
 	// the missing execution role — the next control).
 	otherKey := auth.ContextWithUser(context.Background(), auth.User{ID: "u-bob", Email: "automation (api-key)", Role: auth.RoleAdmin,
-		CreatedAt: time.Now().Add(-48 * time.Hour)})
+		CreatedAt: time.Now().Add(-48 * time.Hour), AdminSince: adminTime(time.Now().Add(-48 * time.Hour)), AuthorityVersion: 1})
 	_, err = svc.Execute(otherKey, req)
 	require.ErrorIs(t, err, ErrNoExecutionRole)
 }

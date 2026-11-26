@@ -7,7 +7,7 @@
 #   scripts/govulncheck.sh bin/graph       # binary mode: symbols in the binary
 #
 # CI uses binary mode: source mode builds a whole-program call graph over
-# nuclei + every cloud SDK and peaks near 20 GB RSS, more than a standard
+# all cloud SDKs and can exceed the memory available on a standard
 # GitHub runner has; binary mode needs ~400 MB. Binary mode is stricter (it
 # flags any vulnerable symbol linked in, reachable or not).
 set -euo pipefail

@@ -137,20 +137,9 @@ source is available from the upstream locations listed in that report:
     golang-lru/v2                            MPL-2.0
   github.com/gosimple/slug                   MPL-2.0
   github.com/cyphar/filepath-securejoin      MPL-2.0
-  github.com/projectdiscovery/retryablehttp-go  MPL-2.0
 
 MPL-2.0 is a file-level copyleft: it applies to the covered files of those
 modules only and does not extend to this project's own source.
-
-Replaced modules (never linked into this project's builds). go.mod replaces
-each with an inert, API-compatible stand-in written for this project (MIT,
-see third_party/<stub>/README.md); a test fails if a replace is dropped:
-
-  github.com/projectdiscovery/ldapserver — GPL-2.0; reached via nuclei ->
-    interactsh/pkg/server. Stub: third_party/ldapserver-stub.
-  github.com/censys/censys-sdk-go — ships no LICENSE file (no clear
-    redistribution grant); reached via nuclei -> uncover's Censys agent,
-    which Vulngraph never invokes. Stub: third_party/censys-sdk-stub.
 
 == Frontend (frontend/, embedded in the binary as web/dist) ==
 

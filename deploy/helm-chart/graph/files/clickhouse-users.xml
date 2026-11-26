@@ -13,10 +13,8 @@
                  ALTER on audit_events, so it can add audit rows but not
                  rewrite them. cmd/graph/chart_chgrants_test.go derives these
                  grants from the statements in the code.
-     graph_scanner  the scanner: reads the assets it targets, the findings it
-                 re-observes and the schema version (its readiness wait), and
-                 inserts findings. Nothing else, so no audit_events, no
-                 assets or edges written, no mutations.
+     graph_scanner  the optional disk reader: reads only the migration
+                 ledger for readiness. It stores results in Postgres.
 
      The passwords come from the container's environment. -->
 <clickhouse>
@@ -71,15 +69,8 @@
             <quota>default</quota>
             <default_database>graph</default_database>
             <grants>
-                <!-- migrate.Status, the readiness wait. -->
+                <!-- Schema readiness only. Disk results are stored in Postgres. -->
                 <query>GRANT SELECT ON graph.goose_db_version</query>
-                <!-- Scan targets (asset.Service ListExternal, Get, ByIDs). -->
-                <query>GRANT SELECT ON graph.assets</query>
-                <!-- finding.Service RecordObserved: reads the stored
-                     versions (ByIDs, which joins finding_enrichment), then
-                     inserts. -->
-                <query>GRANT SELECT, INSERT ON graph.findings</query>
-                <query>GRANT SELECT ON graph.finding_enrichment</query>
             </grants>
         </graph_scanner>
     </users>

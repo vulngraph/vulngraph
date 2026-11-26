@@ -41,17 +41,7 @@ func TestAdminServicesAreWiredWithAudit(t *testing.T) {
 	for _, pkg := range []string{"auth", "apikey", "connector", "notify", "policy", "finding", "savedquery"} {
 		assertAllConstructionsAudited(t, "serve.go", pkg, "NewService")
 	}
-	assertAllConstructionsAudited(t, "serve.go", "scan", "NewProfileService")
 	assertAllConstructionsAudited(t, "user.go", "auth", "NewService")
-}
-
-// A scan a person starts from the API writes a scan.start or
-// scan.profile_start row. Only serve takes those requests; the worker and
-// scanner pods build the scan services without audit because no person
-// starts anything there.
-func TestScanStartsAreWiredWithAudit(t *testing.T) {
-	assertAllConstructionsAudited(t, "serve.go", "scan", "NewService")
-	assertAllConstructionsAudited(t, "serve.go", "scan", "NewProfileService")
 }
 
 // assertAllConstructionsAudited fails when any <pkg>.<ctor>(...) call in file is

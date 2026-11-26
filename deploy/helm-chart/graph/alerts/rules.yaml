@@ -657,7 +657,7 @@ groups:
       # resolve, and image/OS package findings with no image lineage — any of which
       # leaves an entire source, criticals included, 100% blank.
       #
-      # nuclei is excluded by design: its blank ratio is near 100% and it is
+      # Historical nuclei data is excluded by design: its blank ratio is near 100% and it is
       # deliberately not prioritised, so including it would fire
       # permanently and drown every source that matters.
       #
@@ -765,8 +765,7 @@ groups:
             infrastructure churn rather than reporting risk — retire or re-scope it.
 
       # ZERO IS A FINDING. A source that produced nothing in N days is
-      # indistinguishable from a source with nothing to report — e.g. a scanner
-      # idle behind an empty scan_profiles table, or a secrets source returning a
+      # indistinguishable from a source with nothing to report — e.g. a secrets source returning a
       # handful of findings across thousands of repos.
       # graph_source_last_activity_timestamp_seconds exists for this rule.
       #
@@ -783,7 +782,7 @@ groups:
           summary: "graph: source {{ $labels.source }} has produced nothing for over 7 days"
           description: >-
             No finding from {{ $labels.source }} has been seen or re-stamped in a week, so
-            the source is not running — an empty scan profile, a starved rate limit, a
+            the source is not running — a starved rate limit, a
             job stuck `available`, or a collector that lost its credentials. A silent
             source is indistinguishable from a clean estate, which is the whole point
             of this alert.

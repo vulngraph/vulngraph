@@ -1,9 +1,9 @@
 {{/* Chart-set env for the scanner container, merged with extraEnv by graph.env. */}}
 {{- define "graph.chartEnv.scanner" -}}
-{{ include "graph.podEnv" . }}
+{{ include "graph.podEnv" (dict "Values" .Values "scanner" true) }}
 {{ include "graph.datastoreEnv" (dict "scanner" true "Values" .Values) }}
 {{- end -}}
-{{- if .Values.scanner.enabled }}
+{{- if and .Values.scanner.enabled .Values.config.diskScanEnabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -38,8 +38,7 @@ spec:
       {{- end }}
       terminationGracePeriodSeconds: 120
       volumes:
-        # nuclei template validation/generation writes os.CreateTemp files, so
-        # the scanner needs a writable temp path under a read-only root.
+        # Disk readers need bounded scratch space under the read-only root.
         {{- include "graph.tmpVolume" . | nindent 8 }}
         {{- include "graph.dbCAVolume" . | nindent 8 }}
       containers:
@@ -54,9 +53,7 @@ spec:
             {{- include "graph.tmpVolumeMount" . | nindent 12 }}
             {{- include "graph.dbCAVolumeMount" . | nindent 12 }}
           {{- if .Values.metrics.enabled }}
-          # The scan queue's job metrics exist only here — the scanner pod is where
-          # the scan worker runs. Without this port the "did nuclei run at all?"
-          # question has no series behind it in the pod that would know.
+          # Disk volume job metrics are emitted by this process.
           ports:
             {{- include "graph.metricsPort" . | nindent 12 }}
           {{- end }}

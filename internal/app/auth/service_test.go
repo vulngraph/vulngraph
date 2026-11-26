@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 
 // fakeRepo is an in-memory Repo for service tests.
 type fakeRepo struct {
+	adminMu   sync.Mutex
 	users     map[string]UserCredentials // by email
 	sessions  map[string]session         // by token hash
 	totpSteps map[string]int64           // last accepted step by user id

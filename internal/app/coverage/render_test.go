@@ -51,7 +51,7 @@ func TestRenderOfflineStillCarriesTheDerivableHalf(t *testing.T) {
 	assert.Contains(t, doc, "## Scope")
 	assert.Contains(t, doc, "aws-s3-public-bucket", "the checks registry is derivable without a cluster")
 	assert.Contains(t, doc, graphschema.EdgeTypes[0].Type, "the edge registry is derivable without a cluster")
-	assert.Contains(t, doc, "openvas", "declared sources come from the AST, not from ClickHouse")
+	assert.Contains(t, doc, "supply_chain", "declared sources come from the AST, not from ClickHouse")
 }
 
 func TestRenderRecordsItsOwnMethodAndTimestamp(t *testing.T) {

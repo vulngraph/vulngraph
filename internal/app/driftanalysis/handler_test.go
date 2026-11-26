@@ -37,10 +37,9 @@ func analysedBatch() Batch {
 			Changes:           []ChangeItem{{Kind: KindNewExposure, AssetID: "a1", Note: "public"}},
 			ExposureJudgement: ExposureIncreased,
 			ScanRecommended:   true, ScanRecommendedKnown: true,
-			Reason: "exposure grew", SuggestedProfileID: "p1", SuggestedTemplateTags: []string{"s3"},
-			Confidence:         ConfidenceHigh,
-			Evidence:           []EvidenceRef{{Source: EvidenceAsset, Ref: "a1", Fact: "public ip"}},
-			AutoScanProfileIDs: []string{"p2"},
+			Reason:     "exposure grew",
+			Confidence: ConfidenceHigh,
+			Evidence:   []EvidenceRef{{Source: EvidenceAsset, Ref: "a1", Fact: "public ip"}},
 		},
 	}
 }
@@ -69,8 +68,6 @@ func TestHandler_List_Shape(t *testing.T) {
 	assert.Equal(t, "llm", a["source"])
 	assert.Equal(t, true, a["advisory"])
 	assert.Equal(t, true, a["truncated"])
-	assert.Equal(t, "p1", a["suggested_profile_id"])
-	assert.Equal(t, []any{"p2"}, a["auto_scan_profile_ids"])
 	assert.Equal(t, map[string]any{"kind": "new_exposure", "asset_id": "a1", "note": "public"}, a["changes"].([]any)[0])
 	assert.Equal(t, map[string]any{"source": "asset", "ref": "a1", "fact": "public ip"}, a["evidence"].([]any)[0])
 	assert.NotContains(t, a, "Verdict")
@@ -95,8 +92,6 @@ func TestToResponse_UnknownIsNeverNoScanNeeded(t *testing.T) {
 			assert.Equal(t, RecommendationUnknown, r.ScanRecommendation)
 			assert.NotNil(t, r.Changes)
 			assert.NotNil(t, r.Evidence)
-			assert.NotNil(t, r.SuggestedTemplateTags)
-			assert.NotNil(t, r.AutoScanProfileIDs)
 		})
 	}
 	known := Batch{Status: StatusAnalysed, Verdict: Verdict{ScanRecommendedKnown: true}}

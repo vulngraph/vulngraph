@@ -95,3 +95,9 @@ func inventoryToolError(err error) error {
 		return fmt.Errorf("submit_package_inventory: %w", err)
 	}
 }
+
+// needsAdminError identifies a forbidden caller without exposing internal errors.
+type needsAdminError struct{ msg string }
+
+func (e needsAdminError) Error() string        { return e.msg }
+func (e needsAdminError) Is(target error) bool { return target == errNeedsHuman }

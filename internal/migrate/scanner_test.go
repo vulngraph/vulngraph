@@ -35,10 +35,9 @@ func TestScannerGrantsNameRealObjects(t *testing.T) {
 		}
 	}
 	require.ElementsMatch(t, []string{
-		"scan_profiles", "scan_runs", "scan_findings",
 		"disk_scan_runs", "disk_scan_volumes", "disk_scan_snapshots", "disk_scan_cache", "disk_scan_packages",
 		"disk_scan_connector_modes",
 	}, granted,
-		"the scanner touches only the scan and disk-scan tables and the connector-mode view; "+
+		"the scanner touches only the disk-scan tables and the connector-mode view; "+
 			"anything else (users, api_keys, connectors) is an escalation path")
 }

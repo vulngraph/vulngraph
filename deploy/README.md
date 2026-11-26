@@ -172,26 +172,24 @@ Then point the chart at it: add `image.repository`/`image.tag` to your values
 file, or `--set image.repository=<your-registry>/vulngraph --set image.tag=<sha>`.
 A fork's own release workflow publishes to `ghcr.io/<owner>/<repo>`.
 
-`ENTRYPOINT graph`, `CMD serve`. The worker Deployment overrides the arg with
-`worker`, the scanner Deployment with `scanner` (runs the Nuclei scan jobs in a pod
-of its own; `scanner.enabled`, on by default, which also sets
-`SCAN_WORKER_DISABLED=true` on the worker for you). `scanner.enabled: false`
-saves that pod's requests (500m CPU, 1Gi) but runs nuclei in the worker, which
-holds every secret and the cloud identity; leave it on. Of the chart's secrets the scanner gets only `DATABASE_URL`,
-`CLICKHOUSE_URL` (its own `graph_scanner` users, see [Datastore users](#datastore-users)) and the Ladybug RPC
-secret (its scan profiles' Cypher target queries): no `GRAPH_SECRET_KEY`, no LLM key, no signing secrets, and none of
-the chart-wide `extraEnv` / `extraEnvFrom` (only `scanner.extraEnv` /
-`scanner.extraEnvFrom`). It runs as its own `scanner.serviceAccountName`
-(default `graph-scanner`) with no API token mounted and no IRSA/Workload
-Identity annotations. Its database users cannot touch users, API keys or
-connectors, but can still enqueue River jobs and write findings, so it is not a
-sandbox (see
-[Credential isolation](../docs/security-hardening.md#credential-isolation)).
+`ENTRYPOINT graph`, `CMD serve`. The worker Deployment runs `worker`.
+The isolated disk reader runs `scanner` only when `config.diskScanEnabled`
+and `scanner.enabled` are both true. Disk scanning is off by default and
+requires each connector to opt in. Keep `scanner.enabled: true` to separate
+disk parsing from the worker and its application credentials.
+
+The disk reader receives its own `graph_scanner` database credentials and a
+dedicated disk-job envelope key. It receives no `GRAPH_SECRET_KEY`, LLM key,
+signing secrets, chart-wide extra environment, or cloud workload identity.
+Its service account has no mounted Kubernetes token. It can modify River
+jobs and disk results, so these restrictions do not make it a complete sandbox.
+See [Credential isolation](../docs/security-hardening.md#credential-isolation).
+
 Migrations run as an init container with `migrate` in the serve pod.
 
 Renders: serve Deployment (migrate init container, ClusterIP by default —
 `ingress.yaml` is rendered when `ingress.enabled`), worker Deployment (River
-jobs, gated on `worker.enabled`), scanner Deployment (separate Nuclei pod with its own service account and no `GRAPH_SECRET_KEY`, LLM key or cloud identity, gated on `scanner.enabled`),
+jobs, gated on `worker.enabled`), scanner Deployment (isolated disk reader, gated on both `scanner.enabled` and `config.diskScanEnabled`),
 Service, Secret, ServiceAccount, plus `ladybug-internal-svc.yaml` and
 `ladybug-pvc.yaml`, the volume for Ladybug's warm-start snapshot (the graph
 itself is in memory and is rebuilt from ClickHouse; the snapshot only speeds up
@@ -260,10 +258,10 @@ chart), and the bundled ClickHouse loads its users from
 | datastore | user (password) | used by | rights |
 |---|---|---|---|
 | Postgres | `graph` (`secret.postgresPassword`) | migrate, serve, worker | owns the `graph` database, so it applies the schema and River's job tables (River's reindexing needs the owner); not a superuser and none of the `pg_*_server_*` roles, so no `COPY ... TO PROGRAM`, no server files, no new roles or databases |
-| Postgres | `graph_scanner` (`secret.postgresScannerPassword`) | scanner | owns nothing; after every run migrate grants it River's job tables, reads of `scan_profiles` and the schema version, and reads and writes of `scan_runs` and `scan_findings` (`internal/migrate/scanner.go`); nothing on users, sessions, API keys or connectors |
+| Postgres | `graph_scanner` (`secret.postgresScannerPassword`) | scanner | owns nothing; after every run migrate grants it River's job tables, the schema version, disk result tables and the connector-mode view (`internal/migrate/scanner.go`); nothing on users, sessions, API keys or connectors |
 | Postgres | `postgres` (`secret.postgresSuperuserPassword`) | only the Postgres StatefulSet | the image's bootstrap superuser |
 | ClickHouse | `graph` (`secret.clickhousePassword`) | serve, worker | `SELECT` and `INSERT` on `graph.*`, `ALTER DELETE` on `assets` and `graph_edges` (connector purge), `OPTIMIZE` on five tables and `SELECT` on `system.parts` and `system.projection_parts` (part compaction); no DDL, no `DROP` or `TRUNCATE`, nothing that rewrites `audit_events` |
-| ClickHouse | `graph_scanner` (`secret.clickhouseScannerPassword`) | scanner | `SELECT` on `assets`, `findings`, `finding_enrichment` and `goose_db_version`, `INSERT` on `findings`; nothing else |
+| ClickHouse | `graph_scanner` (`secret.clickhouseScannerPassword`) | scanner | `SELECT` on `goose_db_version`; nothing else |
 | ClickHouse | `graph_migrate` (`secret.clickhouseMigratePassword`) | the migrate init container, and the image's bootstrap of the `graph` database | `ALL` on `graph.*`, nothing outside it |
 
 The bundled ClickHouse has no other user: the image's passwordless `default`
@@ -386,9 +384,6 @@ GRANT SELECT ON system.parts TO graph;
 GRANT SELECT ON system.projection_parts TO graph;
 CREATE USER graph_scanner IDENTIFIED WITH sha256_password BY '<pw>' DEFAULT DATABASE graph;
 GRANT SELECT ON graph.goose_db_version TO graph_scanner;
-GRANT SELECT ON graph.assets TO graph_scanner;
-GRANT SELECT, INSERT ON graph.findings TO graph_scanner;
-GRANT SELECT ON graph.finding_enrichment TO graph_scanner;
 ```
 
 These are the grants of `files/clickhouse-users.xml`. `cmd/graph/chart_chgrants_test.go`
@@ -445,7 +440,7 @@ because the collectors call cloud APIs.
 |---|---|
 | Postgres | 5432 from serve (with its migrate init container), the worker and the scanner |
 | ClickHouse | 9000 (and 9440 with `clickhouse.tlsSecret`) from the same three; not 8123, its HTTP SQL interface |
-| worker | the graph RPC (8090) from serve and the scanner (its scan profiles' Cypher target queries) |
+| worker | the graph RPC (8090) from serve |
 | scanner | nothing |
 | serve | its API port (`service.port`) from every source, until you set `networkPolicy.ingressNamespace` |
 
@@ -686,8 +681,8 @@ binary genuinely writes outside its volumes:
 
 | path | writer | volume |
 |---|---|---|
-| `/tmp` | Ladybug COPY CSV staging when `/dev/shm` has no headroom (`graphstore/copy_load.go`), nuclei template validation (`scanner/nuclei/template_service.go`) | `emptyDir`, `securityContext.tmpSizeLimit` (default 2Gi) |
-| `/home/nonroot` (`$HOME`) | nuclei's `~/.config/nuclei`, and (worker, scanner) the pinned nuclei-templates release, downloaded into `~/nuclei-templates-<version>-<sha256>` unless `NUCLEI_TEMPLATES_DIR` is set | `emptyDir`, `securityContext.homeSizeLimit` (default 1Gi) |
+| `/tmp` | Ladybug COPY CSV staging when `/dev/shm` has no headroom (`graphstore/copy_load.go`) | `emptyDir`, `securityContext.tmpSizeLimit` (default 2Gi) |
+| `/home/nonroot` (`$HOME`) | runtime libraries that require a writable home directory | `emptyDir`, `securityContext.homeSizeLimit` (default 1Gi) |
 | `/dev/shm` | Ladybug COPY staging | provided by the runtime, unaffected |
 | `/data/ladybug`, `/data/serve-ladybug` | Ladybug snapshots | PVCs, group-writable via `fsGroup` |
 

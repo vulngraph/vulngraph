@@ -51,3 +51,20 @@ better than applying it.
   re-run after a partial failure is harmless.
 - A change to what the Ladybug graph loads also bumps `SchemaVersion`
   (`internal/app/graphstore/domain.go`); there is no in-place Ladybug migration.
+
+## External-scanning retirement and authority upgrade
+
+The public schema is upgraded by PostgreSQL migrations 7 and 8. Existing
+migrations 1–6 and ClickHouse migration 1 remain unchanged. Migration 7 disables
+external-scan schedules and cancels unfinished external-scan jobs. Stop old
+workers before applying it so they cannot enqueue retired work afterward.
+Migration 8 adds `authority_version`, invalidates old approval grants and
+records a new tenure start for existing active administrators. The configured
+minimum tenure must elapse before they can issue a new high-risk approval.
+See [ADR 097](adr/097-retire-external-scanning.md) for rollback behavior.
+
+`TestGooseParsesEmbeddedSQLInBothDirections` validates complete Goose Up/Down parsing.
+The integration suite tests fresh installation, upgrade from version 6,
+older River enums, reruns and down/reapply. It also tests the scanner's
+restricted database grants. River still owns its own migration ledger;
+`graph migrate` runs it in the same migration command after PostgreSQL Goose.

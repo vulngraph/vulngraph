@@ -17,7 +17,6 @@ import (
 // fullConfig is every periodic enabled — a fully-configured worker's shape.
 func fullConfig() PeriodicConfig {
 	return PeriodicConfig{
-		ScanInterval:     6 * time.Hour,
 		KEV:              true,
 		OSV:              true,
 		MalFeed:          true,
@@ -26,7 +25,6 @@ func fullConfig() PeriodicConfig {
 		SCC:              true,
 		DomainMonitor:    true,
 		SavedQueries:     true,
-		ProfileSchedules: true,
 		Adjudicator:      true,
 		DriftAnalysis:    true,
 		DiskScan:         true,
@@ -45,9 +43,9 @@ func TestBuildPeriodicJobs_Gating(t *testing.T) {
 	require.Len(t, buildPeriodicJobs(PeriodicConfig{}), base,
 		"minimal config schedules only the unconditional base jobs")
 
-	// Full config → base + scan + 12 feature periodics.
-	require.Len(t, buildPeriodicJobs(fullConfig()), base+1+12+2,
-		"full config schedules base + scan + every feature periodic")
+	// Full config → base + 11 feature periodics + 2 disk jobs.
+	require.Len(t, buildPeriodicJobs(fullConfig()), base+11+2,
+		"full config schedules base + every feature periodic")
 }
 
 // The disk scan switch schedules two jobs: the plan and the sweep.
@@ -70,11 +68,9 @@ func TestBuildPeriodicJobs_EachToggleAddsOne(t *testing.T) {
 		func(c *PeriodicConfig) { c.SCC = true },
 		func(c *PeriodicConfig) { c.DomainMonitor = true },
 		func(c *PeriodicConfig) { c.SavedQueries = true },
-		func(c *PeriodicConfig) { c.ProfileSchedules = true },
 		func(c *PeriodicConfig) { c.Adjudicator = true },
 		func(c *PeriodicConfig) { c.DriftAnalysis = true },
 		func(c *PeriodicConfig) { c.ImageVuln = true },
-		func(c *PeriodicConfig) { c.ScanInterval = time.Hour },
 	}
 	for i, toggle := range toggles {
 		cfg := PeriodicConfig{}
@@ -98,12 +94,10 @@ func TestDepsPeriodicConfig(t *testing.T) {
 		SyncInterval:      time.Hour,
 		CorrelateInterval: 2 * time.Hour,
 		EnrichInterval:    3 * time.Hour,
-		ScanInterval:      4 * time.Hour,
 	}.periodicConfig()
 	require.Equal(t, time.Hour, got.SyncInterval)
 	require.Equal(t, 2*time.Hour, got.CorrelateInterval)
 	require.Equal(t, 3*time.Hour, got.EnrichInterval)
-	require.Equal(t, 4*time.Hour, got.ScanInterval)
 
 	// The adjudicator gate: present → scheduled.
 	require.False(t, Deps{}.periodicConfig().Adjudicator)
@@ -321,17 +315,12 @@ func TestScannerSchedulesSameKindsAsWorker(t *testing.T) {
 			deps: func() Deps { d := withDefaultFeeds(Deps{}); d.ImageVuln = nil; return d }(),
 		},
 		{
-			name: "SCAN_INTERVAL set: the estate scan is scheduled on both",
-			env:  map[string]string{"SCAN_INTERVAL": "168h"},
-			deps: withDefaultFeeds(Deps{ScanInterval: 168 * time.Hour}),
-		},
-		{
 			// Every default-on outbound feed off at once; the image sweep goes with
 			// OSV because every CVE match it makes is an OSV query.
 			name: "OFFLINE_MODE: no outbound feed is scheduled on either pod",
 			env:  map[string]string{"OFFLINE_MODE": "true", "SCC_ORG_ID": "123"},
 			deps: Deps{
-				SCC: stubSCC{}, SavedQueries: stubSavedQueries{}, ProfileSchedules: stubScheduledProfiles{},
+				SCC: stubSCC{}, SavedQueries: stubSavedQueries{},
 			},
 		},
 		{
@@ -413,7 +402,7 @@ func TestScannerSchedulesSameKindsAsWorker(t *testing.T) {
 		}
 	}
 	for name, both := range seen {
-		if name == "SavedQueries" || name == "ProfileSchedules" {
+		if name == "SavedQueries" {
 			// Unconditionally on in both derivations — there is no off state to cover.
 			require.Truef(t, both[0], "%s is documented as always-on but no case has it on", name)
 			continue
@@ -432,7 +421,7 @@ func withDefaultFeeds(d Deps) Deps {
 	d.DistroAdvisorySources = Feeds{ALAS: true, ELSA: true}.DistroAdvisorySources()
 	d.EPSSFetcher, d.EPSSCache = stubEPSSFetcher{}, stubEPSSCache{}
 	d.Intel, d.ImageVuln = &intel.Service{}, stubImageVuln{}
-	d.SavedQueries, d.ProfileSchedules = stubSavedQueries{}, stubScheduledProfiles{}
+	d.SavedQueries = stubSavedQueries{}
 	return d
 }
 

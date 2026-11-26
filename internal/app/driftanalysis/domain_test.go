@@ -15,23 +15,20 @@ func gateInput() AnalysisInput {
 			{AssetID: "arn:a2", Kind: KindChanged},
 		},
 		Facts: Facts{
-			ExposureKnown: true, FindingsKnown: true, ProfilesKnown: true,
-			Profiles: []ProfileFact{{ID: "p1", Name: "web", TemplateTags: []string{"cve", "exposure"}}},
+			ExposureKnown: true, FindingsKnown: true,
 		},
 	}
 }
 
 func goodVerdict() Verdict {
 	return Verdict{
-		Summary:               "a1 gained a public IP",
-		Changes:               []ChangeItem{{Kind: KindNewExposure, AssetID: "arn:a1", Note: "public"}},
-		ExposureJudgement:     ExposureIncreased,
-		ScanRecommended:       true,
-		ScanRecommendedKnown:  true,
-		SuggestedProfileID:    "p1",
-		SuggestedTemplateTags: []string{"cve"},
-		Confidence:            ConfidenceHigh,
-		Evidence:              []EvidenceRef{{Source: EvidenceAsset, Ref: "arn:a1", Fact: "public_ip 1.2.3.4"}},
+		Summary:              "a1 gained a public IP",
+		Changes:              []ChangeItem{{Kind: KindNewExposure, AssetID: "arn:a1", Note: "public"}},
+		ExposureJudgement:    ExposureIncreased,
+		ScanRecommended:      true,
+		ScanRecommendedKnown: true,
+		Confidence:           ConfidenceHigh,
+		Evidence:             []EvidenceRef{{Source: EvidenceAsset, Ref: "arn:a1", Fact: "public_ip 1.2.3.4"}},
 	}
 }
 
@@ -59,23 +56,12 @@ func TestGate(t *testing.T) {
 		{name: "foreign evidence dropped when one citation survives", mutV: func(v *Verdict) {
 			v.Evidence = append(v.Evidence, EvidenceRef{Source: EvidenceAsset, Ref: "arn:other", Fact: "x"})
 		}, check: func(t *testing.T, v Verdict) { require.Len(t, v.Evidence, 1) }},
-		{name: "profile evidence accepted", mutV: func(v *Verdict) {
+		{name: "retired profile evidence is refused", wantErr: ErrUngrounded, mutV: func(v *Verdict) {
 			v.Evidence = []EvidenceRef{{Source: EvidenceProfile, Ref: "p1", Fact: "web profile exists"}}
 		}},
 		{name: "change item for a foreign asset dropped", mutV: func(v *Verdict) {
 			v.Changes = append(v.Changes, ChangeItem{AssetID: "arn:other"})
 		}, check: func(t *testing.T, v Verdict) { require.Len(t, v.Changes, 1) }},
-		{name: "unknown profile id clears profile and tags", mutV: func(v *Verdict) { v.SuggestedProfileID = "ghost" },
-			check: func(t *testing.T, v Verdict) {
-				require.Empty(t, v.SuggestedProfileID)
-				require.Nil(t, v.SuggestedTemplateTags)
-			}},
-		{name: "tags outside the profile are cleared", mutV: func(v *Verdict) {
-			v.SuggestedTemplateTags = []string{"cve", "invented"}
-		}, check: func(t *testing.T, v Verdict) {
-			require.Equal(t, "p1", v.SuggestedProfileID)
-			require.Nil(t, v.SuggestedTemplateTags)
-		}},
 		{name: "no with exposure unknown becomes unknown", mutIn: func(in *AnalysisInput) { in.Facts.ExposureKnown = false },
 			mutV: func(v *Verdict) { v.ScanRecommended = false },
 			check: func(t *testing.T, v Verdict) {
@@ -85,9 +71,6 @@ func TestGate(t *testing.T) {
 				require.Equal(t, ExposureUnknown, v.ExposureJudgement)
 			}},
 		{name: "no with findings unknown becomes unknown", mutIn: func(in *AnalysisInput) { in.Facts.FindingsKnown = false },
-			mutV:  func(v *Verdict) { v.ScanRecommended = false },
-			check: func(t *testing.T, v Verdict) { require.Equal(t, RecommendationUnknown, v.Recommendation()) }},
-		{name: "no with profiles unknown becomes unknown", mutIn: func(in *AnalysisInput) { in.Facts.ProfilesKnown = false },
 			mutV:  func(v *Verdict) { v.ScanRecommended = false },
 			check: func(t *testing.T, v Verdict) { require.Equal(t, RecommendationUnknown, v.Recommendation()) }},
 		{name: "no on a truncated batch becomes unknown", mutIn: func(in *AnalysisInput) { in.Batch.Truncated = true },

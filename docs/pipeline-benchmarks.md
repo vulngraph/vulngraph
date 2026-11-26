@@ -127,7 +127,11 @@ The largest successful fixture for each connector then runs through the real syn
 worker, checks, encrypted connector storage, Postgres hashes, ClickHouse writes and
 River insertion. Initial, unchanged, 1% changed, unchanged-again and partial runs
 assert fingerprint behavior and preservation of omitted resources. `sync.json`
-records per-phase timing, allocations and ClickHouse query/read/memory counts.
+records per-phase timing, allocations, queued jobs and ClickHouse query/read/memory counts.
+The insert-only queue is emptied before each measurement so saturation from a
+previous connector cannot hide enqueue costs. Native inventory/finding writes
+use at most 2,000 rows and a 4 MiB estimated payload per batch; a single oversized
+row is sent alone. Wide, escaped metadata has a separate storage regression test.
 Queued enrichment and scanning jobs are inserted but are not executed by this
 benchmark. `aws_org.json` measures account reconciliation separately.
 

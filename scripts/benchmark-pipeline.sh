@@ -66,6 +66,6 @@ if [[ -n "${PERF_CONNECTOR_DIR:-}" ]]; then
 fi
 export TEST_DATABASE_URL="$PERF_POSTGRES_URL" TEST_CLICKHOUSE_URL="$PERF_CLICKHOUSE_URL"
 go test -p 1 -tags=integration ./internal/app/asset ./internal/app/finding ./internal/jobs ./internal/migrate \
-  -run '^(TestBoundedLineageFreshnessVersionsAndExposureGrade|TestPackageSignalsFollowInventoryProducer|TestRecordObservedLargeBatchPreservesFirstDetection|TestEnrichBatchQueuePreservesPriorityUniquenessAndCapacity|TestDeletionBacklogRequiresConfirmationAndDrains|TestDeletionConfirmationMigrationUpgradeRollbackReplay|TestEdgeTypeIndexMigrationExistingDataRollbackReplay)$' \
+  -run '^(TestWideInventoryBatchesPreserveEveryRow|TestBoundedLineageFreshnessVersionsAndExposureGrade|TestPackageSignalsFollowInventoryProducer|TestRecordObservedLargeBatchPreservesFirstDetection|TestEnrichBatchQueuePreservesPriorityUniquenessAndCapacity|TestDeletionBacklogRequiresConfirmationAndDrains|TestDeletionConfirmationMigrationUpgradeRollbackReplay|TestEdgeTypeIndexMigrationExistingDataRollbackReplay)$' \
   -count=1 -timeout=10m -v 2>&1 | tee "$output/regressions.log"
 echo "Report: $output/report.json"

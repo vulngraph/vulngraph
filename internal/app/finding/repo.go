@@ -214,9 +214,7 @@ func NewCHRepo(ch *db.CH, opts ...Option) *CHRepo {
 	return r
 }
 
-// findingBatchSize caps each ClickHouse batch insert, same reasoning as
-// asset.assetBatchSize: one giant batch for a large sync's finding set can
-// cause PrepareBatch to run long enough to blow the caller's deadline.
+// findingBatchSize bounds enrichment writes; inventory findings use byte-aware batches.
 const findingBatchSize = 500
 
 // findingWriteBudget is the wall-clock an Upsert is guaranteed even when the
@@ -249,8 +247,8 @@ func (r *CHRepo) Upsert(ctx context.Context, findings []Finding) error {
 	ctx, cancel := db.WithWriteBudget(ctx, findingWriteBudget)
 	defer cancel()
 	now := r.now()
-	for start := 0; start < len(findings); start += findingBatchSize {
-		end := min(start+findingBatchSize, len(findings))
+	for start := 0; start < len(findings); {
+		end := dbutil.CHWriteBatchEnd(findings, start, findingWriteBytes)
 		chunk := findings[start:end]
 		err := r.ch.Batch(ctx, insertFindings, func(b driver.Batch) error {
 			for _, f := range chunk {
@@ -269,6 +267,7 @@ func (r *CHRepo) Upsert(ctx context.Context, findings []Finding) error {
 		if err != nil {
 			return fmt.Errorf("Upsert: %w", err)
 		}
+		start = end
 	}
 	return nil
 }

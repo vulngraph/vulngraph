@@ -550,11 +550,6 @@ type CHRepo struct {
 
 func NewCHRepo(ch *db.CH) *CHRepo { return &CHRepo{ch: ch} }
 
-// assetBatchSize caps each ClickHouse batch insert. One giant batch for a large
-// GitHub org (thousands of repos + packages) causes PrepareBatch to timeout.
-// 500 rows per batch keeps each insert well under 1s.
-const assetBatchSize = 500
-
 // assetWriteBudget is the wall-clock an inventory upsert is guaranteed even when
 // the sync job's own deadline is already spent (see db.WithWriteBudget). Sized
 // for a large connector: tens of thousands of GitHub assets is under a hundred
@@ -569,8 +564,8 @@ func (r *CHRepo) UpsertAssets(ctx context.Context, assets []Asset) error {
 	ctx, cancel := db.WithWriteBudget(ctx, assetWriteBudget)
 	defer cancel()
 	now := time.Now()
-	for start := 0; start < len(assets); start += assetBatchSize {
-		end := min(start+assetBatchSize, len(assets))
+	for start := 0; start < len(assets); {
+		end := dbutil.CHWriteBatchEnd(assets, start, assetWriteBytes)
 		chunk := assets[start:end]
 		err := r.ch.Batch(ctx, insertAssets, func(b driver.Batch) error {
 			for _, a := range chunk {
@@ -587,6 +582,7 @@ func (r *CHRepo) UpsertAssets(ctx context.Context, assets []Asset) error {
 		if err != nil {
 			return fmt.Errorf("UpsertAssets: %w", err)
 		}
+		start = end
 	}
 	return nil
 }
@@ -639,8 +635,8 @@ func (r *CHRepo) UpsertEdges(ctx context.Context, edges []Edge) error {
 	ctx, cancel := db.WithWriteBudget(ctx, assetWriteBudget)
 	defer cancel()
 	now := time.Now()
-	for start := 0; start < len(edges); start += assetBatchSize {
-		end := min(start+assetBatchSize, len(edges))
+	for start := 0; start < len(edges); {
+		end := dbutil.CHWriteBatchEnd(edges, start, edgeWriteBytes)
 		chunk := edges[start:end]
 		err := r.ch.Batch(ctx, insertEdges, func(b driver.Batch) error {
 			for _, e := range chunk {
@@ -655,6 +651,7 @@ func (r *CHRepo) UpsertEdges(ctx context.Context, edges []Edge) error {
 		if err != nil {
 			return fmt.Errorf("UpsertEdges: %w", err)
 		}
+		start = end
 	}
 	return nil
 }

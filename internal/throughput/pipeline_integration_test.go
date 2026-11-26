@@ -117,6 +117,7 @@ func TestPipelineThroughput(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 	defer cancel()
+	require.NoError(t, waitForStores(ctx, pgDSN, chDSN))
 	require.NoError(t, migrate.Run(ctx, pgDSN, chDSN))
 	ch, err := db.NewCH(ctx, chDSN, 4)
 	require.NoError(t, err)

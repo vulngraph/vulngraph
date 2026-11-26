@@ -5,11 +5,11 @@ import "context"
 // workloadExposure consults runtime nodes, so package reachability does not
 // require projecting every installed package membership into Ladybug.
 func (s SupplyChainExposure) workloadExposure(ctx context.Context, ids []string) (exposed, unknown bool, err error) {
-	direct, err := s.Graph.EdgesOutBatch(ctx, ids, "exposed_to_internet")
+	direct, err := s.Graph.AnyConfirmedExposure(ctx, ids)
 	if err != nil {
 		return false, true, err
 	}
-	if len(direct) > 0 {
+	if direct {
 		return true, false, nil
 	}
 	if s.Reach == nil {

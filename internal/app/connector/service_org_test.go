@@ -582,3 +582,16 @@ func TestTestOrg_RequiresDiscoverer(t *testing.T) {
 	_, err := svc.TestOrg(context.Background(), "x")
 	require.ErrorIs(t, err, ErrNoOrgDiscoverer)
 }
+
+func (f *fakeRepo) UpsertOrgAccounts(ctx context.Context, rows []OrgAccount, at time.Time) error {
+	f.orgBatchCalls++
+	if f.orgBatchErr != nil {
+		return f.orgBatchErr
+	}
+	for _, row := range rows {
+		if err := f.UpsertOrgAccount(ctx, row, at); err != nil {
+			return err
+		}
+	}
+	return nil
+}

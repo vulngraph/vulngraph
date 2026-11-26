@@ -355,6 +355,28 @@ func (f *fakeRepo) EdgesTo(_ context.Context, dstIDs []string) ([]Edge, error) {
 	return out, nil
 }
 
+func (f *fakeRepo) LineageSources(ctx context.Context, ids []string, typ string, limit int) ([]Edge, bool, error) {
+	var edges []Edge
+	for _, id := range ids {
+		part, err := f.EdgesInto(ctx, id, typ)
+		if err != nil {
+			return nil, false, err
+		}
+		edges = append(edges, part...)
+	}
+	return edges[:min(len(edges), limit)], len(edges) > limit, nil
+}
+
+func (f *fakeRepo) LineageTargets(ctx context.Context, ids []string, typ string, limit int) ([]Edge, bool, error) {
+	edges, err := f.EdgesOutBatch(ctx, ids, typ)
+	return edges[:min(len(edges), limit)], len(edges) > limit, err
+}
+
+func (f *fakeRepo) AnyConfirmedExposure(ctx context.Context, ids []string) (bool, error) {
+	edges, err := f.EdgesOutBatch(ctx, ids, "exposed_to_internet")
+	return len(edges) > 0, err
+}
+
 func (f *fakeRepo) EdgesInto(_ context.Context, dstID, edgeType string) ([]Edge, error) {
 	var out []Edge
 	for _, edges := range f.edges {

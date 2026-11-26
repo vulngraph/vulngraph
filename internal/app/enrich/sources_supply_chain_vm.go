@@ -107,19 +107,20 @@ func (s SupplyChainExposure) FleetCanonical(ctx context.Context, f finding.Findi
 // repos (depends_on) and runs_package sources split into VMs and images.
 type packageRunners struct {
 	repos, vms, images []string
+	truncated          bool
 }
 
 func (s SupplyChainExposure) runnersOf(ctx context.Context, packageID string) (packageRunners, error) {
-	deps, err := s.Graph.EdgesInto(ctx, packageID, "depends_on")
+	deps, depTruncated, err := s.Graph.LineageSources(ctx, []string{packageID}, "depends_on", maxSupplyChainRepos)
 	if err != nil {
 		return packageRunners{}, fmt.Errorf("depends_on: %w", err)
 	}
-	runs, err := s.Graph.EdgesInto(ctx, packageID, "runs_package")
+	runs, runTruncated, err := s.Graph.LineageSources(ctx, []string{packageID}, "runs_package", maxSupplyChainImages+maxSupplyChainVMs)
 	if err != nil {
 		return packageRunners{}, fmt.Errorf("runs_package: %w", err)
 	}
 	vmEdges, imgEdges := splitVMSources(runs)
-	return packageRunners{repos: uniqueSrcIDs(deps), vms: uniqueSrcIDs(vmEdges), images: uniqueSrcIDs(imgEdges)}, nil
+	return packageRunners{repos: uniqueSrcIDs(deps), vms: uniqueSrcIDs(vmEdges), images: uniqueSrcIDs(imgEdges), truncated: depTruncated || runTruncated}, nil
 }
 
 // fleetCovers is FleetCanonical over already-read runners: only VMs run the
@@ -132,7 +133,7 @@ func (s SupplyChainExposure) fleetCovers(ctx context.Context, f finding.Finding,
 // fleetCoverage is what the open fleet findings derived from f cover: how many
 // instances, and the lowest band any of them currently holds.
 func (s SupplyChainExposure) fleetCoverage(ctx context.Context, f finding.Finding, r packageRunners) (bool, fleetCover, error) {
-	if len(r.repos) > 0 || len(r.images) > 0 || len(r.vms) == 0 {
+	if r.truncated || len(r.repos) > 0 || len(r.images) > 0 || len(r.vms) == 0 {
 		return false, fleetCover{}, nil
 	}
 	cov, err := s.fleetInstances(ctx, f)

@@ -168,6 +168,28 @@ ON CONFLICT (org_connector_id, account_id) DO UPDATE SET
                               ELSE aws_org_accounts.status_changed_at END,
     status             = EXCLUDED.status;
 
+-- name: UpsertAWSOrgAccounts :exec
+-- status_changed_at moves only when the status does; last_seen_at is the
+-- caller's (the last discovery that listed the account).
+INSERT INTO aws_org_accounts
+    (org_connector_id, account_id, name, email, aws_state, ou_path, status, status_detail,
+     child_connector_id, first_seen_at, last_seen_at, status_changed_at)
+SELECT @org_connector_id, unnest(@account_ids::text[]), unnest(@names::text[]), unnest(@emails::text[]),
+       unnest(@aws_states::text[]), unnest(@ou_paths::text[]), unnest(@statuses::text[]), unnest(@status_details::text[]),
+       NULLIF(unnest(@child_ids::text[]), '')::uuid, @seen_at, unnest(@last_seen_ats::timestamptz[]), @seen_at
+ON CONFLICT (org_connector_id, account_id) DO UPDATE SET
+    name               = EXCLUDED.name,
+    email              = EXCLUDED.email,
+    aws_state          = EXCLUDED.aws_state,
+    ou_path            = EXCLUDED.ou_path,
+    status_detail      = EXCLUDED.status_detail,
+    child_connector_id = EXCLUDED.child_connector_id,
+    last_seen_at       = EXCLUDED.last_seen_at,
+    status_changed_at  = CASE WHEN aws_org_accounts.status <> EXCLUDED.status
+                              THEN EXCLUDED.status_changed_at
+                              ELSE aws_org_accounts.status_changed_at END,
+    status             = EXCLUDED.status;
+
 -- name: DisableAWSOrgChildren :exec
 -- Disables (never deletes) every child of an org connector. Run in the same
 -- transaction as the org connector's delete, so no child is left enabled with

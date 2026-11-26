@@ -18,6 +18,47 @@ type fakeLineage struct {
 	from map[string][]asset.Edge // srcID -> outbound edges
 }
 
+func (f fakeLineage) LineageSources(ctx context.Context, ids []string, typ string, limit int) ([]asset.Edge, bool, error) {
+	var edges []asset.Edge
+	seen := map[string]bool{}
+	for _, id := range ids {
+		incoming, err := f.EdgesInto(ctx, id, typ)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, e := range incoming {
+			if !seen[e.SrcID] {
+				edges = append(edges, e)
+				seen[e.SrcID] = true
+			}
+		}
+	}
+	return edges[:min(len(edges), limit)], len(edges) > limit, nil
+}
+
+func (f fakeLineage) LineageTargets(ctx context.Context, ids []string, typ string, limit int) ([]asset.Edge, bool, error) {
+	edges, err := f.EdgesOutBatch(ctx, ids, typ)
+	seen := map[string]bool{}
+	var out []asset.Edge
+	for _, e := range edges {
+		if !seen[e.DstID] {
+			out = append(out, e)
+			seen[e.DstID] = true
+		}
+	}
+	return out[:min(len(out), limit)], len(out) > limit, err
+}
+
+func (f fakeLineage) AnyConfirmedExposure(ctx context.Context, ids []string) (bool, error) {
+	edges, err := f.EdgesOutBatch(ctx, ids, "exposed_to_internet")
+	for _, e := range edges {
+		if e.Properties[asset.EdgePropPublicAccess] != asset.PublicAccessPossible {
+			return true, err
+		}
+	}
+	return false, err
+}
+
 func (f fakeLineage) EdgesInto(_ context.Context, dstID, edgeType string) ([]asset.Edge, error) {
 	var out []asset.Edge
 	for _, e := range f.into[dstID] {

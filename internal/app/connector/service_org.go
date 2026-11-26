@@ -284,6 +284,7 @@ func (s *Service) ReconcileOrg(ctx context.Context, orgID string) (ReconcileResu
 		prevByID[p.AccountID] = p
 	}
 	listed := make(map[string]bool, len(discovered))
+	rows := make([]OrgAccount, 0, len(discovered))
 	for i := range discovered {
 		d := &discovered[i]
 		listed[d.ID] = true
@@ -291,15 +292,24 @@ func (s *Service) ReconcileOrg(ctx context.Context, orgID string) (ReconcileResu
 		if row, ok := prevByID[d.ID]; ok {
 			p = &row
 		}
-		s.applyAccount(ctx, org, owners, filters, d, p, now, &res)
+		rows = append(rows, s.applyAccount(ctx, org, owners, filters, d, p, now, &res))
 	}
 	for _, p := range prev {
 		if !listed[p.AccountID] {
 			row := p
-			s.applyAccount(ctx, org, owners, filters, nil, &row, now, &res)
+			rows = append(rows, s.applyAccount(ctx, org, owners, filters, nil, &row, now, &res))
 		}
 	}
 
+	// Bound each statement and retain successful batches if one account batch
+	// cannot be recorded. Child side effects remain idempotent on the next pass.
+	for start := 0; start < len(rows); start += 500 {
+		batch := rows[start:min(start+500, len(rows))]
+		if err := s.repo.UpsertOrgAccounts(ctx, batch, now); err != nil {
+			res.Errors += len(batch)
+			log.FromContext(ctx).Error().Err(err).Str("org_connector_id", org.ID).Int("accounts", len(batch)).Msg("aws_org: writing account batch failed")
+		}
+	}
 	var runErr error
 	if res.Errors > 0 {
 		runErr = fmt.Errorf("%d of %d accounts could not be reconciled — see the accounts list", res.Errors, len(discovered))
@@ -326,6 +336,7 @@ type accountOwners struct {
 	// (re-creating an org connector leaves them behind, disabled). Discovery
 	// adopts one instead of reporting a conflict.
 	orphans map[string]orphanChild
+	stored  map[string]Connector
 }
 
 type orphanChild struct {
@@ -337,64 +348,46 @@ type orphanChild struct {
 // this org's own children that collect it, so discovery neither creates a
 // second connector sweeping an account nor ignores a child it can adopt.
 func (s *Service) awsAccountOwners(ctx context.Context, orgID string) (accountOwners, error) {
-	conns, err := s.List(ctx, false)
+	conns, err := s.repo.List(ctx, false)
 	if err != nil {
 		return accountOwners{}, fmt.Errorf("awsAccountOwners: %w", err)
 	}
-	out := accountOwners{owned: map[string]string{}, orphans: map[string]orphanChild{}}
-	parentLive := map[string]bool{}
+	out := accountOwners{owned: map[string]string{}, orphans: map[string]orphanChild{}, stored: map[string]Connector{}}
+	parents := map[string]bool{}
+	for _, c := range conns {
+		if c.Type == TypeAWSOrg {
+			parents[c.ID] = true
+		}
+	}
 	for _, c := range conns {
 		if c.Type != TypeAWS {
 			continue
 		}
-		full, err := s.getStored(ctx, c.ID)
-		if err != nil {
+		if err := s.decryptInto(&c); err != nil {
 			return accountOwners{}, fmt.Errorf("awsAccountOwners: %s: %w", c.ID, err)
 		}
-		parent := full.Config[ChildKeyOrgConnectorID]
+		out.stored[c.ID] = c.Connector
+		parent := c.Config[ChildKeyOrgConnectorID]
 		if parent == orgID {
 			continue
 		}
-		acct := awsAccountID(full.Config)
+		acct := awsAccountID(c.Config)
 		if acct == "" {
 			continue
 		}
-		if parent != "" {
-			live, seen := parentLive[parent]
-			if !seen {
-				if live, err = s.isOrgConnector(ctx, parent); err != nil {
-					return accountOwners{}, fmt.Errorf("awsAccountOwners: %w", err)
-				}
-				parentLive[parent] = live
-			}
-			if !live {
-				out.orphans[acct] = orphanChild{id: c.ID, enabled: c.Enabled}
-				continue
-			}
+		if parent != "" && !parents[parent] {
+			out.orphans[acct] = orphanChild{id: c.ID, enabled: c.Enabled}
+			continue
 		}
 		out.owned[acct] = c.ID
 	}
 	return out, nil
 }
 
-// isOrgConnector reports whether id is an existing aws_org connector. Only
-// a confirmed absence counts as gone: any other read error is returned, so a
-// database blip never turns a live org's children into adoptable orphans.
-func (s *Service) isOrgConnector(ctx context.Context, id string) (bool, error) {
-	stored, err := s.repo.Get(ctx, id)
-	if errors.Is(err, ErrNotFound) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("isOrgConnector: %w", err)
-	}
-	return stored.Type == TypeAWSOrg, nil
-}
-
 // applyAccount carries out one account's plan and records its row. A failure
 // is the account's own status (error), never the whole pass's.
 func (s *Service) applyAccount(ctx context.Context, org Connector, owners accountOwners, f orgFilters,
-	d *DiscoveredAccount, p *OrgAccount, now time.Time, res *ReconcileResult) {
+	d *DiscoveredAccount, p *OrgAccount, now time.Time, res *ReconcileResult) OrgAccount {
 	status, detail, action := planAccount(f, d)
 	row := OrgAccount{OrgConnectorID: org.ID, Status: status, StatusDetail: detail, LastSeenAt: now}
 	if p != nil {
@@ -438,7 +431,7 @@ func (s *Service) applyAccount(ctx context.Context, org Connector, owners accoun
 				break
 			}
 		}
-		if err := s.refreshChild(ctx, org, row.ChildConnectorID, row.AccountID, childEnabled); err != nil {
+		if err := s.refreshChild(ctx, org, owners.stored[row.ChildConnectorID], row.AccountID, childEnabled); err != nil {
 			row.Status, row.StatusDetail = OrgAccountError, err.Error()
 			res.Errors++
 			break
@@ -457,11 +450,7 @@ func (s *Service) applyAccount(ctx context.Context, org Connector, owners accoun
 		}
 	case childKeep:
 	}
-	if err := s.repo.UpsertOrgAccount(ctx, row, now); err != nil {
-		res.Errors++
-		log.FromContext(ctx).Error().Err(err).Str("org_connector_id", org.ID).Str("account_id", row.AccountID).
-			Msg("aws_org: writing the account row failed")
-	}
+	return row
 }
 
 // createChild creates the account's child connector, references only.
@@ -483,11 +472,11 @@ func (s *Service) createChild(ctx context.Context, org Connector, accountID stri
 
 // refreshChild rewrites the child's config when the org's settings moved it
 // (member role name, region, execution role) and enables it if disabled.
-func (s *Service) refreshChild(ctx context.Context, org Connector, childID, accountID string, enabled bool) error {
-	cur, err := s.getStored(ctx, childID)
-	if err != nil {
-		return fmt.Errorf("refreshChild: %w", err)
+func (s *Service) refreshChild(ctx context.Context, org Connector, cur Connector, accountID string, enabled bool) error {
+	if cur.ID == "" {
+		return fmt.Errorf("refreshChild: child missing from connector snapshot")
 	}
+	childID := cur.ID
 	want := childConfig(org, accountID)
 	if !maps.Equal(cur.Config, want) {
 		if err := checkChildConfig(want); err != nil {

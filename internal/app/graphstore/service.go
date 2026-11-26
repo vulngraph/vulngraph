@@ -89,6 +89,13 @@ type SignalSource interface {
 // write lock, so it waits for in-flight reads to drain before the old database is
 // closed — readers never observe a half-built or freed graph.
 type Service struct {
+	// Serializes graph mutations while allowing readers during source loads and
+	// delta calculation. Baselines belong to the graph published by this writer.
+	writerMu         sync.Mutex
+	lastSignals      map[string]NodeSignals
+	signalsDirty     bool
+	lastSignalRows   atomic.Int64
+	lastSignalLockNS atomic.Int64
 	packageInventory explore.Repo
 	packageNames     PackageNameReader
 	packageSeeds     atomic.Pointer[packageSeedSet]

@@ -229,6 +229,22 @@ func (r *CHRepo) OpenKeysByConnector(ctx context.Context, source, connectorID st
 // args bind [ids..., ids...], same discipline as selectFindingByID/
 // costAtRiskArgs.
 func (r *CHRepo) ByIDs(ctx context.Context, ids []string) ([]Finding, error) {
+	batches, err := dbutil.CHStringBatches(ids)
+	if err != nil {
+		return nil, fmt.Errorf("ByIDs: %w", err)
+	}
+	var out []Finding
+	for _, batch := range batches {
+		rows, err := r.byIDsBatch(ctx, batch)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rows...)
+	}
+	return out, nil
+}
+
+func (r *CHRepo) byIDsBatch(ctx context.Context, ids []string) ([]Finding, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -281,6 +297,25 @@ func (r *CHRepo) ByIDs(ctx context.Context, ids []string) ([]Finding, error) {
 // full scan. Revisit if byResourceIDsMaxRows batches grow large enough for
 // that doubling to matter.
 func (r *CHRepo) ByResourceIDs(ctx context.Context, ids []string) ([]Finding, error) {
+	batches, err := dbutil.CHStringBatches(ids)
+	if err != nil {
+		return nil, fmt.Errorf("ByResourceIDs: %w", err)
+	}
+	var out []Finding
+	for _, batch := range batches {
+		rows, err := r.byResourceIDsBatch(ctx, batch)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rows...)
+		if len(out) > byResourceIDsMaxRows {
+			return nil, fmt.Errorf("ByResourceIDs: %w", ErrResultTooLarge)
+		}
+	}
+	return out, nil
+}
+
+func (r *CHRepo) byResourceIDsBatch(ctx context.Context, ids []string) ([]Finding, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}

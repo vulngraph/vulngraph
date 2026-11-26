@@ -45,7 +45,7 @@ const (
 
 // maxPages bounds every paginated Okta list in this package at 10,000 items
 // (pageLimit * maxPages) — generous, but a hard ceiling: an org larger than
-// that silently truncates past it. OKTA_MAX_PAGES overrides.
+// that fails explicitly. OKTA_MAX_PAGES overrides.
 var maxPages = envIntOr("OKTA_MAX_PAGES", 50)
 
 func envIntOr(key string, fallback int) int {
@@ -281,11 +281,11 @@ func (c *Collector) listUsers(ctx context.Context, domain, token string) ([]okta
 		}
 		all = append(all, batch...)
 		if next == "" {
-			break
+			return all, nil
 		}
 		pageURL = next
 	}
-	return all, nil
+	return nil, fmt.Errorf("listUsers: page limit %d reached with more data unread", maxPages)
 }
 
 type oktaGroup struct {
@@ -306,11 +306,11 @@ func (c *Collector) listGroups(ctx context.Context, domain, token string) ([]okt
 		}
 		all = append(all, batch...)
 		if next == "" {
-			break
+			return all, nil
 		}
 		pageURL = next
 	}
-	return all, nil
+	return nil, fmt.Errorf("listGroups: page limit %d reached with more data unread", maxPages)
 }
 
 // groupMembers returns the user IDs of all members of a group.
@@ -329,11 +329,11 @@ func (c *Collector) groupMembers(ctx context.Context, domain, token, gid string)
 			ids = append(ids, u.ID)
 		}
 		if next == "" {
-			break
+			return ids, nil
 		}
 		pageURL = next
 	}
-	return ids, nil
+	return nil, fmt.Errorf("groupMembers: page limit %d reached with more data unread", maxPages)
 }
 
 // orgURL turns the configured domain ("dev-123.okta.com" or a full URL) into

@@ -182,18 +182,27 @@ func (c *Collector) listPolicies(ctx context.Context, domain, token, policyType 
 		}
 		all = append(all, batch...)
 		if next == "" {
-			break
+			return all, nil
 		}
 		url = next
 	}
-	return all, nil
+	return nil, fmt.Errorf("listPolicies: page limit %d reached with more policies unread", maxPages)
 }
 
 func (c *Collector) policyRules(ctx context.Context, domain, token, policyID string) ([]oktaPolicyRule, error) {
 	url := fmt.Sprintf("%s/api/v1/policies/%s/rules?limit=%d", domain, policyID, policyRuleFetchLimit)
-	var rules []oktaPolicyRule
-	if _, err := c.doJSON(ctx, url, token, &rules); err != nil {
-		return nil, fmt.Errorf("policyRules %s: %w", policyID, err)
+	var all []oktaPolicyRule
+	for page := 0; page < maxPages; page++ {
+		var rules []oktaPolicyRule
+		next, err := c.doJSON(ctx, url, token, &rules)
+		if err != nil {
+			return nil, fmt.Errorf("policyRules %s page %d: %w", policyID, page, err)
+		}
+		all = append(all, rules...)
+		if next == "" {
+			return all, nil
+		}
+		url = next
 	}
-	return rules, nil
+	return nil, fmt.Errorf("policyRules: page limit %d reached with more rules unread", maxPages)
 }

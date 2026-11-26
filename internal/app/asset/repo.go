@@ -931,6 +931,22 @@ func (r *CHRepo) ByIDs(ctx context.Context, ids []string) ([]Asset, error) {
 // ListByType) that already hold a longer-lived context spanning a prior
 // id-selection query plus this hydration query.
 func (r *CHRepo) byIDsCtx(ctx context.Context, ids []string) ([]Asset, error) {
+	batches, err := dbutil.CHStringBatches(ids)
+	if err != nil {
+		return nil, fmt.Errorf("byIDsCtx: %w", err)
+	}
+	var out []Asset
+	for _, batch := range batches {
+		rows, err := r.byIDsBatch(ctx, batch)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rows...)
+	}
+	return out, nil
+}
+
+func (r *CHRepo) byIDsBatch(ctx context.Context, ids []string) ([]Asset, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}

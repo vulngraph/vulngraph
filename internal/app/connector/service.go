@@ -48,6 +48,7 @@ type Repo interface {
 	UpsertAssetHashEntries(ctx context.Context, connectorID string, entries []AssetHashEntry) error
 	DeleteAssetHashes(ctx context.Context, connectorID string, ids []string) error
 	RecordAssetDeletions(ctx context.Context, connectorID string, ids []string, at time.Time) ([]string, error)
+	ObserveDeletionCandidates(ctx context.Context, connectorID string, ids []string, at, confirmedBefore time.Time, limit int) ([]string, error)
 	PendingAssetRetirements(ctx context.Context, limit int) (map[string]time.Time, error)
 	CompleteAssetRetirements(ctx context.Context, deletions map[string]time.Time) error
 	PruneAssetDeletions(ctx context.Context, cutoff time.Time) (int64, error)
@@ -59,7 +60,7 @@ type Repo interface {
 	// atomically.
 	DeleteOrg(ctx context.Context, id string) error
 	ListOrgAccounts(ctx context.Context, orgID string) ([]OrgAccount, error)
-	UpsertOrgAccount(ctx context.Context, a OrgAccount, at time.Time) error
+	UpsertOrgAccounts(ctx context.Context, accounts []OrgAccount, at time.Time) error
 }
 
 // AssetPurger is the asset-domain capability PurgeAndDelete needs — hard

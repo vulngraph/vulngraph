@@ -12,6 +12,9 @@ import (
 
 // Repo is the asset/edge storage the service needs. CHRepo implements it.
 type Repo interface {
+	LineageSources(context.Context, []string, string, int) ([]Edge, bool, error)
+	LineageTargets(context.Context, []string, string, int) ([]Edge, bool, error)
+	AnyConfirmedExposure(context.Context, []string) (bool, error)
 	UpsertAssets(ctx context.Context, assets []Asset) error
 	UpsertEdges(ctx context.Context, edges []Edge) error
 	GetAsset(ctx context.Context, id string) (Asset, error)

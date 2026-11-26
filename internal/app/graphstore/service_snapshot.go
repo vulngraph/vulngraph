@@ -20,6 +20,8 @@ import (
 // ClickHouse still holds what the snapshot holds — without this, every restart
 // forced a full rebuild regardless of whether anything had actually changed.
 func (s *Service) LoadFromSnapshot(ctx context.Context, signals SignalSource) error {
+	s.writerMu.Lock()
+	defer s.writerMu.Unlock()
 	if s.snapshotPath == "" {
 		return ErrSnapshotMissing
 	}
@@ -149,6 +151,7 @@ func (s *Service) LoadFromSnapshot(ctx context.Context, signals SignalSource) er
 	s.setLastHops(ov, snap.ReachComplete, assetIDs(snap.Assets))
 	s.prewarmSignalCache(sigByResource)
 	s.blastAdj.Store(buildBlastAdjacency(snap.Assets, snap.Edges))
+	s.resetSignalBaseline(sigByResource)
 
 	// Record count + build time BEFORE flipping synced, so a concurrent Ready()
 	// never observes synced=true with a zero node count.

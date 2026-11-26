@@ -6,6 +6,9 @@
 package jobs
 
 import (
+	"context"
+	"time"
+
 	"github.com/vulngraph/vulngraph/internal/app/asset"
 	"github.com/vulngraph/vulngraph/internal/app/connector"
 	"github.com/vulngraph/vulngraph/internal/app/forget"
@@ -17,18 +20,43 @@ import (
 // evaluation engine) rather than inventing a second number for the same kind
 // of bound.
 //
-// Only the ABSOLUTE cap is implemented here, not forget's full refusal set
-// (relative cap, consecutive-sweep confirmation, enumeration-shrink — see
-// internal/app/forget/domain.go's Decide): that machinery is keyed on
-// persistent per-(connector, scope, type) state this hash-pruning path does
-// not have. The absolute cap needs no persisted history and is cheap to get
-// right in one sweep; unifying the two deletion paths is deliberate follow-up
-// work, not done here.
+// The immediate decision still refuses larger sets. confirmedDeletionBatch
+// records scoped absence in Postgres and requires another complete observation
+// at least ConfirmWindow later before allowing bounded progress through them.
 const deletionCap = forget.MaxForgetPerSweep
+
+// Larger sets require durable, repeated complete absence. Drain at most ten
+// ordinary write batches per sync; pending work disables unchanged-sync backoff.
+const confirmedDeletionLimit = 10 * deletionCap
+
+type deletionObserver interface {
+	ObserveDeletionCandidates(context.Context, string, []string, time.Time, time.Time, int) ([]string, error)
+}
+
+func confirmedDeletionBatch(ctx context.Context, store deletionObserver, connectorID string, decision deletionDecision, complete bool, at time.Time) ([]string, error) {
+	ids := decision.Candidates
+	if !complete {
+		ids = nil
+	}
+	confirmed, err := store.ObserveDeletionCandidates(ctx, connectorID, ids, at, at.Add(-forget.ConfirmWindow), confirmedDeletionLimit)
+	if err != nil {
+		return nil, err
+	}
+	if !complete {
+		return nil, nil
+	}
+	if decision.Refused > 0 {
+		return confirmed, nil
+	}
+	return decision.Deleted, nil
+}
 
 // deletionDecision is the outcome of scope-aware deletion reconciliation for
 // one sweep — see findDeletedAssets.
 type deletionDecision struct {
+	// Candidates retains the fully scoped absent set for durable confirmation.
+	// The immediate Deleted decision still refuses an unconfirmed large set.
+	Candidates []string
 	// Deleted is what reconciliation will actually act on: hashes pruned from
 	// Postgres and findings resolved as ReasonResourceGone. nil (not merely
 	// short) when the candidate set was refused entirely for exceeding
@@ -51,14 +79,9 @@ type deletionDecision struct {
 	// per-scope suppression collect.Result.MarkComplete's doc comment
 	// requires, and the scope collapse isCovered/coveredScopes prevents).
 	UnscopedUncovered int
-	// Refused is how many otherwise-valid candidates were refused ENTIRELY
-	// this sweep — not trimmed to deletionCap — because their count exceeded
-	// deletionCap. See deletionCap's doc comment: forget.RefusalAbsoluteCap
-	// refuses the whole scope rather than acting on a capped subset, and this
-	// mirrors that rather than trimming, because trimming would still act on
-	// up to deletionCap PER SWEEP with no cross-sweep bound, and the survivor
-	// set would be an arbitrary (e.g. lexicographic) subset with no
-	// operator-visible "N of M" meaning. When Refused > 0, Deleted is nil.
+	// Refused is the set requiring durable confirmation before any progress.
+	// Deleted remains nil here; confirmedDeletionBatch can admit a bounded
+	// batch only after repeated complete observations across ConfirmWindow.
 	Refused int
 }
 
@@ -186,11 +209,13 @@ func findDeletedAssets(storedHashes map[string]connector.StoredAssetHash, collec
 		candidates = append(candidates, id)
 	}
 	var refused int
+	allCandidates := candidates
 	if len(candidates) > deletionCap {
 		refused = len(candidates)
 		candidates = nil
 	}
 	return deletionDecision{
+		Candidates:        allCandidates,
 		Deleted:           candidates,
 		Considered:        considered,
 		UnscopedNoType:    unscopedNoType,

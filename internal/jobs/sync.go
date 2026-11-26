@@ -146,6 +146,7 @@ func (w *SyncWorker) Work(ctx context.Context, job *river.Job[SyncConnectorArgs]
 	// unmeasured sweep does not publish a zero (see recordDeletionSignal).
 	var deletionCandidates int
 	var candidatesKnown bool
+	var deletionWork bool
 	// needBackfill: the deployed check registry differs from the one recorded on
 	// this connector's stored fingerprint, so new/changed checks must run against
 	// ALL collected assets (not just changed ones) to backfill immediately.
@@ -435,7 +436,12 @@ func (w *SyncWorker) Work(ctx context.Context, job *river.Job[SyncConnectorArgs]
 		// replacement — see findDeletedAssets' doc comment.
 		covered := coveredScopes(res.CompletedEnumerations)
 		decision := findDeletedAssets(currentHashes, res.Assets, covered)
-		deletedIDs := decision.Deleted
+		deletionWork = len(decision.Candidates) > 0
+		deletedIDs, confirmationErr := confirmedDeletionBatch(ctx, w.connectors, c.ID, decision, !res.Partial && currentHashes != nil, start)
+		if confirmationErr != nil {
+			deletionWork = true
+			logger.Warn().Err(confirmationErr).Msg("sync: deletion confirmation failed; no hashes pruned")
+		}
 		// candidatesKnown/deletionCandidates feed recordDeletionSignal, which
 		// publishes graph_sync_deletion_candidates{completeness=...}. The value
 		// differs by branch on purpose — see recordDeletionSignal's doc comment
@@ -443,16 +449,16 @@ func (w *SyncWorker) Work(ctx context.Context, job *river.Job[SyncConnectorArgs]
 		//   - res.Partial: EVERY absent hash (decision.Considered) is refused
 		//     by the outer partial gate regardless of type/scope, so the raw
 		//     count IS the honest "refused" volume.
-		//   - !res.Partial: only decision.Deleted was actually acted on;
+		//   - !res.Partial: only deletedIDs passed confirmation and were attempted;
 		//     decision.Considered also counts rows this sweep intentionally
 		//     left alone (untyped, uncovered, or over-cap-refused), so
 		//     publishing it into the "complete"/acted bucket would overstate
-		//     what happened. len(decision.Deleted) is what actually ran.
+		//     what happened. len(deletedIDs) is the attempted volume.
 		deletionCandidates, candidatesKnown = decision.Considered, currentHashes != nil
 		if !res.Partial {
-			deletionCandidates = len(decision.Deleted)
-			if len(deletedIDs) > 0 {
-				applyDeletions(ctx, w.connectors, w.findings, c.ID, deletedIDs, start)
+			deletionCandidates = len(deletedIDs)
+			for offset := 0; offset < len(deletedIDs); offset += deletionCap {
+				applyDeletions(ctx, w.connectors, w.findings, c.ID, deletedIDs[offset:min(offset+deletionCap, len(deletedIDs))], start)
 			}
 			// A connector whose collector declares no scope that forget's audited
 			// allow-list accepts (see coveredScopes; Azure, GitHub and Kubernetes
@@ -477,16 +483,10 @@ func (w *SyncWorker) Work(ctx context.Context, job *river.Job[SyncConnectorArgs]
 					Msg("sync: some deletion candidates suppressed — untyped means the collector stored no asset_type for that row, uncovered means no completed scope proved that (region, type) enumerated this sweep")
 			}
 			if decision.Refused > 0 {
-				// ABSOLUTE REFUSAL, not a trim: acting on `deletionCap` of these
-				// and reconsidering only the remainder next sweep would still
-				// bound the worst case at deletionCap PER SWEEP, not per
-				// incident — at any regular sync cadence that is unbounded over
-				// time. Refusing the whole set keeps this sweep's action at
-				// zero and makes the refusal itself, logged with both numbers,
-				// the reviewable signal (see deletionCap's doc comment).
-				logger.Warn().Str("connector_id", c.ID).
-					Int("candidates", decision.Refused).Int("cap", deletionCap).
-					Msg("sync: deletion candidates exceeded the per-sweep cap — refusing ALL of them this sweep (none pruned or resolved), reconsidered next sweep")
+				logger.Info().Str("connector_id", c.ID).
+					Int("candidates", decision.Refused).Int("confirmed_batch", len(deletedIDs)).
+					Int("pending", decision.Refused-len(deletedIDs)).
+					Msg("sync: large deletion set requires repeated complete absence; draining confirmed batches")
 			}
 		} else {
 			logger.Info().Str("connector_id", c.ID).
@@ -522,7 +522,7 @@ func (w *SyncWorker) Work(ctx context.Context, job *river.Job[SyncConnectorArgs]
 		evaluateForget(ctx, w.forget, w.metrics, c.ID, res, start)
 	}
 
-	if recErr := recordSync(ctx, w.connectors, c.ID, runErr, cleanNoOp(runErr, skipped, partial, needBackfill), partial); recErr != nil {
+	if recErr := recordSync(ctx, w.connectors, c.ID, runErr, cleanNoOp(runErr, skipped, partial, needBackfill) && !deletionWork, partial); recErr != nil {
 		logger.Error().Err(recErr).Msg("record sync failed")
 	}
 	if runErr != nil {

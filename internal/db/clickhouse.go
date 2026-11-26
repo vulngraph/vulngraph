@@ -103,6 +103,18 @@ func (c *CH) release() { <-c.sem }
 //
 //	ctx = ch.WithQuerySettings(ctx, map[string]any{"max_execution_time": 10})
 func (*CH) WithQuerySettings(ctx context.Context, settings map[string]any) context.Context {
+	// Preserve tracing and other caller settings when a repository adds query
+	// bounds. Copy both maps so parallel reads cannot mutate the parent context.
+	merged := make(map[string]any, len(settings))
+	if prior, ok := ctx.Value(querySettingsKey{}).(map[string]any); ok {
+		for k, v := range prior {
+			merged[k] = v
+		}
+	}
+	for k, v := range settings {
+		merged[k] = v
+	}
+	settings = merged
 	// Recorded alongside the driver option because the driver's settings are
 	// replaced, not merged, by a later WithSettings: applyBudget needs them to
 	// add its own bound without dropping the caller's tuning.

@@ -337,6 +337,8 @@ type accountOwners struct {
 	// adopts one instead of reporting a conflict.
 	orphans map[string]orphanChild
 	stored  map[string]Connector
+	// Children can precede their account row when a previous row write failed.
+	self map[string]orphanChild
 }
 
 type orphanChild struct {
@@ -352,7 +354,7 @@ func (s *Service) awsAccountOwners(ctx context.Context, orgID string) (accountOw
 	if err != nil {
 		return accountOwners{}, fmt.Errorf("awsAccountOwners: %w", err)
 	}
-	out := accountOwners{owned: map[string]string{}, orphans: map[string]orphanChild{}, stored: map[string]Connector{}}
+	out := accountOwners{owned: map[string]string{}, orphans: map[string]orphanChild{}, stored: map[string]Connector{}, self: map[string]orphanChild{}}
 	parents := map[string]bool{}
 	for _, c := range conns {
 		if c.Type == TypeAWSOrg {
@@ -368,10 +370,13 @@ func (s *Service) awsAccountOwners(ctx context.Context, orgID string) (accountOw
 		}
 		out.stored[c.ID] = c.Connector
 		parent := c.Config[ChildKeyOrgConnectorID]
+		acct := awsAccountID(c.Config)
 		if parent == orgID {
+			if acct != "" {
+				out.self[acct] = orphanChild{id: c.ID, enabled: c.Enabled}
+			}
 			continue
 		}
-		acct := awsAccountID(c.Config)
 		if acct == "" {
 			continue
 		}
@@ -408,7 +413,12 @@ func (s *Service) applyAccount(ctx context.Context, org Connector, owners accoun
 	switch action {
 	case childEnsure:
 		if row.ChildConnectorID == "" {
-			orphan, adopt := owners.orphans[row.AccountID]
+			// Prefer this org's existing child when its account row was never
+			// persisted. Retrying must not fail forever on the child's name.
+			orphan, adopt := owners.self[row.AccountID]
+			if !adopt {
+				orphan, adopt = owners.orphans[row.AccountID]
+			}
 			if adopt {
 				// The orphan keeps its id, name and collected data; refreshChild
 				// below points it at this org and enables it.

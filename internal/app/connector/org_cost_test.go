@@ -43,3 +43,29 @@ func TestOrgBatchFailureIsRecordedAndRetryRecovers(t *testing.T) {
 	require.Zero(t, retry.Errors)
 	require.Empty(t, retry.Created)
 }
+
+func TestOrgInitialBatchFailureReusesUnrecordedChildren(t *testing.T) {
+	svc, repo, disc, org := newOrgFixture(t, nil)
+	disc.accounts = []DiscoveredAccount{active("900000000001"), active("900000000002"), active("900000000003")}
+	repo.orgBatchErr = context.DeadlineExceeded
+	failed, err := svc.ReconcileOrg(context.Background(), org.ID)
+	require.NoError(t, err)
+	require.Len(t, failed.Created, 3)
+	require.Equal(t, 3, failed.Errors)
+	require.Empty(t, repo.orgAccounts[org.ID], "the failed account statement recorded nothing")
+	repo.orgBatchErr = nil
+	retry, err := svc.ReconcileOrg(context.Background(), org.ID)
+	require.NoError(t, err)
+	require.Zero(t, retry.Errors, "retry must reuse the children whose account rows failed")
+	require.Empty(t, retry.Created, "recovery must not create duplicate child connectors")
+	rows, err := svc.OrgAccounts(context.Background(), org.ID)
+	require.NoError(t, err)
+	require.Len(t, rows, 3)
+	var children []string
+	for _, row := range rows {
+		require.NotNil(t, row.Child)
+		require.True(t, row.Child.Enabled)
+		children = append(children, row.ChildConnectorID)
+	}
+	require.ElementsMatch(t, failed.Created, children)
+}

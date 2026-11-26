@@ -51,4 +51,6 @@ To understand the code, start here, in this order:
   `Reader`, which is `*/read` on the subscription.
 - [`migrations.md`](migrations.md) — migration numbering rules (strict order,
   contiguous numbers) and what enforces them.
+- [`pipeline-benchmarks.md`](pipeline-benchmarks.md) — generate synthetic inventory
+  and measure database work, graph refresh throughput and memory locally or in CI.
 

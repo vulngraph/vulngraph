@@ -1,0 +1,53 @@
+name: Pipeline throughput
+
+on:
+  workflow_call:
+    inputs:
+      profile:
+        type: string
+        default: smoke
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Dataset size (large profiles require a suitably sized local machine)
+        type: choice
+        default: medium
+        options: [smoke, medium]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pipeline-throughput-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  pipeline:
+    name: Real pipeline contracts and costs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version: "1.26.11"
+          cache: true
+      - name: Fetch pinned LadybugDB
+        run: scripts/fetch-ladybug.sh linux-amd64
+      - name: Validate benchmark code
+        run: go vet -tags=integration ./internal/throughput
+      - name: Run isolated pipeline
+        env:
+          PERF_PROFILE_INPUT: ${{ inputs.profile }}
+          PERF_CH_MEMORY: 3g
+          PERF_CH_CPUS: "2"
+        run: scripts/benchmark-pipeline.sh "$PERF_PROFILE_INPUT" "$RUNNER_TEMP/pipeline-throughput"
+      - name: Upload measurements and failure logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pipeline-throughput
+          path: ${{ runner.temp }}/pipeline-throughput/
+          retention-days: 14

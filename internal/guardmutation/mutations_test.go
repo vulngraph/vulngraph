@@ -3966,8 +3966,8 @@ var mutations = []Mutation{
 		Guard: "TestDriftAnalysis_NeverEnqueuesScanKinds", Pkg: "./internal/app/driftanalysis",
 		File: "internal/app/driftanalysis/service.go",
 		Old:  "\"github.com/vulngraph/vulngraph/internal/llm\"",
-		New:  "\"github.com/vulngraph/vulngraph/internal/llm\"\n\t_ \"github.com/vulngraph/vulngraph/internal/app/scan\"",
-		Why:  "the advisory drift verdict package imports scan code, so an LLM verdict has a path to starting a scan",
+		New:  "\"github.com/vulngraph/vulngraph/internal/llm\"\n\t_ \"github.com/vulngraph/vulngraph/internal/scanner/diskscan\"",
+		Why:  "the advisory drift verdict package imports the disk scanner, so an LLM verdict can reach scan execution",
 	},
 	{
 		Guard: "TestBundledDatastoreAppUsersAreNotAdmins", Pkg: "./cmd/graph",

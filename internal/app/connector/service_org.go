@@ -283,6 +283,21 @@ func (s *Service) ReconcileOrg(ctx context.Context, orgID string) (ReconcileResu
 	for _, p := range prev {
 		prevByID[p.AccountID] = p
 	}
+	// A child can survive an account-row write failure. Reattach it before
+	// planning any action, including absence and suspension, so a retry cannot
+	// leave an unrecorded child collecting an account that is no longer active.
+	for accountID, child := range owners.self {
+		p := prevByID[accountID]
+		if p.ChildConnectorID != "" {
+			continue
+		}
+		if p.OrgConnectorID == "" {
+			p = OrgAccount{OrgConnectorID: orgID, AccountID: accountID, LastSeenAt: owners.stored[child.id].CreatedAt}
+		}
+		p.ChildConnectorID = child.id
+		p.Child = &ChildHealth{Enabled: child.enabled}
+		prevByID[accountID] = p
+	}
 	listed := make(map[string]bool, len(discovered))
 	rows := make([]OrgAccount, 0, len(discovered))
 	for i := range discovered {
@@ -294,7 +309,7 @@ func (s *Service) ReconcileOrg(ctx context.Context, orgID string) (ReconcileResu
 		}
 		rows = append(rows, s.applyAccount(ctx, org, owners, filters, d, p, now, &res))
 	}
-	for _, p := range prev {
+	for _, p := range prevByID {
 		if !listed[p.AccountID] {
 			row := p
 			rows = append(rows, s.applyAccount(ctx, org, owners, filters, nil, &row, now, &res))
@@ -413,12 +428,7 @@ func (s *Service) applyAccount(ctx context.Context, org Connector, owners accoun
 	switch action {
 	case childEnsure:
 		if row.ChildConnectorID == "" {
-			// Prefer this org's existing child when its account row was never
-			// persisted. Retrying must not fail forever on the child's name.
-			orphan, adopt := owners.self[row.AccountID]
-			if !adopt {
-				orphan, adopt = owners.orphans[row.AccountID]
-			}
+			orphan, adopt := owners.orphans[row.AccountID]
 			if adopt {
 				// The orphan keeps its id, name and collected data; refreshChild
 				// below points it at this org and enables it.

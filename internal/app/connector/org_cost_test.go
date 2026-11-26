@@ -69,3 +69,41 @@ func TestOrgInitialBatchFailureReusesUnrecordedChildren(t *testing.T) {
 	}
 	require.ElementsMatch(t, failed.Created, children)
 }
+
+func TestOrgInitialBatchFailureRecoversChangedAccountState(t *testing.T) {
+	for _, tc := range []struct {
+		name, state string
+		status      OrgAccountStatus
+		enabled     bool
+	}{
+		{"removed", "", OrgAccountRemoved, false},
+		{"suspended", "SUSPENDED", OrgAccountSuspended, false},
+		{"pending", "PENDING_ACTIVATION", OrgAccountPending, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, repo, disc, org := newOrgFixture(t, nil)
+			ctx := context.Background()
+			const accountID = "900000000001"
+			disc.accounts = []DiscoveredAccount{active(accountID), active("900000000002")}
+			repo.orgBatchErr = context.DeadlineExceeded
+			first, err := svc.ReconcileOrg(ctx, org.ID)
+			require.NoError(t, err)
+			require.Len(t, first.Created, 2)
+			require.Empty(t, repo.orgAccounts[org.ID])
+			disc.accounts = []DiscoveredAccount{active("900000000002")}
+			if tc.state != "" {
+				disc.accounts = append(disc.accounts, DiscoveredAccount{ID: accountID, State: tc.state})
+			}
+			repo.orgBatchErr = nil
+			retry, err := svc.ReconcileOrg(ctx, org.ID)
+			require.NoError(t, err)
+			require.Zero(t, retry.Errors)
+			require.Empty(t, retry.Created)
+			row := accountRow(t, repo, org.ID, accountID)
+			require.Equal(t, tc.status, row.Status)
+			require.Equal(t, first.Created[0], row.ChildConnectorID)
+			require.NotNil(t, row.Child)
+			require.Equal(t, tc.enabled, row.Child.Enabled)
+		})
+	}
+}

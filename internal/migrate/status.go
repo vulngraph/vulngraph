@@ -73,7 +73,7 @@ func dbVersionStatus(ctx context.Context, name, driver, dsn string, dialect goos
 		return DBStatus{}, fmt.Errorf("sub fs %s: %w", dir, err)
 	}
 
-	provider, err := goose.NewProvider(dialect, db, fsys)
+	provider, err := goose.NewProvider(dialect, db, fsys, migrations.ProviderOptions(dialect))
 	if err != nil {
 		return DBStatus{}, fmt.Errorf("provider %s: %w", dir, err)
 	}

@@ -32,7 +32,7 @@ func TestEmbeddedMigrationsAreWellFormed(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = db.Close() })
 
-			provider, err := goose.NewProvider(tc.dialect, db, fsys)
+			provider, err := goose.NewProvider(tc.dialect, db, fsys, migrations.ProviderOptions(tc.dialect))
 			require.NoError(t, err)
 
 			sources := provider.ListSources()
@@ -45,7 +45,12 @@ func TestEmbeddedMigrationsAreWellFormed(t *testing.T) {
 
 				body, err := fs.ReadFile(fsys, strings.TrimPrefix(s.Path, "/"))
 				require.NoError(t, err)
-				require.Contains(t, string(body), "-- +goose Up", s.Path)
+				if s.Type == goose.TypeSQL {
+					require.Contains(t, string(body), "-- +goose Up", s.Path)
+				} else {
+					require.Equal(t, goose.TypeGo, s.Type)
+					require.Contains(t, string(body), "goose.NewGoMigration(", s.Path)
+				}
 			}
 		})
 	}

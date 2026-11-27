@@ -214,6 +214,24 @@ func TestPipelineThroughput(t *testing.T) {
 			require.EqualValues(t, 1, m.SignalRows, "one changed finding must write only its affected native node")
 			require.True(t, public.HasKEV)
 		}
+		// A changed digest/full rebuild is insufficient: verify the graph's
+		// public read path actually exposes the changed name and its topology.
+		result, err := svc.RunCypher(ctx, "MATCH (p:K8sWorkload {id:'pod-0'})-[r:RunsImage]->(i:Asset) RETURN p,r,i", 10, 10)
+		require.NoError(t, err)
+		require.Len(t, result.Edges, 1)
+		require.Len(t, result.Nodes, 2)
+		wantName := "bench-0"
+		if scenario.name == "topology_update_1pct" || scenario.name == "unchanged_after_update" {
+			wantName += "-updated"
+		}
+		found := false
+		for _, n := range result.Nodes {
+			if n.ID == "pod-0" {
+				require.Equal(t, wantName, n.Name)
+				found = true
+			}
+		}
+		require.True(t, found)
 	}
 	r.Lineage = measureLineage(t, ctx, ch, inv, svc, p)
 	r.Deletion = measureDeletion(t, ctx, pgDSN, p)

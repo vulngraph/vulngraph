@@ -41,6 +41,7 @@ var scannerSourcePkgs = []string{
 // internal/db may import a datastore driver. Reaching any other unread
 // module package fails the walk.
 var scannerOpaquePkgs = map[string]string{
+	"migrations":   "constructs Goose registration options; only migrate runs their callbacks, readiness reads the ledger",
 	"internal/db":  "the pools and the ClickHouse client; they run the SQL their callers pass",
 	"internal/obs": "metrics and tracing",
 	// The disk scan's cloud and disk code: no SQL, and no datastore import (checked above).

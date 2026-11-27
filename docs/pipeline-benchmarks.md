@@ -44,7 +44,8 @@ Bulk seeding uses `INSERT SELECT numbers(...)`; millions of objects are not
 allocated in the Go process just to prepare a measurement.
 
 Each run measures an initial build, two unchanged refreshes, a finding-only update,
-a name change on one percent of workloads, and another unchanged refresh. The
+a name change on one percent of workloads, and another unchanged refresh. A
+public graph query verifies the changed node name and its image relationship. The
 storage cache is already warm from seeding and validation: the initial build is
 not a cold-disk measurement. Snapshots are disabled. Seeding time is separate.
 
@@ -126,8 +127,14 @@ its zero HTTP count is not a measurement of Kubernetes API requests.
 The largest successful fixture for each connector then runs through the real sync
 worker, checks, encrypted connector storage, Postgres hashes, ClickHouse writes and
 River insertion. Initial, unchanged, 1% changed, unchanged-again and partial runs
-assert fingerprint behavior and preservation of omitted resources. `sync.json`
-records per-phase timing, allocations, queued jobs and ClickHouse query/read/memory counts.
+assert fingerprint behavior and read back every expected asset and relationship
+through the inventory service. These checks cover names, metadata, tags, endpoint
+types and edge properties, including resources omitted by the partial sweep.
+Connector sync fixture version 2 changes metadata and edge properties as well as
+names in the 1% scenario; compare it only with the same fixture version. `sync.json`
+records verified counts, per-phase timing, allocations, queued jobs and ClickHouse
+query/read/memory counts. Readback checks run outside the timed region and can
+warm storage caches before the next scenario.
 The insert-only queue is emptied before each measurement so saturation from a
 previous connector cannot hide enqueue costs. Native inventory/finding writes
 use at most 2,000 rows and a 4 MiB estimated payload per batch; a single oversized
@@ -141,3 +148,17 @@ signal write counts rather than wall-clock thresholds. Manual workflow runs use
 connector type, but not every service family, API quota, throttling pattern or
 production payload. Full-suite connector correctness tests remain separate from
 performance measurements.
+
+To measure the precision migration with existing rows, point `TEST_CLICKHOUSE_URL`
+at a disposable test server and run:
+
+```sh
+PERF_MIGRATION_ROWS=20000000 PERF_MIGRATION_REPORT=/tmp/migration.json \
+  go test -tags=integration ./migrations/clickhouse \
+  -run '^TestPreciseVersionsPopulatedScale$' -count=1 -v
+```
+
+This creates and removes its own database, seeds the old schema, and checks the
+upgraded relationship values. The elapsed time includes the migration's copy and
+verification, with seeding excluded. The ordinary migration integration suite
+also covers populated upgrade, rollback, interrupted copies and restricted grants.

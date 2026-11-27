@@ -37,7 +37,7 @@ jobs:
       - name: Fetch pinned LadybugDB
         run: scripts/fetch-ladybug.sh linux-amd64
       - name: Validate benchmark code
-        run: go vet -tags=integration ./internal/throughput ./internal/jobs ./internal/app/asset ./internal/app/finding ./internal/app/connector ./internal/migrate
+        run: go vet -tags=integration ./internal/throughput ./internal/jobs ./internal/app/asset ./internal/app/finding ./internal/app/connector ./internal/migrate ./migrations/...
       - name: Measure connector API fixtures
         env:
           PERF_CONNECTORS: "1"

@@ -65,7 +65,7 @@ if [[ -n "${PERF_CONNECTOR_DIR:-}" ]]; then
   go test -tags=integration ./internal/app/connector -run '^TestAWSOrgThroughput$' -count=1 -timeout=20m -v 2>&1 | tee "$PERF_CONNECTOR_DIR/aws_org.log"
 fi
 export TEST_DATABASE_URL="$PERF_POSTGRES_URL" TEST_CLICKHOUSE_URL="$PERF_CLICKHOUSE_URL"
-go test -p 1 -tags=integration ./internal/app/asset ./internal/app/finding ./internal/app/connector ./internal/jobs ./internal/migrate \
-  -run '^(TestWideInventoryBatchesPreserveEveryRow|TestBoundedLineageFreshnessVersionsAndExposureGrade|TestPackageSignalsFollowInventoryProducer|TestRecordObservedLargeBatchPreservesFirstDetection|TestOrgBatchWriteFailureRecoversExistingChildren|TestEnrichBatchQueuePreservesPriorityUniquenessAndCapacity|TestDeletionBacklogRequiresConfirmationAndDrains|TestDeletionConfirmationMigrationUpgradeRollbackReplay|TestEdgeTypeIndexMigrationExistingDataRollbackReplay)$' \
+go test -p 1 -tags=integration ./internal/app/asset ./internal/app/finding ./internal/app/connector ./internal/jobs ./internal/migrate ./migrations/clickhouse \
+  -run '^(TestWideInventoryBatchesPreserveEveryRow|TestBoundedLineageFreshnessVersionsAndExposureGrade|TestPackageSignalsFollowInventoryProducer|TestRecordObservedLargeBatchPreservesFirstDetection|TestRapidFindingUpdatesReadBack|TestOrgBatchWriteFailureRecoversExistingChildren|TestEnrichBatchQueuePreservesPriorityUniquenessAndCapacity|TestDeletionBacklogRequiresConfirmationAndDrains|TestDeletionConfirmationMigrationUpgradeRollbackReplay|TestEdgeTypeIndexMigrationExistingDataRollbackReplay|TestPreciseVersions.*)$' \
   -count=1 -timeout=10m -v 2>&1 | tee "$output/regressions.log"
 echo "Report: $output/report.json"

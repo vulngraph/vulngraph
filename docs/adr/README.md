@@ -127,3 +127,5 @@ unused). Each ADR's own status line carries the dates and detail.
 | [096](096-opt-in-vm-disk-scanning.md) | Opt-in VM disk scanning, and the one cloud write it needs | accepted |
 
 | [097](097-retire-external-scanning.md) | Retire active external scanning; preserve opt-in disk inventory | accepted |
+
+| [098](098-precise-storage-versions.md) | Precise storage versions and verified resumable upgrades | accepted |

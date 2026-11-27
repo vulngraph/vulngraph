@@ -378,7 +378,7 @@ func TestClickHouseUsersHaveNoAdmin(t *testing.T) {
 	require.Empty(t, problems, "a user that logs in without a password, or can manage access")
 	require.Equal(t, []string{"default", "graph", "graph_migrate", "graph_scanner"}, names,
 		"a user whose grants this test does not check")
-	require.Equal(t, []string{"GRANT ALL ON graph.*"}, u.Users.Migrate.Grants)
+	require.Equal(t, []string{"GRANT ALL ON graph.*", "GRANT SELECT ON system.detached_tables", "GRANT SELECT ON system.mutations"}, u.Users.Migrate.Grants)
 	require.Empty(t, u.Users.Migrate.DefaultDatabase,
 		"the bootstrap logs in as graph_migrate before graph exists, and a login to a missing default database fails")
 	require.Equal(t, []string{

@@ -41,6 +41,16 @@ func (s *scaleCollector) Collect(context.Context, map[string]string) (collect.Re
 	if s.changed {
 		for i := 0; i < len(r.Assets); i += 100 {
 			r.Assets[i].Name += "-updated"
+			if r.Assets[i].Metadata == nil {
+				r.Assets[i].Metadata = map[string]string{}
+			}
+			r.Assets[i].Metadata["benchmark_revision"] = "updated"
+		}
+		for i := 0; i < len(r.Edges); i += 100 {
+			if r.Edges[i].Properties == nil {
+				r.Edges[i].Properties = map[string]string{}
+			}
+			r.Edges[i].Properties["benchmark_revision"] = "updated"
 		}
 	}
 	if s.partial {
@@ -62,6 +72,8 @@ type connectorSyncMeasurement struct {
 	ReadBytes      uint64  `json:"read_bytes"`
 	MaxQueryMemory uint64  `json:"max_query_memory_bytes"`
 	QueuedJobs     int     `json:"queued_jobs"`
+	VerifiedAssets int     `json:"verified_assets"`
+	VerifiedEdges  int     `json:"verified_edges"`
 }
 
 func TestConnectorSyncThroughput(t *testing.T) {
@@ -112,6 +124,8 @@ func TestConnectorSyncThroughput(t *testing.T) {
 			w := &SyncWorker{connectors: conns, registry: reg, assets: inv, findings: finding.NewService(finding.NewCHRepo(ch)), checks: checks.Default()}
 			job := &river.Job[SyncConnectorArgs]{Args: SyncConnectorArgs{ConnectorID: id}}
 			var priorFP string
+			expectedAssets := map[string]asset.Asset{}
+			expectedEdges := map[scaleEdgeKey]asset.Edge{}
 			for _, scenario := range []string{"initial", "unchanged", "change_1pct", "unchanged_after", "partial"} {
 				producer.changed = scenario == "change_1pct" || scenario == "unchanged_after" || scenario == "partial"
 				producer.partial = scenario == "partial"
@@ -146,6 +160,18 @@ func TestConnectorSyncThroughput(t *testing.T) {
 				}
 				priorFP = fp
 				m := connectorSyncMeasurement{Connector: name, Scenario: scenario, Seconds: seconds, AllocatedBytes: after.TotalAlloc - before.TotalAlloc, Hashes: len(hashes), Partial: fixture.Partial || producer.partial}
+				// Verify real values after timing. Hashes can advance while storage
+				// still returns an older version; partial sweeps must retain omitted rows.
+				observed, err := producer.Collect(ctx, nil)
+				require.NoError(t, err)
+				for _, a := range observed.Assets {
+					expectedAssets[a.ID] = a
+				}
+				for _, e := range observed.Edges {
+					expectedEdges[scaleEdgeKey{e.SrcID, e.EdgeType, e.DstID}] = e
+				}
+				verifySyncReadback(t, ctx, inv, expectedAssets, expectedEdges)
+				m.VerifiedAssets, m.VerifiedEdges = len(expectedAssets), len(expectedEdges)
 				require.NoError(t, ch.Exec(ctx, "SYSTEM FLUSH LOGS"))
 				require.NoError(t, ch.Select(ctx, func(rows driver.Rows) error {
 					if !rows.Next() {
@@ -162,9 +188,10 @@ func TestConnectorSyncThroughput(t *testing.T) {
 		})
 	}
 	b, err := json.MarshalIndent(struct {
-		Passed       bool                       `json:"passed"`
-		Measurements []connectorSyncMeasurement `json:"measurements"`
-	}{!t.Failed(), measurements}, "", "  ")
+		FixtureVersion int                        `json:"fixture_version"`
+		Passed         bool                       `json:"passed"`
+		Measurements   []connectorSyncMeasurement `json:"measurements"`
+	}{2, !t.Failed(), measurements}, "", "  ")
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(os.Getenv("PERF_CONNECTOR_DIR"), "sync.json"), b, 0600))
 	if t.Failed() {

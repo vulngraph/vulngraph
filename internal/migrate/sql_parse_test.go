@@ -31,11 +31,14 @@ func TestGooseParsesEmbeddedSQLInBothDirections(t *testing.T) {
 			t.Cleanup(func() { _ = db.Close() })
 			fsys, err := fs.Sub(migrations.FS, tc.dir)
 			require.NoError(t, err)
-			provider, err := goose.NewProvider(tc.dialect, db, fsys, goose.WithDisableVersioning(true))
+			provider, err := goose.NewProvider(tc.dialect, db, fsys, migrations.ProviderOptions(tc.dialect), goose.WithDisableVersioning(true))
 			require.NoError(t, err)
 			sources := provider.ListSources()
 			require.NotEmpty(t, sources)
 			for _, source := range sources {
+				if source.Type == goose.TypeGo {
+					continue
+				}
 				for _, up := range []bool{true, false} {
 					rec.statements = nil
 					commits := rec.commits

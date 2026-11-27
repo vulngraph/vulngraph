@@ -16,12 +16,12 @@ status=0
 
 for engine in postgres clickhouse; do
   dir="migrations/$engine"
-  base_max=$(git ls-tree --name-only "$base" "$dir/" | sed -n 's|.*/\([0-9]\{5\}\)_.*\.sql$|\1|p' | sort -n | tail -1)
+  base_max=$(git ls-tree --name-only "$base" "$dir/" | sed -En 's#.*/([0-9]{5})_.*\.(sql|go)$#\1#p' | sort -n | tail -1)
   base_max=$((10#${base_max:-0}))
   while IFS= read -r path; do
     [ -z "$path" ] && continue
     file=$(basename "$path")
-    case "$file" in [0-9][0-9][0-9][0-9][0-9]_*.sql) ;; *) continue ;; esac
+    case "$file" in [0-9][0-9][0-9][0-9][0-9]_*.sql|[0-9][0-9][0-9][0-9][0-9]_*.go) ;; *) continue ;; esac
     version=$((10#${file:0:5}))
     if [ "$version" -le "$base_max" ]; then
       echo "::error file=$path::$file is numbered at or below $base's highest $engine migration ($base_max); renumber it above $base_max"
@@ -34,7 +34,7 @@ for engine in postgres clickhouse; do
   # rename as delete+add so the add is checked above and the delete here.
   while IFS= read -r path; do
     [ -z "$path" ] && continue
-    case "$(basename "$path")" in [0-9][0-9][0-9][0-9][0-9]_*.sql) ;; *) continue ;; esac
+    case "$(basename "$path")" in [0-9][0-9][0-9][0-9][0-9]_*.sql|[0-9][0-9][0-9][0-9][0-9]_*.go) ;; *) continue ;; esac
     echo "::error file=$path::$path exists on $base and was modified or deleted; add a new migration instead"
     status=1
   done < <(git diff --name-only --no-renames --diff-filter=MD "$base"...HEAD -- "$dir/")

@@ -56,7 +56,7 @@ func isolatedMigrationDB(t *testing.T) (context.Context, *sql.DB, *goose.Provide
 	t.Cleanup(func() { _ = db.Close() })
 	fsys, err := fs.Sub(migrations.FS, "postgres")
 	require.NoError(t, err)
-	provider, err := goose.NewProvider(goose.DialectPostgres, db, fsys)
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, fsys, migrations.ProviderOptions(goose.DialectPostgres))
 	require.NoError(t, err)
 	return ctx, db, provider, dsn
 }

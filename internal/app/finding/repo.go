@@ -199,11 +199,8 @@ type CHRepo struct {
 // Option configures a CHRepo.
 type Option func(*CHRepo)
 
-// WithClock overrides the synced_at clock. synced_at is the ReplacingMergeTree
-// version (one-second granularity), so two Upserts of the same row within one
-// second tie and argMax may surface the stale one. Real workloads are unaffected
-// (writes to a row are seconds+ apart); tests that re-write rapidly inject an
-// advancing clock so the latest write deterministically wins.
+// WithClock overrides the precise ReplacingMergeTree version timestamp.
+// Tests can model rapid successive writes without wall-clock sleeps.
 func WithClock(now func() time.Time) Option { return func(r *CHRepo) { r.now = now } }
 
 func NewCHRepo(ch *db.CH, opts ...Option) *CHRepo {

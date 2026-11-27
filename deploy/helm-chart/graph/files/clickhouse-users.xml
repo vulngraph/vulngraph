@@ -5,7 +5,8 @@
      are and none has access management or a password-less login.
 
      graph_migrate  migrate only: the schema, every right on the graph
-                 database and none outside it. The image's bootstrap (CREATE
+                 database, plus read access to mutation and detached-table metadata
+                 for resumable migrations. The image's bootstrap (CREATE
                  DATABASE graph on an empty volume) runs as it
                  (CLICKHOUSE_USER), which ALL ON graph.* allows.
      graph       serve and the worker: reads and inserts, plus the few
@@ -32,6 +33,8 @@
                  database fails. migrate's DSN names graph. -->
             <grants>
                 <query>GRANT ALL ON graph.*</query>
+                <query>GRANT SELECT ON system.detached_tables</query>
+                <query>GRANT SELECT ON system.mutations</query>
             </grants>
         </graph_migrate>
         <graph>

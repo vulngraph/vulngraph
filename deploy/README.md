@@ -262,13 +262,13 @@ chart), and the bundled ClickHouse loads its users from
 | Postgres | `postgres` (`secret.postgresSuperuserPassword`) | only the Postgres StatefulSet | the image's bootstrap superuser |
 | ClickHouse | `graph` (`secret.clickhousePassword`) | serve, worker | `SELECT` and `INSERT` on `graph.*`, `ALTER DELETE` on `assets` and `graph_edges` (connector purge), `OPTIMIZE` on five tables and `SELECT` on `system.parts` and `system.projection_parts` (part compaction); no DDL, no `DROP` or `TRUNCATE`, nothing that rewrites `audit_events` |
 | ClickHouse | `graph_scanner` (`secret.clickhouseScannerPassword`) | scanner | `SELECT` on `goose_db_version`; nothing else |
-| ClickHouse | `graph_migrate` (`secret.clickhouseMigratePassword`) | the migrate init container, and the image's bootstrap of the `graph` database | `ALL` on `graph.*`, nothing outside it |
+| ClickHouse | `graph_migrate` (`secret.clickhouseMigratePassword`) | the migrate init container, and the image's bootstrap of the `graph` database | `ALL` on `graph.*`; `SELECT` on `system.detached_tables` and `system.mutations` for resumable migration checks |
 
 The bundled ClickHouse has no other user: the image's passwordless `default`
 admin is removed. `kubectl -n graph exec -it graph-clickhouse-0 --
 clickhouse-client` connects as `graph_migrate` (the container's
 `CLICKHOUSE_USER` and `CLICKHOUSE_PASSWORD`), which can read and change the
-`graph` database but not manage users or touch anything outside it.
+`graph` database and read migration metadata, but cannot manage users or change other databases.
 
 The render fails without any of the six passwords, or when one equals another
 user's. Postgres sets its passwords once: changing `secret.postgresPassword`
@@ -371,6 +371,8 @@ On ClickHouse, as a user with access management:
 CREATE DATABASE graph;
 CREATE USER graph_migrate IDENTIFIED WITH sha256_password BY '<pw>' DEFAULT DATABASE graph;
 GRANT ALL ON graph.* TO graph_migrate;
+GRANT SELECT ON system.detached_tables TO graph_migrate;
+GRANT SELECT ON system.mutations TO graph_migrate;
 CREATE USER graph IDENTIFIED WITH sha256_password BY '<pw>' DEFAULT DATABASE graph;
 GRANT SELECT, INSERT ON graph.* TO graph;
 GRANT ALTER DELETE ON graph.assets TO graph;

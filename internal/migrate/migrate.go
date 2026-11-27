@@ -134,7 +134,7 @@ func up(ctx context.Context, driver, dsn string, dialect goose.Dialect, dir stri
 		return fmt.Errorf("up: sub fs %s: %w", dir, err)
 	}
 
-	provider, err := goose.NewProvider(dialect, db, fsys)
+	provider, err := goose.NewProvider(dialect, db, fsys, migrations.ProviderOptions(dialect))
 	if err != nil {
 		return fmt.Errorf("up: provider %s: %w", dir, err)
 	}

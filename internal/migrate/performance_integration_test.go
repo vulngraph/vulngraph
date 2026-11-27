@@ -76,7 +76,7 @@ func TestEdgeTypeIndexMigrationExistingDataRollbackReplay(t *testing.T) {
 	defer database.Close()
 	files, err := fs.Sub(migrations.FS, "clickhouse")
 	require.NoError(t, err)
-	provider, err := goose.NewProvider(goose.DialectClickHouse, database, files)
+	provider, err := goose.NewProvider(goose.DialectClickHouse, database, files, migrations.ProviderOptions(goose.DialectClickHouse))
 	require.NoError(t, err)
 	_, err = provider.UpTo(ctx, 1)
 	require.NoError(t, err)

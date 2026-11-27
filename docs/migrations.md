@@ -36,7 +36,9 @@ better than applying it.
 ## What enforces this
 
 - `TestEmbeddedMigrationsAreWellFormed` (`internal/migrate`, every `go test`): versions are
-  unique, contiguous from `00001`, and every file has `-- +goose Up`.
+  unique, contiguous from `00001`, and every SQL file has `-- +goose Up`.
+  Numbered Go migrations must also be embedded and explicitly registered by
+  `migrations.ProviderOptions`, shared by execution and readiness checks.
 - `scripts/check-migration-order.sh <base-ref>` (CI `migration numbering` job, pull requests
   only): every migration the PR adds is numbered above the base branch's highest for its
   engine, and no migration already on the base branch is modified or deleted. Run it
@@ -49,6 +51,8 @@ better than applying it.
   `MergeTree`, 7-year TTL); see the ClickHouse section of `CLAUDE.md`.
 - Prefer additive, idempotent statements (`IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`) so a
   re-run after a partial failure is harmless.
+- A Go migration uses the same per-database Goose sequence and ledger as SQL.
+  Register it on that database's provider, never Goose's process-global registry.
 - A change to what the Ladybug graph loads also bumps `SchemaVersion`
   (`internal/app/graphstore/domain.go`); there is no in-place Ladybug migration.
 
@@ -68,3 +72,32 @@ The integration suite tests fresh installation, upgrade from version 6,
 older River enums, reruns and down/reapply. It also tests the scanner's
 restricted database grants. River still owns its own migration ledger;
 `graph migrate` runs it in the same migration command after PostgreSQL Goose.
+
+## ClickHouse version precision upgrade
+
+ClickHouse migration 3 rebuilds the seven tables whose replacement versions
+used whole-second timestamps, changing those columns to `DateTime64(9)`.
+It preserves table defaults, indexes, settings and comments. Ordinary observation
+timestamps keep their existing types. This prevents distinct subsecond versions
+from collapsing to the same second; it does not impose ordering across machines
+with skewed clocks or repair older writes whose precision was already lost.
+
+Schedule a maintenance window, stop writers, back up the database and allow
+temporary space for a second copy of the largest affected table. The migration
+requires an Atomic database and the migration role's database-wide grants, plus
+`SELECT` on `system.detached_tables` and `system.mutations`. Bundled deployments
+include these grants. Before upgrading an external ClickHouse database, have its
+administrator apply the two additional grants in [the setup SQL](../deploy/README.md#external-datastores). Custom dependent views must be removed and recreated around the upgrade.
+Migration time depends on the table sizes and storage throughput.
+
+During each table copy the public name is unavailable. A synchronous detach/attach
+drains existing users after the rename. The migration compares canonical row
+counts and checksums of stored values before publishing the replacement. The
+source is kept under `_vg_m3_<table>_source` until verification succeeds; never
+delete or modify these intermediate tables manually. If interrupted, rerun
+`graph migrate` in the same direction. Goose records version 3 only after every
+table finishes. Resume an interrupted upgrade before attempting rollback.
+
+Rollback also needs a maintenance window: it rebuilds from current rows, retaining
+the newest version before reducing precision. It does not restore an old backup,
+and whole-second version ties become possible again after rollback.

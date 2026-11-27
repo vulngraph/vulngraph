@@ -29,20 +29,23 @@ go test -c -o "$output/github.test" ./internal/collect/github
 for size in 100 1000 10000; do
   export PERF_CONNECTOR_MAX="$size"
   if [[ "$(uname -s)" == Darwin ]]; then
-    /usr/bin/time -l "$output/github.test" -test.run "^TestConnectorScale$/^github(_denied)?$/$size$" -test.count=1 -test.v -test.timeout=10m > "$output/run-$size.log" 2> "$output/resources-$size.txt"
+    /usr/bin/time -l "$output/github.test" -test.run "^TestConnectorScale$/^github(_denied|_pending)?$/$size$" -test.count=1 -test.v -test.timeout=10m > "$output/run-$size.log" 2> "$output/resources-$size.txt"
   else
-    /usr/bin/time -v "$output/github.test" -test.run "^TestConnectorScale$/^github(_denied)?$/$size$" -test.count=1 -test.v -test.timeout=10m > "$output/run-$size.log" 2> "$output/resources-$size.txt"
+    /usr/bin/time -v "$output/github.test" -test.run "^TestConnectorScale$/^github(_denied|_pending)?$/$size$" -test.count=1 -test.v -test.timeout=10m > "$output/run-$size.log" 2> "$output/resources-$size.txt"
   fi
 done
 python3 - "$output" <<'PY'
 import json,pathlib,statistics,sys
 root=pathlib.Path(sys.argv[1]); summary=[]
-for name in ('github','github_denied'):
+for name in ('github','github_denied','github_pending'):
     for n in (100,1000,10000):
         rows=json.loads((root/f'{name}-{n}.json').read_text())
         assert len(rows)==3
         assert all(r['assets']==6*n+5 and r['edges']==7*n+2 and r['duplicate_asset_rows']==0 and not r['partial'] for r in rows)
         summary.append(dict(scenario=name,repositories=n,runs=3,median_seconds=statistics.median(r['seconds'] for r in rows),max_allocated_bytes=max(r['allocated_bytes'] for r in rows),assets=rows[0]['assets'],edges=rows[0]['edges'],requests=rows[0]['requests']))
 (root/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+costs=[json.loads(line.split('SBOM_REQUEST_COST ',1)[1]) for n in (100,1000,10000) for line in (root/f'run-{n}.log').read_text().splitlines() if 'SBOM_REQUEST_COST ' in line]
+assert len(costs)==27
+(root/'request-cost.json').write_text(json.dumps(costs,indent=2)+'\n')
 print(json.dumps(summary,indent=2))
 PY

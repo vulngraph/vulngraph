@@ -49,6 +49,8 @@ func envIntOr(key string, fallback int) int {
 // the per-connector base URL is a local threaded through each request.
 type Collector struct {
 	client *http.Client
+	// sbomWait is a test clock seam; nil uses a context-aware timer.
+	sbomWait func(context.Context, time.Duration) error
 	// baseURL is the default endpoint; a connector may override it per call via
 	// cfg["base_url"] (GHES). Tests set it directly. It is never mutated by Collect.
 	baseURL string
@@ -174,7 +176,11 @@ func (c *Collector) Collect(ctx context.Context, cfg map[string]string) (collect
 
 	// Dependencies become graph nodes: each repo's SBOM yields package assets
 	// and repo→package depends_on edges.
-	pkgAssets, edges := c.collectPackages(ctx, baseURL, instToken, repos)
+	pkgAssets, edges, sbomCoverage := c.collectPackages(ctx, baseURL, instToken, repos)
+	sbomPartial := false
+	for _, coverage := range sbomCoverage {
+		sbomPartial = sbomPartial || coverage == "unknown"
+	}
 
 	// GHAS: code-scanning + secret-scanning alerts become findings that flow
 	// through the enrichment → reasoning pipeline. Org-level list endpoints
@@ -222,6 +228,7 @@ func (c *Collector) Collect(ctx context.Context, cfg map[string]string) (collect
 	for _, r := range repos {
 		meta := map[string]string{
 			"visibility":     r.Visibility,
+			"sbom_coverage":  sbomCoverage[r.FullName],
 			"archived":       strconv.FormatBool(r.Archived),
 			"language":       r.Language,
 			"default_branch": r.DefaultBranch,
@@ -264,7 +271,7 @@ func (c *Collector) Collect(ctx context.Context, cfg map[string]string) (collect
 	// reposPartial: the repo list paged out early (rate-limit/5xx), so repos on
 	// the un-fetched pages are missing from Assets — mark the result partial so
 	// the sync worker does not mistake them for deleted.
-	result := collect.Result{Assets: assets, Edges: edges, Findings: findings, Partial: reposPartial, ClosedFindings: ghasClosed}
+	result := collect.Result{Assets: assets, Edges: edges, Findings: findings, Partial: reposPartial || sbomPartial, ClosedFindings: ghasClosed}
 	result.ClosedFindings = append(result.ClosedFindings, workflowClosures(baseURL, repos, prior, workflows, appInventory)...)
 
 	// Only authoritative complete listings license retirement. Workflow and

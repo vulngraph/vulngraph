@@ -101,3 +101,11 @@ table finishes. Resume an interrupted upgrade before attempting rollback.
 Rollback also needs a maintenance window: it rebuilds from current rows, retaining
 the newest version before reducing precision. It does not restore an old backup,
 and whole-second version ties become possible again after rollback.
+
+ClickHouse migration 4 upgrades `assets.last_seen` to `DateTime64(9)` in place,
+waiting for existing parts to convert. It preserves the 180-day TTL. Retirement
+compares precise observations with precise deletion proofs; equal or newer
+observations survive. Whole-second observations may be legacy rows whose
+fractions were lost, so a proof in that same second remains insufficient to
+remove them. Downgrading truncates fractional observations. This precision change
+does not establish causal ordering between hosts with skewed clocks.

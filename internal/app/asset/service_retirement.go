@@ -37,7 +37,7 @@ func (s *Service) VerifyDepartedAssets(ctx context.Context, ids []string) (map[s
 			return nil, fmt.Errorf("VerifyDepartedAssets: observations: %w", err)
 		}
 		for _, a := range observed {
-			if !a.LastSeen.Before(proofs[a.ID].Truncate(time.Second)) {
+			if !observedBeforeDeletion(a.LastSeen, proofs[a.ID]) {
 				delete(proofs, a.ID)
 				delete(out, a.ID)
 			}
@@ -47,6 +47,15 @@ func (s *Service) VerifyDepartedAssets(ctx context.Context, ids []string) (map[s
 		}
 	}
 	return out, nil
+}
+
+// Whole seconds may have lost their fractional component before the precision
+// migration. Match the conservative per-row predicate in the retirement repo.
+func observedBeforeDeletion(observed, cutoff time.Time) bool {
+	if observed.Nanosecond() == 0 {
+		observed = observed.Add(time.Second - time.Nanosecond)
+	}
+	return observed.Before(cutoff)
 }
 
 func (s *Service) RetireAssets(ctx context.Context, deletions map[string]time.Time) ([]string, error) {

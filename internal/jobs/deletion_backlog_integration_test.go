@@ -36,8 +36,7 @@ func TestDeletionBacklogRequiresConfirmationAndDrains(t *testing.T) {
 	conns := connector.NewService(connector.NewPGRepo(pool), cipher)
 	inv := asset.NewService(asset.NewCHRepo(ch))
 	// The confirmed absence below represents hours passing. Seed the finding
-	// before that window as well: synced_at has second precision, so immediate
-	// seed/resolve writes can tie and make argMax choose either version.
+	// before that confirmation window.
 	findingWriteAt := time.Now().Add(-3 * time.Hour)
 	findings := finding.NewService(finding.NewCHRepo(ch, finding.WithClock(func() time.Time { return findingWriteAt })))
 	prefix := "backlog-" + time.Now().Format("150405.000000000") + "-"
@@ -113,9 +112,6 @@ func TestDeletionBacklogRequiresConfirmationAndDrains(t *testing.T) {
 	got, err := findings.Get(ctx, f.ID)
 	require.NoError(t, err)
 	require.True(t, got.Resolved())
-	// Move only these test proofs past second-precision storage timestamps.
-	_, err = pool.Exec(ctx, "UPDATE asset_deletions SET deleted_at=now()+interval '2 seconds' WHERE connector_id=$1", c.ID)
-	require.NoError(t, err)
 	retire := &InventoryRetirementWorker{proofs: conns, assets: inv, findings: findings}
 	require.NoError(t, retire.Work(ctx, &river.Job[InventoryRetirementArgs]{}))
 	live, err := inv.LiveIDs(ctx, ids)

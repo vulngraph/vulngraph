@@ -1,8 +1,10 @@
 package finding
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -108,7 +110,7 @@ func TestListKeysQuerySortsOutsideTheAggregation(t *testing.T) {
 // after or they match a stale ReplacingMergeTree version.
 func TestListKeysQuerySplitsFiltersAcrossWhereAndHaving(t *testing.T) {
 	q, args, err := listKeysQuery(Filter{
-		Source: "aws", ResourceID: "arn:x", CheckID: "aws-1", Severity: SeverityHigh,
+		Source: "aws", ResourceID: "arn:x", CheckID: "aws-1", Severity: SeverityHigh, MinScore: 1,
 	})
 	require.NoError(t, err)
 
@@ -134,7 +136,7 @@ func TestListKeysQuerySplitsFiltersAcrossWhereAndHaving(t *testing.T) {
 	require.Equal(t, []any{
 		"arn:x", "aws-1", // fe scope: resource_id, check_id
 		"aws", "arn:x", "aws-1", // outer WHERE: source, resource_id, check_id
-		string(SeverityHigh), // HAVING: severity
+		string(SeverityHigh), uint8(1), // HAVING: severity, score
 		DefaultLimit,
 	}, args)
 }
@@ -151,7 +153,7 @@ func TestListKeysQueryCVEInPrunesPreAggregation(t *testing.T) {
 	q, args, err := listKeysQuery(Filter{Source: "supply_chain", CVEIn: []string{"cve-2021-44228", "CVE-2024-0001"}})
 	require.NoError(t, err)
 
-	groupByIdx := strings.Index(q, " GROUP BY "+findingKeysGroupBy)
+	groupByIdx := strings.Index(q, " GROUP BY f.id")
 	require.Greater(t, groupByIdx, -1)
 	where := q[:groupByIdx]
 
@@ -187,4 +189,37 @@ func TestListKeysQueryCVEInEmptyAddsNoPredicate(t *testing.T) {
 	q, _, err := listKeysQuery(Filter{Source: "supply_chain"})
 	require.NoError(t, err)
 	require.NotContains(t, q, "tags['cve']", "an empty/nil CVEIn must not add a predicate at all")
+}
+
+// Every filter field must explicitly decide whether page selection needs
+// enrichment. Otherwise a new score/routing filter could silently lose its join.
+func TestListKeysQueryJoinsOnlyWhenNeeded(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	cases := map[string]struct {
+		value any
+		join  bool
+	}{
+		"Source": {"source", false}, "Severity": {SeverityHigh, false},
+		"ResourceID": {"resource", false}, "CheckID": {"check", false},
+		"MinScore": {uint8(1), true}, "SortByScore": {true, true},
+		"SafeOnly": {true, true}, "MustFixOnly": {true, true}, "Unenriched": {true, true},
+		"Owner": {"team", true}, "Environment": {"prod", true}, "StaleFirst": {true, true},
+		"OldestFirst": {true, false}, "IncludeResolved": {true, false},
+		"DetectedAfter": {now, false}, "DetectedBefore": {now, false},
+		"Limit": {10, false}, "Cursor": {EncodeCursor(Finding{ID: "id", DetectedAt: now}, false), false},
+		"CVEIn": {[]string{"CVE-2024-0001"}, false},
+	}
+	require.Len(t, cases, reflect.TypeFor[Filter]().NumField(), "classify every filter's enrichment dependency")
+	q, _, err := listKeysQuery(Filter{})
+	require.NoError(t, err)
+	require.NotContains(t, q, "finding_enrichment", "an ordinary page must not aggregate unrelated enrichments")
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			var f Filter
+			reflect.ValueOf(&f).Elem().FieldByName(name).Set(reflect.ValueOf(tc.value))
+			q, _, err := listKeysQuery(f)
+			require.NoError(t, err)
+			require.Equal(t, tc.join, strings.Contains(q, "finding_enrichment"), "query: %s", q)
+		})
+	}
 }

@@ -42,6 +42,12 @@ type Mutation struct {
 // mutation when the same defect is what both exist to catch, and each row is
 // still applied and verified independently.
 var mutations = []Mutation{
+	{
+		Guard: "TestListKeysQueryJoinsOnlyWhenNeeded", Pkg: "./internal/app/finding",
+		File: "internal/app/finding/repo.go",
+		Old:  "if needsEnrichment {", New: "if needsEnrichment || true {",
+		Why: "restores a full enrichment join for pages whose filters and ordering do not use enrichment",
+	},
 	// ── compose stack ───────────────────────────────────────────────────
 	{
 		Guard: "TestComposeSecretsAreGeneratedAndScoped", Pkg: "./cmd/graph",

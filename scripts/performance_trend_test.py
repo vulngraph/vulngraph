@@ -8,6 +8,28 @@ import performance_trend as trend
 
 
 class TrendContract(unittest.TestCase):
+    def test_linux_cpu_keeps_model_and_unknown_fallback(self):
+        cpuinfo = "processor\t: 0\nmodel name\t: Intel Xeon\n\nprocessor\t: 1\nmodel name\t: Intel Xeon\n"
+        self.assertEqual(trend.linux_cpu(cpuinfo, "x86_64"), "Intel Xeon")
+        self.assertEqual(trend.linux_cpu("processor: 0\n", "aarch64"), "aarch64")
+
+    def test_arm_identity_handles_multiple_core_types_and_cpu_order(self):
+        cores = [f"processor: {i}\nCPU implementer: 0x41\nCPU architecture: 8\nCPU part: {part}\nCPU revision: 1"
+                 for i, part in enumerate(["0xd0c", "0xd40", "0xd0c"])]
+        identity = trend.linux_cpu("\n\n".join(cores), "aarch64")
+        self.assertEqual(identity, trend.linux_cpu("\n\n".join(reversed(cores)), "aarch64"))
+        self.assertIn("CPU part=0xd0c", identity)
+        self.assertIn("CPU part=0xd40", identity)
+        self.assertEqual(identity.count("CPU implementer=0x41"), 2)
+
+    def test_rejects_different_arm_processors(self):
+        before, after = self.summary([1, 1, 1]), self.summary([1, 1, 1])
+        for summary, part in [(before, "0xd0c"), (after, "0xd40")]:
+            summary["cohort"]["environment"]["cpu"] = trend.linux_cpu(
+                f"CPU implementer: 0x41\nCPU part: {part}\n", "aarch64")
+        with self.assertRaises(ValueError):
+            trend.compare(before, after, 1.25, False)
+
     def fixture(self, name):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

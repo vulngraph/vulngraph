@@ -15,7 +15,8 @@ hardened: false
 image:
   # This project's own multi-arch image. .github/workflows/release.yaml
   # publishes it to ghcr.io/vulngraph/vulngraph for every vX.Y.Z tag, as vX.Y.Z
-  # and X.Y.Z (and as the rolling "edge" on every main push). If you've forked
+  # and X.Y.Z (and as the rolling "edge" on every main push). Both architectures
+  # use the same tag; Kubernetes selects the node's architecture. If you've forked
   # this repo and publish your own, or you're building locally (the Dockerfile
   # is self-contained — see deploy/README.md "Building the image yourself"),
   # point this at that image instead.

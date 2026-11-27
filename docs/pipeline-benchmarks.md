@@ -73,12 +73,23 @@ That buffer pool is not a cap on total process memory. Budget additional host
 memory for Go, Ladybug and Docker. Run one profile at a time.
 
 The PR workflow runs `smoke`, connector fixtures up to 1,000 resources, and the real
-sync worker over those results. It uploads reports, including on failure, and
+sync worker over those results on native Linux AMD64 and ARM64 runners. ARM64 also
+runs the full Go and native Ladybug binding unit suites. Both architectures must
+pass the existing `CI required` gate. It uploads reports, including on failure, and
 requires exact resident counts, public/private reachability, expected sync paths,
 five graph-source queries per refresh, and a read-row budget of three times the
 physical fixture size. The query/read budgets must be reviewed when intentionally
 changing the pipeline. Timing and memory are reported without a flaky shared-runner
-latency threshold. `workflow_dispatch` also supports `medium`.
+latency threshold. `workflow_dispatch` also supports `medium`. Artifacts are named
+`pipeline-throughput-amd64` and `pipeline-throughput-arm64`.
+
+Apple Silicon measurements are ARM64 measurements on macOS; they do not establish
+Linux cloud-instance throughput or cost. Native Linux ARM64 CI exercises the actual
+Go workers, Ladybug library and database containers without CPU emulation. It is
+still a shared runner, not a controlled cloud-instance capacity test. Reports record
+the OS, architecture, CPU and resource limits. Compare matched workloads on the
+intended instance and include datastore/storage costs when evaluating price per
+completed sync.
 
 For comparisons, use the same fixture version, machine, container limits, build
 settings and database versions. Repeat at least three fresh runs and compare
@@ -204,8 +215,11 @@ measurements; correctness, recovery and complete enrichment are required.
 ## Repeatable trends
 
 The weekly/manual `Performance trends` workflow runs three fresh complete
-benchmarks, each with a five-minute minimum soak, and keeps the samples and
-summary for 90 days. Its shared-runner timing results are informational.
+benchmarks on each of native Linux AMD64 and ARM64, each with a five-minute minimum
+soak, and keeps the samples and summary for 90 days. Artifacts are separated as
+`performance-trends-amd64` and `performance-trends-arm64`. Its shared-runner timing
+results are informational; summaries compare repetitions within one architecture,
+not results from different processors or operating systems.
 
 ```sh
 for run in 1 2 3; do

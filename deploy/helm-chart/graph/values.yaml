@@ -15,7 +15,7 @@ hardened: false
 image:
   # This project's own multi-arch image. .github/workflows/release.yaml
   # publishes it to ghcr.io/vulngraph/vulngraph for every vX.Y.Z tag, as vX.Y.Z
-  # and X.Y.Z (and as the rolling "edge" on every main push). If you've forked
+  # and X.Y.Z. The rolling "edge" on main pushes is AMD64 only. If you've forked
   # this repo and publish your own, or you're building locally (the Dockerfile
   # is self-contained — see deploy/README.md "Building the image yourself"),
   # point this at that image instead.
@@ -24,7 +24,7 @@ image:
   # appVersion, and the release workflow refuses to publish a tag that differs
   # from it, so the chart at a release tag pulls exactly that release's image
   # and upgrading the chart moves the image with it. Set this explicitly to pin
-  # a version regardless of the chart, or to "edge" to track main (unversioned,
+  # a version regardless of the chart, or to "edge" on AMD64 to track main (unversioned,
   # no upgrade guarantees, and with pullPolicy IfNotPresent two nodes can run
   # different builds of it).
   tag: ""

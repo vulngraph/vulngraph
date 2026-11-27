@@ -43,7 +43,10 @@ Connects to AWS, GCP, Azure, Kubernetes, GitHub, Okta and Google Workspace.
 
 ## Quickstart
 
-You need Docker with Compose v2.24 or newer and about 6 GB of memory.
+You need Docker with Compose v2.24 or newer and about 6 GB of memory. Compose builds
+natively on AMD64 and ARM64; see [CPU architectures](deploy/README.md#cpu-architectures)
+for release-image selection and [pipeline benchmarks](docs/pipeline-benchmarks.md)
+for validation and resource sizing.
 
 ```sh
 git clone https://github.com/vulngraph/vulngraph

@@ -12,6 +12,27 @@ certificates). Then work through
 [docs/production-checklist.md](../docs/production-checklist.md), which also covers what the
 chart cannot do: backups, rotation, upgrades, monitoring and IAM.
 
+## CPU architectures
+
+The Dockerfile supports Linux AMD64 and ARM64, and Compose builds for the host's
+native architecture. The release workflow targets both architectures for versioned
+release images. The rolling `edge` image currently targets AMD64 only; on ARM64
+nodes use a published multi-architecture release or build the image on ARM64 using
+[the build instructions](#building-the-image-yourself).
+
+Check the selected image's platforms before deploying it, replacing `<version>`
+with the published release you intend to install:
+
+```sh
+docker buildx imagetools inspect "ghcr.io/vulngraph/vulngraph:<version>"
+```
+
+Both native Linux architectures run the real pipeline checks in PR CI. ARM64
+hardware varies: an Apple Silicon result is not a Graviton capacity measurement.
+Use [the pipeline benchmarks](../docs/pipeline-benchmarks.md) on your target machine
+with its intended memory and CPU limits. The Ladybug buffer pool is only part of
+the worker's memory use; account for the full process and the two datastores.
+
 ## Quickstart
 
 The chart's default image is this project's own multi-arch (amd64 + arm64)

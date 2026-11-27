@@ -16,6 +16,17 @@ func (s *Service) VerifyDepartedAssets(ctx context.Context, ids []string) (map[s
 	if out == nil {
 		out = map[string]bool{}
 	}
+	return s.verifyDeletedAssets(ctx, ids, out)
+}
+
+// VerifyDeletedAssets distinguishes authoritative deletion from an uncollected
+// identity. A successful observation at or after the proof permits reappearance.
+// Read proofs in bounded batches; only proven IDs need observation hydration.
+func (s *Service) VerifyDeletedAssets(ctx context.Context, ids []string) (map[string]bool, error) {
+	return s.verifyDeletedAssets(ctx, ids, map[string]bool{})
+}
+
+func (s *Service) verifyDeletedAssets(ctx context.Context, ids []string, out map[string]bool) (map[string]bool, error) {
 	if s.deletionProofs == nil {
 		return out, nil
 	}
@@ -23,7 +34,7 @@ func (s *Service) VerifyDepartedAssets(ctx context.Context, ids []string) (map[s
 		chunk := ids[start:min(start+500, len(ids))]
 		proofs, err := s.deletionProofs.AssetDeletions(ctx, chunk)
 		if err != nil {
-			return nil, fmt.Errorf("VerifyDepartedAssets: proofs: %w", err)
+			return nil, fmt.Errorf("VerifyDeletedAssets: proofs: %w", err)
 		}
 		if len(proofs) == 0 {
 			continue
@@ -34,7 +45,7 @@ func (s *Service) VerifyDepartedAssets(ctx context.Context, ids []string) (map[s
 		}
 		observed, err := s.repo.ByIDs(ctx, candidates)
 		if err != nil {
-			return nil, fmt.Errorf("VerifyDepartedAssets: observations: %w", err)
+			return nil, fmt.Errorf("VerifyDeletedAssets: observations: %w", err)
 		}
 		for _, a := range observed {
 			if !observedBeforeDeletion(a.LastSeen, proofs[a.ID]) {

@@ -24,6 +24,7 @@ type envelopeCollector struct {
 	mode     atomic.Int64 // 0 complete, 1 partial omission, 2 confirmed deletion
 	trace    *envelopeTrace
 	hold     time.Duration // modeled wait while a whole Result remains allocated
+	scopes   []envelopeScope
 }
 
 func envelopeSizes(connectors, resources int) []int {
@@ -50,21 +51,20 @@ func envelopeID(connector, resource int) string {
 	return fmt.Sprintf("envelope-%04d-%08d", connector, resource)
 }
 
-func envelopeAsset(connector, index, revision int, now time.Time) asset.Asset {
+func envelopeAsset(connector, index, revision int, now time.Time, scope envelopeScope) asset.Asset {
 	id := envelopeID(connector, index)
 	payloadSize := 256
 	if index%100 == 0 {
 		payloadSize = 16384
 	}
-	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(id)))
 	a := asset.Asset{ID: id, Name: id, Type: "ec2_instance", Provider: asset.ProviderAWS,
 		Region: "eu-west-1", AccountID: fmt.Sprintf("%012d", connector), LastSeen: now, DiscoveredAt: now,
 		Tags: map[string]string{"env": "prod", "team": "envelope"},
 		Metadata: map[string]string{"state": "running", "http_tokens": "required", "ssm_managed": "true",
-			"payload": strings.Repeat(hash, payloadSize/len(hash)), "public_access": asset.PublicAccessNone}}
-	if index == 0 {
-		a.Type = "iam_role"
-	}
+			"public_access": asset.PublicAccessNone}}
+	scope.observation(&a, index)
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(a.ID)))
+	a.Metadata["payload"] = strings.Repeat(hash, payloadSize/len(hash))
 	if index%100 == 1 {
 		a.Name += fmt.Sprintf("-revision-%d", revision)
 	}
@@ -83,6 +83,7 @@ func (c *envelopeCollector) Collect(ctx context.Context, cfg map[string]string) 
 	finish := c.trace.begin("collect", strconv.Itoa(index))
 	defer func() { finish(resultErr) }()
 	now := time.Now().UTC()
+	scope := c.scopes[index]
 	mode, revision := c.mode.Load(), int(c.revision.Load())
 	out := collect.Result{Assets: make([]asset.Asset, 0, n), Edges: make([]asset.Edge, 0, n-1), Partial: mode == 1}
 	for i := 0; i < n; i++ {
@@ -94,11 +95,12 @@ func (c *envelopeCollector) Collect(ctx context.Context, cfg map[string]string) 
 		if mode != 0 && i == 1 {
 			continue
 		}
-		a := envelopeAsset(index, i, revision, now)
+		a := envelopeAsset(index, i, revision, now, scope)
 		out.Assets = append(out.Assets, a)
 		if i > 0 {
-			out.Edges = append(out.Edges, asset.Edge{SrcID: a.ID, DstID: envelopeID(index, 0), SrcType: a.Type,
-				DstType: "iam_role", EdgeType: "executes_as"})
+			target, targetType, edgeType := scope.target()
+			out.Edges = append(out.Edges, asset.Edge{SrcID: a.ID, DstID: target, SrcType: a.Type,
+				DstType: targetType, EdgeType: edgeType})
 		}
 		if i%100 == 1 {
 			severity := finding.SeverityHigh
@@ -110,7 +112,12 @@ func (c *envelopeCollector) Collect(ctx context.Context, cfg map[string]string) 
 				Region: a.Region, CheckID: "envelope-configuration", DetectedAt: now})
 		}
 	}
-	out.CompletedEnumerations = []collect.ScopeEnumeration{{Scope: "eu-west-1/ec2:instances", Types: []string{"ec2_instance"}, Count: len(out.Assets) - 1}}
+	_, workloadType := scope.types()
+	count := len(out.Assets) - 1
+	if scope.Kind == "github" {
+		count++
+	}
+	out.CompletedEnumerations = []collect.ScopeEnumeration{{Scope: scope.enumeration(), Types: []string{workloadType}, Count: count}}
 	if c.hold > 0 {
 		endHold := c.trace.begin("retained_result", strconv.Itoa(index))
 		timer := time.NewTimer(c.hold)

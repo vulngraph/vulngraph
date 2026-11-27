@@ -83,6 +83,10 @@ func (r *envelopeTrace) sample(ctx context.Context) error {
 	}
 }
 
+func (r *envelopeTrace) ObserveCorrelateView(rows, limit int) {
+	r.write(map[string]any{"event": "correlation_view", "relevant_rows_loaded": rows, "unchanged_limit": limit})
+}
+
 func (r *envelopeTrace) ObserveLadybugSync(path string, seconds float64) {
 	r.write(map[string]any{"event": "graph_path", "path": path, "seconds": seconds})
 }

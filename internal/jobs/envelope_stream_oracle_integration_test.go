@@ -8,8 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -19,12 +17,12 @@ import (
 )
 
 const envelopeOracleAssets = `SELECT id,name,type,metadata,risk_score FROM asset_current_with_derivations`
-const envelopeOracleEdges = `SELECT src_id,dst_id,edge_type FROM graph_edges FINAL WHERE ` + graphschema.EdgeFreshnessCond
+const envelopeOracleEdges = `SELECT src_id,dst_id,edge_type,JSONExtractString(properties,'origin') FROM graph_edges FINAL WHERE ` + graphschema.EdgeFreshnessCond
 
 // Stream the isolated fixture once per table. Per-ID readback would repeatedly
 // scan the same granules and warm caches between waves. The bitmap is one bit
 // per configured resource; no second inventory is retained by this oracle.
-func envelopeVerifyStream(t *testing.T, ctx context.Context, ch *db.CH, sizes []int, wave int) {
+func envelopeVerifyStream(t *testing.T, ctx context.Context, ch *db.CH, sizes []int, scopes []envelopeScope, wave int) int {
 	t.Helper()
 	offsets := make([]int, len(sizes))
 	total := 0
@@ -33,20 +31,12 @@ func envelopeVerifyStream(t *testing.T, ctx context.Context, ch *db.CH, sizes []
 	}
 	identity := func(id string) (int, int, int) {
 		t.Helper()
-		require.True(t, strings.HasPrefix(id, "envelope-"), id)
-		account, index, ok := strings.Cut(strings.TrimPrefix(id, "envelope-"), "-")
-		require.True(t, ok, id)
-		c, err := strconv.Atoi(account)
-		require.NoError(t, err)
-		i, err := strconv.Atoi(index)
+		c, i, err := envelopeIdentity(id)
 		require.NoError(t, err)
 		require.GreaterOrEqual(t, c, 0)
 		require.Less(t, c, len(sizes))
 		require.GreaterOrEqual(t, i, 0)
 		require.Less(t, i, sizes[c])
-		if wave == 4 {
-			require.NotEqual(t, 1, i, "confirmed deletion must remain absent")
-		}
 		return c, i, offsets[c] + i
 	}
 	seen := make([]uint64, (total+63)/64)
@@ -69,12 +59,29 @@ func envelopeVerifyStream(t *testing.T, ctx context.Context, ch *db.CH, sizes []
 				require.Equal(t, "container_image", kind)
 				continue
 			}
-			_, i, index := identity(id)
+			c, i, index := identity(id)
+			if wave == 4 {
+				require.NotEqual(t, 1, i, "confirmed deletion must remain absent: %s", id)
+			}
 			mark(index)
 			count++
 			wantType := "ec2_instance"
 			if i == 0 {
 				wantType = "iam_role"
+			}
+			switch scopes[c].Kind {
+			case "gcp":
+				wantType = "gce_instance"
+				if i == 0 {
+					wantType = "gcp_service_account"
+				}
+			case "kubernetes":
+				wantType = "k8s_pod"
+				if i == 0 {
+					wantType = "k8s_service_account"
+				}
+			case "github":
+				wantType = "github_repo"
 			}
 			require.Equal(t, wantType, kind, id)
 			wantName := id
@@ -114,20 +121,60 @@ func envelopeVerifyStream(t *testing.T, ctx context.Context, ch *db.CH, sizes []
 	require.Equal(t, 1, stable)
 	clear(seen)
 	count = 0
+	retainedOrphans := 0
+	cross := map[string]bool{}
+	wantCross := 0
+	for _, scope := range scopes {
+		if scope.Kind == "kubernetes" && scope.CloudTarget >= 0 {
+			wantCross += 2
+		}
+	}
 	require.NoError(t, ch.Select(ctx, func(rows driver.Rows) error {
 		for rows.Next() {
-			var source, target, kind string
-			if err := rows.Scan(&source, &target, &kind); err != nil {
+			var source, target, kind, origin string
+			if err := rows.Scan(&source, &target, &kind, &origin); err != nil {
 				return err
 			}
 			c, i, index := identity(source)
-			require.NotZero(t, i, "role has no outgoing relationship")
+			if i == 0 {
+				require.Equal(t, "kubernetes", string(scopes[c].Kind))
+				require.GreaterOrEqual(t, scopes[c].CloudTarget, 0)
+				require.Contains(t, []string{"executes_as", "federated_access"}, kind)
+				require.Equal(t, fmt.Sprintf("serviceAccount:envelope-%04d@synthetic.invalid", scopes[c].CloudTarget), target)
+				key := source + "/" + kind
+				require.False(t, cross[key])
+				cross[key] = true
+				continue
+			}
 			mark(index)
+			wantTarget, wantKind := envelopeID(c, 0), "executes_as"
+			switch scopes[c].Kind {
+			case "aws":
+				wantKind = "has_role"
+			case "gcp":
+				wantTarget = fmt.Sprintf("serviceAccount:envelope-%04d@synthetic.invalid", c)
+			case "kubernetes":
+				wantTarget = fmt.Sprintf("synthetic-cluster-%04d/namespace/workloads/serviceaccount/envelope", c)
+			case "github":
+				wantTarget = envelopeID(scopes[c].CloudTarget, 0)
+				wantKind = "federated_access"
+			}
+			require.Equal(t, wantKind, kind)
+			require.Equal(t, wantTarget, target)
+			if wave == 4 && i == 1 {
+				// Retirement preserves edge writes newer than its proof. A
+				// concurrent correlation can restamp an older input; retain and
+				// disclose these physical rows, but require exact absent endpoints
+				// above and exact live topology in the independent native oracle.
+				require.Equal(t, "correlate", origin, source)
+				retainedOrphans++
+				continue
+			}
 			count++
-			require.Equal(t, "executes_as", kind)
-			require.Equal(t, envelopeID(c, 0), target)
 		}
 		return rows.Err()
 	}, envelopeOracleEdges))
 	require.Equal(t, want-len(sizes), count)
+	require.Len(t, cross, wantCross)
+	return retainedOrphans
 }

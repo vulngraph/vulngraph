@@ -64,7 +64,7 @@ const (
 		argMax(public_ip, synced_at), argMax(private_ip, synced_at), argMax(domain, synced_at),
 		argMax(tags, synced_at), argMax(metadata, synced_at), argMax(risk_score, synced_at),
 		min(discovered_at), ` + firstDiscoveredAtAgg + `, max(last_seen)
-		FROM assets`
+		FROM asset_versions_with_derivations`
 
 	// selectAsset reads the current row for one id.
 	selectAsset = assetArgMaxSelect + ` WHERE id = ? GROUP BY id`
@@ -95,7 +95,7 @@ const (
 	// rewrite treadmill.
 	assetSelect = `SELECT id, name, type, provider, region, account_id, endpoint,
 		public_ip, private_ip, domain, tags, metadata, risk_score, discovered_at, first_discovered_at, last_seen
-		FROM assets FINAL`
+		FROM asset_current_with_derivations`
 
 	// assetSummary and the List query are NOT here: both apply inventoryReadCond,
 	// which is built from quotedCSV at init, so they are vars (see below).

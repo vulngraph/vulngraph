@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
-	"github.com/vulngraph/vulngraph/internal/app/asset"
 	"github.com/vulngraph/vulngraph/internal/app/correlate"
 	"github.com/vulngraph/vulngraph/internal/app/finding"
 	"github.com/vulngraph/vulngraph/internal/obs"
@@ -132,11 +131,13 @@ type TopologyBumper interface {
 	BumpTopologyVersion(ctx context.Context) error
 }
 
-// AssetsByIDsAndIngest reads assets by IDs and re-ingests with updated scores.
-// *asset.Service satisfies it.
-type AssetsByIDsAndIngest interface {
-	ByIDs(ctx context.Context, ids []string) ([]asset.Asset, error)
-	Ingest(ctx context.Context, assets []asset.Asset, edges []asset.Edge) error
+// DerivedAssetStore publishes fields that cannot overwrite observations.
+type DerivedAssetStore interface {
+	BeginDerivedUpdate(context.Context) (time.Time, error)
+	PublishFindingRisk(context.Context, time.Time, map[string]uint8) error
+}
+type FindingRiskSource interface {
+	BaseRiskByResource(context.Context) (map[string]uint8, error)
 }
 
 // PendingCIVerifier exposes the AWS role targets the CIAccess correlate rule
@@ -155,16 +156,16 @@ type PendingCIVerifier interface {
 //  4. Rebuilds the Ladybug graph (when wired) for real Cypher traversal
 type CorrelateWorker struct {
 	river.WorkerDefaults[CorrelateArgs]
-	correlate    Correlator
-	assets       AssetExposer
-	findings     FindingsByResource
-	enrichCache  EnrichCacheInvalidator
-	ladybug      LadybugSyncer        // nil = Ladybug not configured
-	topoBumper   TopologyBumper       // nil = topology version bumping disabled
-	findingsList FindingLister        // nil = finding scoring disabled
-	assetsByIDs  AssetsByIDsAndIngest // nil = finding scoring disabled
-	ciAccess     PendingCIVerifier    // nil = verify_ci_role enqueue disabled
-	metrics      *obs.Metrics         // nil = correlate sweep metrics disabled
+	correlate     Correlator
+	assets        AssetExposer
+	findings      FindingsByResource
+	enrichCache   EnrichCacheInvalidator
+	ladybug       LadybugSyncer     // nil = Ladybug not configured
+	topoBumper    TopologyBumper    // nil = topology version bumping disabled
+	findingsList  FindingRiskSource // nil = finding scoring disabled
+	derivedAssets DerivedAssetStore // nil = finding scoring disabled
+	ciAccess      PendingCIVerifier // nil = verify_ci_role enqueue disabled
+	metrics       *obs.Metrics      // nil = correlate sweep metrics disabled
 }
 
 // Timeout overrides River's default 1-minute job timeout. Correlate + Ladybug sync
@@ -236,6 +237,16 @@ func (w *CorrelateWorker) workFull(ctx context.Context) error {
 		w.metrics.ObserveCorrelateSweep("full", correlateSweepStatus(err))
 		return fmt.Errorf("workFull: %w", err)
 	}
+
+	// Post-correlate: bump asset scores from high/critical findings so BFS
+	// propagates vulnerability risk through the graph on the next Ladybug sync.
+	if w.findingsList != nil && w.derivedAssets != nil {
+		if err := scoreAssetsFromFindings(ctx, w.findingsList, w.derivedAssets); err != nil {
+			w.metrics.ObserveCorrelateSweep("full", correlateSweepStatus(err))
+			return fmt.Errorf("workFull: finding risk: %w", err)
+		}
+	}
+
 	// Stamped only on a sweep that COMPLETED. This is the signal a duration
 	// histogram cannot carry: it only samples the runs that finish, so "most
 	// full sweeps stopped completing for a long stretch" is unrepresentable there.
@@ -245,12 +256,6 @@ func (w *CorrelateWorker) workFull(ctx context.Context) error {
 		Int("edges", n).
 		Dur("elapsed", time.Since(start)).
 		Msg("correlation sweep complete")
-
-	// Post-correlate: bump asset scores from high/critical findings so BFS
-	// propagates vulnerability risk through the graph on the next Ladybug sync.
-	if w.findingsList != nil && w.assetsByIDs != nil {
-		scoreAssetsFromFindings(ctx, w.findingsList, w.assetsByIDs)
-	}
 
 	// Post-correlate: invalidate enrich cache for exposed assets.
 	if w.assets != nil && w.findings != nil && w.enrichCache != nil {
@@ -322,99 +327,17 @@ func enqueueVerifyCIRole(ctx context.Context, pending []correlate.PendingVerify)
 	}
 }
 
-// scoreAssetsFromFindings loads all high/critical findings, groups them by
-// resource, and re-ingests the affected assets with bumped risk scores. BFS
-// then propagates those scores outward on the next Ladybug graph rebuild.
-func scoreAssetsFromFindings(ctx context.Context, src FindingLister, assets AssetsByIDsAndIngest) {
-	logger := log.FromContext(ctx)
-	const limit = 20000
-
-	// Load critical then high severity findings. Two queries because the filter
-	// does an exact severity match — no min-severity predicate available.
-	var found []finding.Finding
-	for _, sev := range []finding.Severity{finding.SeverityCritical, finding.SeverityHigh} {
-		batch, err := src.List(ctx, finding.Filter{Severity: sev, Limit: limit})
-		if err != nil {
-			logger.Warn().Err(err).Str("severity", string(sev)).Msg("finding scorer: list failed")
-			continue
-		}
-		found = append(found, batch...)
-	}
-	if len(found) == 0 {
-		return
-	}
-
-	// Dedupe resource IDs and find the worst severity per resource.
-	worstSev := make(map[string]finding.Severity, len(found))
-	for _, f := range found {
-		if f.ResourceID == "" {
-			continue
-		}
-		if existing, ok := worstSev[f.ResourceID]; !ok || severityRank(f.Severity) > severityRank(existing) {
-			worstSev[f.ResourceID] = f.Severity
-		}
-	}
-	if len(worstSev) == 0 {
-		return
-	}
-
-	ids := make([]string, 0, len(worstSev))
-	for id := range worstSev {
-		ids = append(ids, id)
-	}
-
-	affected, err := assets.ByIDs(ctx, ids)
+// Publish a complete derived generation, without rewriting inventory rows.
+func scoreAssetsFromFindings(ctx context.Context, src FindingRiskSource, store DerivedAssetStore) error {
+	version, err := store.BeginDerivedUpdate(ctx)
 	if err != nil {
-		logger.Warn().Err(err).Msg("finding scorer: load assets failed")
-		return
+		return err
 	}
-
-	bumped := make([]asset.Asset, 0, len(affected))
-	for _, a := range affected {
-		sev, ok := worstSev[a.ID]
-		if !ok {
-			continue
-		}
-		score := findingSeverityScore(sev)
-		if score <= a.RiskScore {
-			continue
-		}
-		a.RiskScore = score
-		bumped = append(bumped, a)
+	scores, err := src.BaseRiskByResource(ctx)
+	if err != nil {
+		return err
 	}
-	if len(bumped) == 0 {
-		return
-	}
-
-	if err := assets.Ingest(ctx, bumped, nil); err != nil {
-		logger.Warn().Err(err).Int("assets", len(bumped)).Msg("finding scorer: ingest failed")
-		return
-	}
-	logger.Info().Int("assets", len(bumped)).Msg("finding scorer: asset scores updated")
-}
-
-func severityRank(s finding.Severity) int {
-	switch s {
-	case finding.SeverityCritical:
-		return 4
-	case finding.SeverityHigh:
-		return 3
-	case finding.SeverityMedium:
-		return 2
-	case finding.SeverityLow:
-		return 1
-	}
-	return 0
-}
-
-func findingSeverityScore(s finding.Severity) uint8 {
-	switch s {
-	case finding.SeverityCritical:
-		return 80
-	case finding.SeverityHigh:
-		return 60
-	}
-	return 0
+	return store.PublishFindingRisk(ctx, version, scores)
 }
 
 // invalidateExposedFindings:
@@ -492,4 +415,18 @@ func invalidateExposedFindings(
 	if totalEnqueued > 0 {
 		logger.Info().Int("count", totalEnqueued).Msg("post-correlate enrich enqueued")
 	}
+}
+
+func severityRank(s finding.Severity) int {
+	switch s {
+	case finding.SeverityCritical:
+		return 4
+	case finding.SeverityHigh:
+		return 3
+	case finding.SeverityMedium:
+		return 2
+	case finding.SeverityLow:
+		return 1
+	}
+	return 0
 }

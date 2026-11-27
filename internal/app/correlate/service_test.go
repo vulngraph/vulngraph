@@ -30,15 +30,19 @@ func (f fakeLoader) LoadByIDs(_ context.Context, _ []string) ([]asset.Asset, err
 	return f.assets, f.err
 }
 
-// fakeWriter is the assetStore test double. fullAssets stands in for the real
-// ClickHouse row ByIDs would return — every column populated, unlike the
-// correlation view's minimal projection — so tests can pin the
-// fetch-full-then-merge field-preservation invariant.
 type fakeWriter struct {
-	got        []asset.Edge
-	gotAssets  []asset.Asset
-	fullAssets []asset.Asset
-	err        error
+	got         []asset.Edge
+	annotations []asset.Annotation
+	err         error
+}
+
+func (f *fakeWriter) BeginDerivedUpdate(context.Context) (time.Time, error) { return time.Now(), f.err }
+func (f *fakeWriter) WriteAnnotations(_ context.Context, _ time.Time, rows []asset.Annotation) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.annotations = append(f.annotations, rows...)
+	return nil
 }
 
 func (f *fakeWriter) IngestEdges(_ context.Context, edges []asset.Edge) error {
@@ -47,31 +51,6 @@ func (f *fakeWriter) IngestEdges(_ context.Context, edges []asset.Edge) error {
 	}
 	f.got = append(f.got, edges...)
 	return nil
-}
-
-func (f *fakeWriter) IngestAssets(_ context.Context, assets []asset.Asset) error {
-	if f.err != nil {
-		return f.err
-	}
-	f.gotAssets = append(f.gotAssets, assets...)
-	return nil
-}
-
-func (f *fakeWriter) ByIDs(_ context.Context, ids []string) ([]asset.Asset, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	want := make(map[string]bool, len(ids))
-	for _, id := range ids {
-		want[id] = true
-	}
-	var out []asset.Asset
-	for _, a := range f.fullAssets {
-		if want[a.ID] {
-			out = append(out, a)
-		}
-	}
-	return out, nil
 }
 
 func TestCorrelate_WritesDerivedEdges(t *testing.T) {
@@ -186,154 +165,20 @@ func TestPartialCorrelate_EmptyIDsIsNoop(t *testing.T) {
 }
 
 // annotatorRule is a minimal Rule + AssetAnnotator test double, standing in
-// for K8sManifestOwnership to pin the service-level wiring (Correlate must
-// call CorrelateAssets on any rule that implements it, and write the result
-// via IngestAssets) without depending on the k8s join logic itself.
-type annotatorRule struct {
-	assets []asset.Asset
-}
+// The producer returns owned field intents; it cannot reinsert inventory.
+type annotatorRule struct{ assets []asset.Annotation }
 
-func (annotatorRule) Name() string                          { return "annotator_rule" }
-func (annotatorRule) InterestedIn() []string                { return []string{"declared_k8s_workload"} }
-func (annotatorRule) Correlate(Graph) []asset.Edge          { return nil }
-func (r annotatorRule) CorrelateAssets(Graph) []asset.Asset { return r.assets }
-
+func (annotatorRule) Name() string                               { return "annotator_rule" }
+func (annotatorRule) InterestedIn() []string                     { return []string{"declared_k8s_workload"} }
+func (annotatorRule) Correlate(Graph) []asset.Edge               { return nil }
+func (r annotatorRule) CorrelateAssets(Graph) []asset.Annotation { return r.assets }
 func TestCorrelate_WritesAssetAnnotations(t *testing.T) {
-	loader := fakeLoader{assets: []asset.Asset{
-		{ID: "declared:1", Type: "declared_k8s_workload"},
-	}}
-	w := &fakeWriter{fullAssets: []asset.Asset{
-		{ID: "declared:1", Type: "declared_k8s_workload", Name: "declared:1"},
-	}}
-	flagged := asset.Asset{ID: "declared:1", Type: "declared_k8s_workload", Metadata: map[string]string{"drift": "declared_not_live"}}
-	svc := NewService(loader, w, []Rule{annotatorRule{assets: []asset.Asset{flagged}}})
-
-	_, err := svc.Correlate(context.Background())
+	writer := &fakeWriter{}
+	annotation := asset.Annotation{ID: "declared:1", Source: asset.ManifestDriftSource, InputKey: "deployment/app\x00k8s_deployment\x00default", Metadata: map[string]string{"drift": "declared_not_live"}}
+	service := NewService(fakeLoader{}, writer, []Rule{annotatorRule{assets: []asset.Annotation{annotation}}})
+	_, err := service.Correlate(t.Context())
 	require.NoError(t, err)
-	require.Len(t, w.gotAssets, 1)
-	require.Equal(t, "declared_not_live", w.gotAssets[0].Metadata["drift"])
-}
-
-// TestCorrelate_AssetAnnotationPreservesFullFields pins the
-// field-preservation invariant: correlate's LoadView loads
-// only a minimal projection (id/type/public_ip/domain/tags/metadata) — Name,
-// DiscoveredAt and LastSeen are zero on the AssetAnnotator's return value.
-// Correlate must fetch the FULL current row via assetStore.ByIDs and merge
-// only Metadata onto it before writing, never write the partial Graph copy
-// straight through — writing it would blank name/discovered_at and, worse,
-// zero last_seen makes the row immediately TTL-eligible for purge under
-// ReplacingMergeTree(synced_at), deleting the very asset being flagged.
-func TestCorrelate_AssetAnnotationPreservesFullFields(t *testing.T) {
-	discovered := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	lastSeen := time.Date(2026, 7, 17, 0, 0, 0, 0, time.UTC)
-
-	loader := fakeLoader{assets: []asset.Asset{
-		// the partial Graph copy: only id/type/metadata populated, exactly
-		// what LoadView's minimal projection produces.
-		{ID: "declared:1", Type: "declared_k8s_workload", Metadata: map[string]string{"repo": "org/repo"}},
-	}}
-	w := &fakeWriter{fullAssets: []asset.Asset{
-		{
-			ID: "declared:1", Type: "declared_k8s_workload", Name: "org/repo:d.yaml",
-			Provider: "github", DiscoveredAt: discovered, LastSeen: lastSeen,
-			Metadata: map[string]string{"repo": "org/repo"},
-		},
-	}}
-	annotated := asset.Asset{
-		ID: "declared:1", Type: "declared_k8s_workload",
-		Metadata: map[string]string{"repo": "org/repo", "drift": "declared_not_live"},
-	}
-	svc := NewService(loader, w, []Rule{annotatorRule{assets: []asset.Asset{annotated}}})
-
-	_, err := svc.Correlate(context.Background())
-	require.NoError(t, err)
-	require.Len(t, w.gotAssets, 1)
-
-	written := w.gotAssets[0]
-	require.Equal(t, "declared_not_live", written.Metadata["drift"], "the annotation itself must land")
-	require.Equal(t, "org/repo", written.Metadata["repo"], "pre-existing metadata must survive")
-	require.Equal(t, "org/repo:d.yaml", written.Name, "Name must be the real value, not blanked")
-	require.False(t, written.DiscoveredAt.IsZero(), "DiscoveredAt must survive, not be blanked")
-	require.False(t, written.LastSeen.IsZero(), "LastSeen must survive — zero makes the row TTL-eligible for immediate purge")
-	require.Equal(t, discovered, written.DiscoveredAt)
-	require.Equal(t, lastSeen, written.LastSeen)
-	require.Equal(t, "github", string(written.Provider))
-}
-
-// TestCorrelate_AssetAnnotationMergesNotReplaces is the regression test for
-// the bug that once blocked the metadata-key projection:
-// writeAnnotations used to do `f.Metadata = a.Metadata`, a wholesale replace.
-// Once the correlation view's metadata is server-side projected to a key
-// subset, a.Metadata is DELIBERATELY partial, so a full replace would erase
-// every stored key the view never selected. Here the full stored row carries
-// {A, B} and the annotation write only sets C: the result must be {A, B, C},
-// never just {C}.
-func TestCorrelate_AssetAnnotationMergesNotReplaces(t *testing.T) {
-	loader := fakeLoader{assets: []asset.Asset{
-		{ID: "declared:1", Type: "declared_k8s_workload"},
-	}}
-	w := &fakeWriter{fullAssets: []asset.Asset{
-		{
-			ID: "declared:1", Type: "declared_k8s_workload",
-			Metadata: map[string]string{"A": "1", "B": "2"},
-		},
-	}}
-	// The annotation only carries the one key this write intends to change —
-	// exactly what a partial metadata-key projection would leave a rule with.
-	patch := asset.Asset{ID: "declared:1", Type: "declared_k8s_workload", Metadata: map[string]string{"C": "3"}}
-	svc := NewService(loader, w, []Rule{annotatorRule{assets: []asset.Asset{patch}}})
-
-	_, err := svc.Correlate(context.Background())
-	require.NoError(t, err)
-	require.Len(t, w.gotAssets, 1)
-
-	written := w.gotAssets[0].Metadata
-	require.Equal(t, map[string]string{"A": "1", "B": "2", "C": "3"}, written,
-		"merge must keep A and B untouched, not replace the whole map with {C: 3}")
-}
-
-// TestCorrelate_AssetAnnotationDeleteSignalRemovesKey pins the other half of
-// the merge contract: an annotation setting a key to "" deletes that key from
-// the stored map (the convention withMetadata uses for clearing drift),
-// rather than the merge writing a literal empty-string value.
-func TestCorrelate_AssetAnnotationDeleteSignalRemovesKey(t *testing.T) {
-	loader := fakeLoader{assets: []asset.Asset{
-		{ID: "declared:1", Type: "declared_k8s_workload"},
-	}}
-	w := &fakeWriter{fullAssets: []asset.Asset{
-		{
-			ID: "declared:1", Type: "declared_k8s_workload",
-			Metadata: map[string]string{"A": "1", "drift": "declared_not_live"},
-		},
-	}}
-	patch := asset.Asset{ID: "declared:1", Type: "declared_k8s_workload", Metadata: map[string]string{"drift": ""}}
-	svc := NewService(loader, w, []Rule{annotatorRule{assets: []asset.Asset{patch}}})
-
-	_, err := svc.Correlate(context.Background())
-	require.NoError(t, err)
-	require.Len(t, w.gotAssets, 1)
-
-	written := w.gotAssets[0].Metadata
-	require.Equal(t, "1", written["A"], "unrelated key must survive")
-	_, hasDrift := written["drift"]
-	require.False(t, hasDrift, "empty value must delete the key, not store a literal empty string")
-}
-
-// TestCorrelate_AssetAnnotationTargetVanishedIsSkipped pins the fail-open
-// path: if ByIDs can't find the full row for an annotation target (e.g. the
-// asset was deleted between the view load and this write), it is logged and
-// skipped rather than written as a partial row.
-func TestCorrelate_AssetAnnotationTargetVanishedIsSkipped(t *testing.T) {
-	loader := fakeLoader{assets: []asset.Asset{
-		{ID: "declared:1", Type: "declared_k8s_workload"},
-	}}
-	w := &fakeWriter{} // fullAssets empty: ByIDs finds nothing
-	annotated := asset.Asset{ID: "declared:1", Type: "declared_k8s_workload", Metadata: map[string]string{"drift": "declared_not_live"}}
-	svc := NewService(loader, w, []Rule{annotatorRule{assets: []asset.Asset{annotated}}})
-
-	_, err := svc.Correlate(context.Background())
-	require.NoError(t, err)
-	require.Empty(t, w.gotAssets, "vanished target must not be written partial")
+	require.Equal(t, []asset.Annotation{annotation}, writer.annotations)
 }
 
 func TestCorrelate_NoAnnotationsIsNoWrite(t *testing.T) {
@@ -345,7 +190,7 @@ func TestCorrelate_NoAnnotationsIsNoWrite(t *testing.T) {
 
 	_, err := svc.Correlate(context.Background())
 	require.NoError(t, err)
-	require.Empty(t, w.gotAssets, "no rule implements AssetAnnotator ⇒ no IngestAssets call")
+	require.Empty(t, w.annotations, "no rule implements AssetAnnotator ⇒ no IngestAssets call")
 }
 
 func TestCorrelate_DedupesAcrossRules(t *testing.T) {

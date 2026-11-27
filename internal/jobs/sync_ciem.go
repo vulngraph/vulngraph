@@ -43,6 +43,18 @@ func analyzeIAM(ctx context.Context, store assetReader, assets []asset.Asset) ([
 		input = append(append([]asset.Asset(nil), assets...), scps...)
 	}
 	result := ciem.AnalyzeIAMAssets(ctx, input)
+	// Scores belong to this observation, just like the tier. Apply them before
+	// the one inventory write: re-inserting ScoredAssets afterward would put
+	// its older observation fields and last_seen over a concurrent newer sync.
+	scores := make(map[string]uint8, len(result.ScoredAssets))
+	for _, a := range result.ScoredAssets {
+		scores[a.ID] = a.RiskScore
+	}
+	for i := range assets {
+		if score, ok := scores[assets[i].ID]; ok {
+			assets[i].RiskScore = score
+		}
+	}
 	ciem.StampAWSOrganizationCoverage(assets, result.OrganizationPolicyCoverage)
 	ciem.StampTiers(assets, result.Tiers)
 	return input, result, partial, nil

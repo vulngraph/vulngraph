@@ -439,16 +439,16 @@ func registerRealWorkers(workers *river.Workers, pool *pgxpool.Pool, deps Deps) 
 	river.AddWorker(workers, &MalFeedWorker{querier: deps.MalFeed, assets: deps.Assets, findings: deps.Findings, pool: pool})
 	river.AddWorker(workers, &DistroAdvisoryWorker{fetcher: deps.DistroAdvisories, sources: deps.DistroAdvisorySources, assets: deps.Assets, findings: deps.Findings, departures: depReaders})
 	river.AddWorker(workers, &CorrelateWorker{
-		correlate:    deps.Correlate,
-		assets:       deps.ExposedAssets,
-		findings:     deps.ExposedFindings,
-		enrichCache:  deps.EnrichCacheInvalidator,
-		ladybug:      deps.LadybugSync,
-		topoBumper:   deps.TopologyBumper,
-		findingsList: deps.Findings,
-		assetsByIDs:  deps.Assets,
-		ciAccess:     deps.CIAccessPending,
-		metrics:      deps.Metrics,
+		correlate:     deps.Correlate,
+		assets:        deps.ExposedAssets,
+		findings:      deps.ExposedFindings,
+		enrichCache:   deps.EnrichCacheInvalidator,
+		ladybug:       deps.LadybugSync,
+		topoBumper:    deps.TopologyBumper,
+		findingsList:  deps.Findings,
+		derivedAssets: deps.Assets,
+		ciAccess:      deps.CIAccessPending,
+		metrics:       deps.Metrics,
 	})
 	if deps.LiveAWS != nil && deps.Connectors != nil && deps.Assets != nil && deps.Findings != nil {
 		river.AddWorker(workers, NewVerifyCIRoleWorker(deps.LiveAWS, deps.Connectors, deps.Assets, deps.Findings))

@@ -68,40 +68,26 @@ func (K8sManifestOwnership) Correlate(g Graph) []asset.Edge {
 // live node to anchor a defined_in edge to, so it can't be surfaced as one).
 const driftDeclaredNotLive = "declared_not_live"
 
-// CorrelateAssets annotates declared_k8s_workload assets with a `drift`
-// metadata signal: "declared_not_live" when the manifest currently resolves
-// to zero live k8s assets (orphaned manifest, or not yet deployed to any
-// cluster we see). The annotation is cleared (re-ingested without it) if a
-// live match later appears, and left untouched when nothing changed, so a
-// full sweep only re-ingests the assets whose drift status actually flipped.
-func (K8sManifestOwnership) CorrelateAssets(g Graph) []asset.Asset {
-	var out []asset.Asset
+// CorrelateAssets records the current drift intent for every declaration.
+// Reaffirming unchanged state prevents an older delayed sweep from replacing a
+// newer interpretation. Empty drift explicitly clears the producer's field.
+func (K8sManifestOwnership) CorrelateAssets(g Graph) []asset.Annotation {
+	var out []asset.Annotation
 	for _, d := range g.DeclaredK8sWorkloads() {
 		matches, _ := liveMatchesFor(g, d)
-		hasDrift := d.Metadata["drift"] == driftDeclaredNotLive
-
-		switch {
-		case len(matches) > 0 && hasDrift:
-			out = append(out, withMetadata(d, "drift", "")) // resolved — clear the signal
-		case len(matches) == 0 && !hasDrift:
-			out = append(out, withMetadata(d, "drift", driftDeclaredNotLive))
+		value := ""
+		if len(matches) == 0 {
+			value = driftDeclaredNotLive
 		}
+		out = append(out, withMetadata(d, "drift", value))
 	}
 	return out
 }
 
-// withMetadata returns a copy of d whose Metadata is the single-key map
-// {key: value} — the write-back INTENT only, not a copy of d's (partial,
-// correlation-view) metadata. writeAnnotations merges this one key onto the
-// asset's authoritative full row; a full-map copy here would re-inject
-// every key the correlation view happened to load, silently regressing any
-// key this rule never intended to touch. An empty value signals "delete
-// this key", by the same "" -means-absent convention used throughout this
-// package. d itself is never mutated — it is shared by every rule in the
-// sweep via the Graph.
-func withMetadata(d asset.Asset, key, value string) asset.Asset {
-	d.Metadata = map[string]string{key: value}
-	return d
+// withMetadata carries only the owned field and the declaration inputs it
+// interpreted. It cannot overwrite other observation fields.
+func withMetadata(d asset.Asset, key, value string) asset.Annotation {
+	return asset.Annotation{ID: d.ID, Source: asset.ManifestDriftSource, InputKey: d.Metadata["manifest_key"] + "\x00" + d.Metadata["live_type"] + "\x00" + d.Metadata["namespace"], Metadata: map[string]string{key: value}}
 }
 
 // liveMatchesFor resolves the live k8s assets a declared workload's manifest

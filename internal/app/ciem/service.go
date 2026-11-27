@@ -12,8 +12,8 @@ import (
 
 // AnalysisResult is the output of AnalyzeIAMAssets.
 // ScoredAssets are the input IAM assets with RiskScore bumped based on worst
-// detected privesc severity. The caller should re-ingest them so ClickHouse
-// holds the elevated scores before the Ladybug graph is rebuilt — BFS then
+// detected privesc severity. The caller folds their scores into the current observation before its single
+// inventory write and fingerprint. When the Ladybug graph is rebuilt, BFS then
 // propagates the elevated risk outward to adjacent EC2/Lambda/etc. nodes.
 type AnalysisResult struct {
 	ScoredAssets               []asset.Asset
@@ -46,8 +46,7 @@ type PrivescFinding struct {
 // AnalyzeIAMAssets runs CIEM privilege escalation detection across all IAM
 // assets in the provided slice. Non-IAM assets are silently skipped.
 // Returns a copy of each affected IAM asset with RiskScore bumped, plus the
-// raw detected paths. The caller re-ingests ScoredAssets so ClickHouse holds
-// the elevated scores before the Ladybug graph is rebuilt; BFS then propagates
+// raw detected paths. The caller folds these scores into the observation before writing it; BFS then propagates
 // the risk outward to adjacent nodes.
 func AnalyzeIAMAssets(ctx context.Context, assets []asset.Asset) AnalysisResult {
 	logger := log.FromContext(ctx)
@@ -185,8 +184,7 @@ func AnalyzeIAMAssets(ctx context.Context, assets []asset.Asset) AnalysisResult 
 	}
 
 	result.Tiers = classifyTiers(assets, tierByAsset, pathsByAsset, adminEscalationProven)
-	// ScoredAssets are re-ingested over the rows the caller writes, so they
-	// must carry the tier too or the re-ingest would erase it.
+	// The analysis result carries the same tier interpretation as its scores.
 	StampTiers(result.ScoredAssets, result.Tiers)
 	return result
 }

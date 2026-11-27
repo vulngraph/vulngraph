@@ -199,15 +199,14 @@ const projectMetadataExpr = `toJSONString(mapFilter((k, v) -> k IN (%s), JSONExt
 // belongs here, at the one place every rule's input comes from.
 //
 // metadata is projected to metadataProjectedKeys rather
-// than selected whole — see projectMetadataExpr. This is safe ONLY because
-// writeAnnotations merges rather than replaces (service.go); a full-map
-// replace of a partial projection would silently erase every unprojected key
-// in ClickHouse.
+// than selected whole — see projectMetadataExpr. Annotation producers publish
+// only their owned field intents; no projected row is written back over the
+// collector's complete observation.
 const loadView = `SELECT id,
 	argMax(name, synced_at), argMax(type, synced_at), argMax(account_id, synced_at),
 	argMax(public_ip, synced_at), argMax(private_ip, synced_at), argMax(domain, synced_at), argMax(tags, synced_at),
 	` + projectMetadataExpr + `
-	FROM assets
+	FROM asset_versions_with_derivations
 	WHERE type IN (%s) AND ` + asset.EphemeralLivenessCond + `
 	GROUP BY id
 	LIMIT ?`
@@ -222,7 +221,7 @@ const loadByIDs = `SELECT id,
 	argMax(name, synced_at), argMax(type, synced_at), argMax(account_id, synced_at),
 	argMax(public_ip, synced_at), argMax(private_ip, synced_at), argMax(domain, synced_at), argMax(tags, synced_at),
 	` + projectMetadataExpr + `
-	FROM assets
+	FROM asset_versions_with_derivations
 	WHERE id IN (%s)
 	GROUP BY id`
 

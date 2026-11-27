@@ -128,6 +128,58 @@ func TestSyncWorker_Work_NoCollector(t *testing.T) {
 	require.Contains(t, c.SyncError, "no collector registered")
 }
 
+func TestSyncWorker_UnchangedFingerprintReplacesLegacyRisk(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	pool, err := db.NewPool(ctx, pgDSN, db.MaxConnsWorker)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	ch, err := db.NewCH(ctx, chDSN, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ch.Close() })
+	cipher, err := connector.NewCipher(testKey(t))
+	require.NoError(t, err)
+	conns := connector.NewService(connector.NewPGRepo(pool), cipher)
+	assets := asset.NewService(asset.NewCHRepo(ch))
+	suffix := time.Now().Format("150405.000000000")
+	id := "legacy-risk-" + suffix
+	created, err := conns.Create(ctx, connector.TypeAWS, id, map[string]string{"role_arn": "arn:x", "region": "eu-west-1"}, "")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stop()
+		_, _ = pool.Exec(cleanup, "DELETE FROM connectors WHERE id=$1", created.ID)
+		_ = ch.Exec(cleanup, "ALTER TABLE assets DELETE WHERE id=?", id)
+		_ = ch.Exec(cleanup, "ALTER TABLE findings DELETE WHERE resource_id=?", id)
+	})
+	registry := collect.NewRegistry()
+	registry.Register(connector.TypeAWS, driftStubCollector{assetID: id})
+	w := &SyncWorker{connectors: conns, registry: registry, assets: assets,
+		findings: finding.NewService(finding.NewCHRepo(ch)), checks: checks.Default()}
+	job := &river.Job[SyncConnectorArgs]{Args: SyncConnectorArgs{ConnectorID: created.ID}}
+	require.NoError(t, w.Work(ctx, job))
+	before, err := conns.Get(ctx, created.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, before.SyncFingerprint)
+	legacy, err := assets.Get(ctx, id)
+	require.NoError(t, err)
+	legacy.RiskScore = 80 // historical correlation writer changed only the CH row
+	require.NoError(t, assets.Ingest(ctx, []asset.Asset{legacy}, nil))
+	stored, err := assets.Get(ctx, id)
+	require.NoError(t, err)
+	require.Equal(t, uint8(80), stored.RiskScore)
+	require.NoError(t, w.Work(ctx, job))
+	after, err := conns.Get(ctx, created.ID)
+	require.NoError(t, err)
+	require.Equal(t, before.SyncFingerprint, after.SyncFingerprint)
+	require.Equal(t, before.SyncStreak+1, after.SyncStreak, "must exercise the unchanged-fingerprint branch")
+	got, err := assets.Get(ctx, id)
+	require.NoError(t, err)
+	require.Zero(t, got.RiskScore, "fresh collected base risk replaces legacy risk even on an unchanged sweep")
+	require.Equal(t, "ext-host", got.Name)
+	require.True(t, got.LastSeen.After(legacy.LastSeen))
+}
+
 // driftStubCollector returns one externally-reachable asset (a public IP
 // set) — a drift-scan candidate once ingested as changed.
 type driftStubCollector struct{ assetID string }

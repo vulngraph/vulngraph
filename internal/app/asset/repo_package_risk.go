@@ -12,7 +12,7 @@ import (
 const packageRiskByRunner = `SELECT e.src_id, max(p.score)
  FROM graph_edges AS e
  INNER JOIN (
-  SELECT id, argMax(risk_score, synced_at) AS score FROM assets
+  SELECT id, argMax(risk_score, synced_at) AS score FROM asset_versions_with_derivations
   WHERE type = 'package' AND ` + EphemeralLivenessCond + ` GROUP BY id HAVING score > 0
  ) AS p ON e.dst_id = p.id
  WHERE e.edge_type IN ('runs_package', 'depends_on') AND ` + graphschema.EdgeFreshnessCond + `

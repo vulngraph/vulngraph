@@ -130,7 +130,9 @@ func TestK8sManifestOwnership_CorrelateAssets_MatchedGetsNoDrift(t *testing.T) {
 		liveWorkload("prod-cluster/deployment/billing/api", "k8s_deployment", "prod-cluster", "billing"),
 		declared("org/payments-repo", "deployment/billing/api", "k8s_deployment", "billing", "k8s/api.yaml"),
 	})
-	require.Empty(t, K8sManifestOwnership{}.CorrelateAssets(g), "live match ⇒ no drift annotation")
+	annotations := K8sManifestOwnership{}.CorrelateAssets(g)
+	require.Len(t, annotations, 1)
+	require.Empty(t, annotations[0].Metadata["drift"], "live match explicitly clears older drift")
 }
 
 // TestK8sManifestOwnership_CorrelateAssets_OrphanGetsDrift verifies a
@@ -158,7 +160,7 @@ func TestK8sManifestOwnership_CorrelateAssets_AlreadyFlaggedIsNoop(t *testing.T)
 	orphan.Metadata["drift"] = "declared_not_live"
 	g := NewGraph([]asset.Asset{orphan})
 
-	require.Empty(t, K8sManifestOwnership{}.CorrelateAssets(g), "already-flagged orphan ⇒ no re-ingest")
+	require.Len(t, K8sManifestOwnership{}.CorrelateAssets(g), 1, "unchanged intent still advances producer version against late replay")
 }
 
 // TestK8sManifestOwnership_CorrelateAssets_ResolvedDriftIsCleared verifies

@@ -247,9 +247,9 @@ func TestAssetReadersApplyLiveness(t *testing.T) {
 		// Exactly one top-level WHERE, attached to the table. (" WHERE " also occurs
 		// inside the gate's own high-water subquery, so counting the keyword is not
 		// the assertion — the shape is.)
-		require.Contains(t, q, "FROM assets FINAL WHERE ",
+		require.Contains(t, q, "FROM asset_current_with_derivations WHERE ",
 			"listQuery(%+v) must open its predicate with WHERE: %s", f, q)
-		require.NotContains(t, q, "FINAL AND",
+		require.NotContains(t, q, "asset_current_with_derivations AND",
 			"listQuery(%+v) produced `assets FINAL AND (...)` — invalid SQL: %s", f, q)
 	}
 
@@ -292,7 +292,7 @@ func TestAssetReadersApplyLiveness(t *testing.T) {
 
 // readsAssetsTable matches SQL that reads the assets table, as the FROM table
 // or as a JOIN operand.
-var readsAssetsTable = regexp.MustCompile(`\b(?:FROM|JOIN)\s+assets\b`)
+var readsAssetsTable = regexp.MustCompile(`\b(?:FROM|JOIN)\s+(?:assets|asset_current_with_derivations|asset_versions_with_derivations)\b`)
 
 // namedQueryDecls returns, for one source file in this package, each named
 // declaration whose value contains a raw-string literal, mapped to that

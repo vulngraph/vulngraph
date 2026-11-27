@@ -43,6 +43,19 @@ type Mutation struct {
 // still applied and verified independently.
 var mutations = []Mutation{
 	{
+		Guard: "TestInventoryReconcilesShippedWorkloads", Pkg: "./internal/perfassurance",
+		File: "docs/performance/workloads.json",
+		Old:  `"mcp:get_disk_scan_status"`, New: `"mcp:missing_disk_scan_status"`,
+		Why: "drops a shipped optional MCP operation from the workload denominator while leaving a stale membership",
+	},
+	{
+		Guard: "TestQueryCostBudgetsRejectEachRegression", Pkg: "./internal/perfassurance",
+		File: "internal/perfassurance/query.go",
+		Old:  "if peak > b.MemoryBytes {", New: "if false {",
+		Why: "allows an over-budget query allocation to pass the deterministic cost gate",
+	},
+
+	{
 		Guard: "TestCancelledInventoryCannotOverwriteHistory", Pkg: "./internal/app/asset",
 		File: "internal/app/asset/service.go",
 		Old:  "if err := ctx.Err(); err != nil {\n\t\treturn fmt.Errorf(\"Ingest: observation interrupted: %w\", err)",
@@ -5329,6 +5342,8 @@ var exempt = map[string]string{
 // a guard that reads source only through another package's function
 // (keyscan.Scan) is invisible to it too and belongs here.
 var extraGuards = []string{
+	"TestInventoryReconcilesShippedWorkloads",
+	"TestQueryCostBudgetsRejectEachRegression",
 	"TestRegistryConsistency",
 	"TestReachAndInheritTypesAreCritical",
 	// Iterates graphschema.EdgeTypes to check the BFS adjacency index against the

@@ -49,6 +49,17 @@ jobs:
             scripts/benchmark-connectors.sh "$RUNNER_TEMP/performance-trends/run-$run"
           done
           python3 scripts/performance_trend.py summarize "$RUNNER_TEMP/performance-trends"/run-* > "$RUNNER_TEMP/performance-trends/summary.json"
+      - name: Repeat larger versioned query fixtures
+        env:
+          PERF_QUERY_EXPERIMENT: buffers
+          PERF_QUERY_VERSIONS: "3"
+          PERF_CH_MEMORY: 3g
+          PERF_CH_CPUS: "2"
+          GOMAXPROCS: "4"
+        run: |
+          for run in 1 2 3; do
+            scripts/benchmark-queries.sh target "$RUNNER_TEMP/performance-trends/queries-$run"
+          done
       - name: Upload comparable samples and failure logs
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -7,6 +7,16 @@ contain breaking changes; they are called out in its entry.
 
 ## [Unreleased]
 
+### Changed
+
+- Only NIST SP 800-53 Rev. 5 ships as a built-in requirement framework. The HIPAA, ISO/IEC
+  27001, PCI DSS and SOC 2 mappings moved to `docs/frameworks` as examples to copy. Breaking:
+  those four frameworks no longer appear in the Framework requirements section unless you load them.
+- Add `FRAMEWORKS_DIR` (Helm: `config.frameworksConfigMap`): load your own requirement
+  frameworks from a directory. A file that does not parse, maps a control that does not exist
+  or reuses a framework id stops `serve` at startup, naming the file. The framework API
+  and that section show each framework's source.
+
 ### Fixed
 
 - Upgrade LadybugDB to v0.22.3, resolving multi-hop paths lost when a node table spans

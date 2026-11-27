@@ -67,11 +67,14 @@ components:
   schemas:
     ComplianceFrameworkSummary:
       type: object
-      required: [id, name, version, total, passing, failing, unknown, manual]
+      required: [id, name, version, source, total, passing, failing, unknown, manual]
       properties:
-        id: { type: string, description: 'e.g. nist-800-53-r5, pci-dss-4.0' }
+        id: { type: string, description: 'e.g. nist-800-53-r5, or the id of a custom framework' }
         name: { type: string }
         version: { type: string }
+        source:
+          type: string
+          description: 'Where the mapping was loaded from: built-in, or custom: <file name> for a file in FRAMEWORKS_DIR.'
         total: { type: integer }
         passing: { type: integer }
         failing: { type: integer }
@@ -89,7 +92,7 @@ components:
       required: [id, title, state, controls, check_ids, failing_checks, unevaluated_checks, gaps, out_of_scope, unjoined_source_checks, partial_mapping, evidence_gaps, evidence_as_of]
       properties:
         id: { type: string }
-        title: { type: string, description: 'Short title; ISO, PCI and AICPA titles are paraphrased.' }
+        title: { type: string, description: 'Short title, paraphrased where the standard is copyrighted.' }
         state:
           type: string
           enum: [passing, failing, unknown, manual]

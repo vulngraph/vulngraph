@@ -104,7 +104,8 @@ The cloud privilege-escalation catalogue (internal/app/ciem) draws on public
 research by Rhino Security Labs. Check coverage was informed by public catalogues such as Prowler
 (Apache-2.0); no third-party check code or text is incorporated.
 
-Compliance framework mappings (internal/checks/frameworks) are derived from:
+Compliance framework mappings (internal/checks/frameworks and the examples in
+docs/frameworks) are derived from:
   - Prowler's compliance mappings (https://github.com/prowler-cloud/prowler,
     prowler/compliance/*), Copyright Prowler / Toni de la Fuente and
     contributors, licensed under the Apache License 2.0. Vulngraph uses the

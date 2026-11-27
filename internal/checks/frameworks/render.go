@@ -16,11 +16,13 @@ import (
 func RenderCoverage(fws []Framework, bs []benchmarks.Benchmark) string {
 	ix := NewIndex(bs)
 	var w strings.Builder
-	w.WriteString("\n## Compliance framework requirements\n\n")
-	w.WriteString("Requirement-level mappings in `internal/checks/frameworks` (ADR 093). A requirement counts as mapped when ")
+	w.WriteString("\n## Requirement frameworks\n\n")
+	w.WriteString("NIST SP 800-53 Rev. 5 is built in. Add your own frameworks (HIPAA, FedRAMP, an internal standard) with `FRAMEWORKS_DIR`; ")
+	w.WriteString("the format and worked examples are in [`docs/frameworks`](frameworks/README.md). ")
+	w.WriteString("Requirement-level mappings live in `internal/checks/frameworks`. A requirement counts as mapped when ")
 	w.WriteString("at least one benchmark control it maps has a registry check; whether it passes is decided live from ")
 	w.WriteString("findings and inventory. \"Partial source mapping\" counts requirements where some source mappings (a Prowler check, an AWS related FSBP control) reach no graph control; those can never pass. ")
-	w.WriteString("\"Can pass\" counts requirements with no structural gap: every control they map is fully covered by a check and every source mapping reaches one. Every other requirement shows failing or unknown at best, except that a control for a provider you do not connect is out of scope and does not block a pass, however much of it is covered. Requirement IDs and short titles only; ISO, PCI and AICPA titles are paraphrased.\n\n")
+	w.WriteString("\"Can pass\" counts requirements with no structural gap: every control they map is fully covered by a check and every source mapping reaches one. Every other requirement shows failing or unknown at best, except that a control for a provider you do not connect is out of scope and does not block a pass, however much of it is covered. Requirement IDs and short titles only; titles are paraphrased where the standard is copyrighted.\n\n")
 	w.WriteString("| Framework | Version | Requirements | Can pass | With ≥1 mapped check | Mapped to a control only | No mapping | Partial source mapping |\n")
 	w.WriteString("|---|---|---:|---:|---:|---:|---:|---:|\n")
 	for _, fw := range fws {

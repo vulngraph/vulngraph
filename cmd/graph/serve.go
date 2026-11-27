@@ -346,7 +346,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	// audit_events table, alongside every other audited human action.
 	suppressSvc := suppress.NewService(suppress.NewPGRepo(pool)).WithAudit(suppress.NewCHAuditRepo(ch)).
 		WithFindingGate(suppressAgentGate{findings: findingSvc})
-	complianceCatalog, err := compliance.LoadCatalog()
+	complianceCatalog, err := compliance.LoadCatalog(getenv("FRAMEWORKS_DIR"))
 	if err != nil {
 		return fmt.Errorf("serve: %w", err)
 	}

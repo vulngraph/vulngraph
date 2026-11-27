@@ -129,7 +129,7 @@ func serviceCatalog() Catalog {
 		{ID: "s3", Status: benchmarks.StatusCovered, CheckIDs: []string{s3Public}},
 		{ID: "ec2", Status: benchmarks.StatusCovered, CheckIDs: []string{ec2IP}},
 	}}}
-	fws := []frameworks.Framework{{ID: "fw", Name: "FW", Version: "1", Requirements: []frameworks.Requirement{
+	fws := []frameworks.Framework{{ID: "fw", Name: "FW", Version: "1", Source: "custom: fw.yaml", Requirements: []frameworks.Requirement{
 		{ID: "R1", Title: "storage", Controls: []string{"aws-b/s3"}},
 		{ID: "R2", Title: "both", Controls: []string{"aws-b/s3", "aws-b/ec2"}},
 		{ID: "R3", Title: "manual"},
@@ -178,7 +178,7 @@ func TestFrameworkRollupFromLiveEvidence(t *testing.T) {
 		states[r.ID] = r.State
 	}
 	require.Equal(t, map[string]string{"R1": RequirementPassing, "R2": RequirementFailing, "R3": RequirementManual}, states)
-	require.Equal(t, FrameworkSummary{ID: "fw", Name: "FW", Version: "1", Total: 3, Passing: 1, Failing: 1, Manual: 1}, fs.FrameworkSummary)
+	require.Equal(t, FrameworkSummary{ID: "fw", Name: "FW", Version: "1", Source: "custom: fw.yaml", Total: 3, Passing: 1, Failing: 1, Manual: 1}, fs.FrameworkSummary)
 }
 
 // TestFrameworkRollupPartialEvidenceIsUnknown: one S3 bucket key set carrying
@@ -208,7 +208,7 @@ func TestMissingEvidenceEntryReadsUnevaluated(t *testing.T) {
 func TestFrameworkRollupNoInventoryIsNeverPassing(t *testing.T) {
 	fws, err := requirementService(t, nil, nil, &fakeOpen{}).Frameworks(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, []FrameworkSummary{{ID: "fw", Name: "FW", Version: "1", Total: 3, Unknown: 2, Manual: 1}}, fws)
+	require.Equal(t, []FrameworkSummary{{ID: "fw", Name: "FW", Version: "1", Source: "custom: fw.yaml", Total: 3, Unknown: 2, Manual: 1}}, fws)
 }
 
 func TestFrameworkRollupPropagatesErrors(t *testing.T) {
@@ -253,7 +253,7 @@ func TestFrameworkHandlers(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	var list FrameworkListResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &list))
-	require.Equal(t, []FrameworkSummaryResponse{{ID: "fw", Name: "FW", Version: "1", Total: 3, Passing: 1, Failing: 1, Manual: 1}}, list.Frameworks)
+	require.Equal(t, []FrameworkSummaryResponse{{ID: "fw", Name: "FW", Version: "1", Source: "custom: fw.yaml", Total: 3, Passing: 1, Failing: 1, Manual: 1}}, list.Frameworks)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/compliance/frameworks/fw", nil)
 	req.SetPathValue("id", "fw")
@@ -307,7 +307,7 @@ func TestCSVSafe(t *testing.T) {
 // TestEmbeddedCatalogLoads: the shipped mappings resolve against the shipped
 // matrices (serve refuses to start otherwise).
 func TestEmbeddedCatalogLoads(t *testing.T) {
-	c, err := LoadCatalog()
+	c, err := LoadCatalog("")
 	require.NoError(t, err)
 	require.NotEmpty(t, c.mappedChecks())
 	for _, id := range c.mappedChecks() {

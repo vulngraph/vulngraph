@@ -91,6 +91,7 @@ type FrameworkSummaryResponse struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Version string `json:"version"`
+	Source  string `json:"source"`
 	Total   int    `json:"total"`
 	Passing int    `json:"passing"`
 	Failing int    `json:"failing"`

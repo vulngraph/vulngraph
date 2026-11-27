@@ -228,7 +228,7 @@ func TestEnforceableFamiliesAreDeclaredByACollector(t *testing.T) {
 
 func TestEnforceableTypes(t *testing.T) {
 	require.Equal(t,
-		[]string{"azure_vm", "ec2_instance", "elastic_ip", "gce_instance", "github_repo", "k8s_pod", "security_group", "subnet", "vpc"},
+		[]string{"azure_vm", "declared_ci_access", "ec2_instance", "elastic_ip", "gce_instance", "github_app_grant", "github_app_installation", "github_app_token_scope", "github_repo", "github_workflow", "github_workflow_reference", "k8s_pod", "security_group", "subnet", "vpc"},
 		EnforceableTypes(),
 		"the audited type set is a deliberate, reviewed list — widening it is a considered decision")
 }

@@ -23,6 +23,7 @@ func TestRegistryDerivationsMatchLegacy(t *testing.T) {
 	// edge to be uncapped (a capped reach edge truncates and the BFS misses paths).
 	assert.ElementsMatch(t, []string{
 		"exposed_to_internet", "can_assume", "executes_as", "federated_access",
+		"github_app_installation", "github_installation_grant", "github_grant_repository", "github_workflow", "github_workflow_token", "github_token_grant", "github_token_repository", "github_workflow_call",
 		"can_escalate_to", "deploys_to", "sg_allows_from", "accesses_secret",
 		"protected_by", "binds", "owns", "has_policy", "allows_action",
 		"connected_via_sg", "has_role", "routes_to", "targets",
@@ -76,6 +77,7 @@ func TestRegistryDerivationsMatchLegacy(t *testing.T) {
 	}, graphschema.TierEdgeTypes(graphschema.TierBulk), "bulk tier drifted")
 
 	wantLoaded := []string{
+		"GitHubAppInstallation", "GitHubInstallationGrant", "GitHubGrantRepository", "GitHubWorkflow", "GitHubWorkflowToken", "GitHubTokenGrant", "GitHubTokenRepository", "GitHubWorkflowCall",
 		"ExposedToInternet", "DnsPointsTo", "ConnectedViaSG", "AllowsFrom",
 		"ProtectedBy", "HasRole", "ExecutesAs", "ExecutesAsK8sWorkload",
 		"CanAssume", "CanEscalateTo", "DeploysTo", "DeploysToService",
@@ -138,6 +140,7 @@ func TestRegistryDerivationsMatchLegacy(t *testing.T) {
 	// PeeredWith removed from the expand view: it is not loaded into
 	// Ladybug, so its branch always returned zero rows — pure dead traversal.
 	wantExpand := []string{
+		"GitHubAppInstallation", "GitHubInstallationGrant", "GitHubGrantRepository", "GitHubWorkflow", "GitHubWorkflowToken", "GitHubTokenGrant", "GitHubTokenRepository", "GitHubWorkflowCall",
 		"ExposedToInternet", "ExposedToInternetK8sWorkload", "AllowsFrom", "ProtectedBy",
 		"DnsPointsTo", "Accesses", "AccessesK8sWorkload", "HasRole", "ExecutesAs", "CanAssume", "CanEscalateTo",
 		// SSO graph

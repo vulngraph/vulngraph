@@ -2,8 +2,6 @@ package github
 
 import (
 	"context"
-	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -72,22 +70,10 @@ func (c *Collector) collectK8sManifests(ctx context.Context, baseURL, token stri
 
 // listManifestPaths lists the repo's default-branch tree and returns *.yaml /
 // *.yml paths (capped, fixture paths skipped). Mirrors fetchTerraformFiles'
-// tree walk (iac.go) — the two could share a filtered tree walk in a later
-// refactor; kept separate here to avoid touching the Terraform path.
+// tree walk (iac.go), sharing successful source reads within a repository.
 func (c *Collector) listManifestPaths(ctx context.Context, baseURL, token string, r repo) []string {
-	url := fmt.Sprintf("%s/repos/%s/git/trees/%s?recursive=1", baseURL, r.FullName, r.DefaultBranch)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/vnd.github+json")
-
-	var tree treeResponse
-	if err := c.doJSON(req, http.StatusOK, &tree); err != nil {
-		if !isGHASSkippable(err) {
-			log.FromContext(ctx).Debug().Err(err).Str("repo", r.FullName).Msg("k8s manifest: tree fetch failed")
-		}
+	tree, ok := c.repoTree(ctx, baseURL, token, r)
+	if !ok {
 		return nil
 	}
 	if tree.Truncated {

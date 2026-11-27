@@ -22,7 +22,9 @@ var retentionEdgeTypes = func() map[string]bool {
 	m := graphschema.ReachEdgeTypes() // can_assume, executes_as, routes_to, targets, …
 	for _, t := range []string{
 		"exposed_to_internet", // internet seed
-		"federated_access",    // Repo→IamRole trust (reach-excluded but query-traversed)
+		"github_app_installation", "github_installation_grant", "github_grant_repository",
+		"github_workflow", "github_workflow_token", "github_token_grant", "github_token_repository", "github_workflow_call",
+		"federated_access", // Repo→IamRole trust (reach-excluded but query-traversed)
 		"protected_by",
 		"dns_points_to",
 		"sg_allows_from",

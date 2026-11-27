@@ -17,7 +17,7 @@ import (
 	"github.com/vulngraph/vulngraph/pkg/log"
 )
 
-const tfStateConcurrency = 8 // parallel repos scanned (matches collectIaC/collectWorkflows)
+const tfStateConcurrency = 8 // parallel repos scanned (matches collectIaC/collectWorkflowVisibility)
 
 // maxTFBackendsPerRepo bounds how many state objects one repo may pull. A
 // Terraform monorepo can legitimately declare dozens of root modules, each

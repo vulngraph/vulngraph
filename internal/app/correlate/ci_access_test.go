@@ -45,7 +45,7 @@ func TestCIAccess_JoinsDeclaredToLiveRoleByARN(t *testing.T) {
 		assert.Equal(t, "example-corp/api", e.SrcID)
 		assert.Equal(t, arn, e.DstID)
 		assert.Equal(t, "gh_workflow", e.Properties["provenance"])
-		assert.Equal(t, "high", e.Properties["confidence"])
+		assert.Equal(t, "declared", e.Properties["confidence"])
 		assert.Equal(t, ".github/workflows/d.yml", e.Properties["workflow_path"])
 	}
 }
@@ -86,7 +86,7 @@ func TestCIAccess_JoinsDeclaredToLiveGCPServiceAccount(t *testing.T) {
 		assert.Equal(t, "serviceAccount:"+sa, e.DstID)
 		assert.Equal(t, "gcp_service_account", e.DstType)
 		assert.Equal(t, "gh_workflow", e.Properties["provenance"])
-		assert.Equal(t, "high", e.Properties["confidence"])
+		assert.Equal(t, "declared", e.Properties["confidence"])
 	}
 }
 

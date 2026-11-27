@@ -68,6 +68,12 @@ jobs:
         run: |
           mkdir -p "$PERF_CONNECTOR_DIR"
           go test -p 1 ./internal/collect/... -run '^TestConnectorScale$' -count=1 -timeout=15m -v 2>&1 | tee "$PERF_CONNECTOR_DIR/collect.log"
+      - name: Replay GitHub workflow relationships in native graph
+        env:
+          GITHUB_VISIBILITY_FIXTURES: ${{ runner.temp }}/connector-throughput
+          PERF_CONNECTOR_MAX: ${{ github.event_name == 'workflow_dispatch' && '10000' || '1000' }}
+          GOMAXPROCS: "4"
+        run: go test ./internal/app/graphstore -run '^TestGitHubVisibilityFixtureReplay$' -count=1 -timeout=10m -v 2>&1 | tee "$GITHUB_VISIBILITY_FIXTURES/graph-replay.log"
       - name: Run isolated pipeline
         env:
           PERF_PROFILE_INPUT: ${{ inputs.profile }}

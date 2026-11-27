@@ -82,6 +82,15 @@ type relEndpoints struct {
 // rels in the graphschema registry; TestLadybugRelSpecMatchesDDL pins every column
 // name to its CREATE REL TABLE statement.
 var ladybugRelProps = map[string][]relProp{
+	"GitHubAppInstallation":   {{"evidence", "evidence"}, {"coverage", "coverage"}, {"execution", "execution"}, {"permissions", "permissions"}, {"condition", "condition"}, {"scope", "scope"}},
+	"GitHubInstallationGrant": {{"evidence", "evidence"}, {"coverage", "coverage"}, {"execution", "execution"}, {"permissions", "permissions"}, {"condition", "condition"}, {"scope", "scope"}},
+	"GitHubGrantRepository":   {{"evidence", "evidence"}, {"coverage", "coverage"}, {"execution", "execution"}, {"permissions", "permissions"}, {"condition", "condition"}, {"scope", "scope"}},
+	"GitHubWorkflow":          {{"evidence", "evidence"}, {"coverage", "coverage"}, {"execution", "execution"}, {"permissions", "permissions"}, {"condition", "condition"}, {"scope", "scope"}},
+	"GitHubWorkflowToken":     {{"evidence", "evidence"}, {"coverage", "coverage"}, {"execution", "execution"}, {"permissions", "permissions"}, {"condition", "condition"}, {"scope", "scope"}},
+	"GitHubTokenGrant":        {{"evidence", "evidence"}, {"coverage", "coverage"}, {"execution", "execution"}, {"permissions", "permissions"}, {"condition", "condition"}, {"scope", "scope"}},
+	"GitHubTokenRepository":   {{"evidence", "evidence"}, {"coverage", "coverage"}, {"execution", "execution"}, {"permissions", "permissions"}, {"condition", "condition"}, {"scope", "scope"}},
+	"GitHubWorkflowCall":      {{"evidence", "evidence"}, {"coverage", "coverage"}, {"execution", "execution"}, {"permissions", "permissions"}, {"condition", "condition"}, {"scope", "scope"}},
+
 	"DnsPointsTo": {{"matched", "via"}},
 	// RunsImage carries the pod's resolved image reference, not a `via` — the
 	// kubernetes collector emits Properties{"image_ref": …}.
@@ -91,7 +100,7 @@ var ladybugRelProps = map[string][]relProp{
 	"DeploysToService": {{"confidence", "via"}},
 	"FederatedAccess": {
 		{"trust_type", "trust_type"}, {"subject", "subject"},
-		{"provenance", "provenance"}, {"confidence", "confidence"}, {"workflow_path", "workflow_path"},
+		{"provenance", "provenance"}, {"confidence", "confidence"}, {"workflow_path", "workflow_path"}, {"evidence", "evidence"}, {"execution", "execution"}, {"coverage", "coverage"}, {"condition", "condition"},
 	},
 	// FederatedAccessK8sWorkload/FederatedAccessAsset are the K8sWorkload- and
 	// Asset-sourced splits of federated_access (workload identity, and a human
@@ -99,11 +108,11 @@ var ladybugRelProps = map[string][]relProp{
 	// FROM label.
 	"FederatedAccessK8sWorkload": {
 		{"trust_type", "trust_type"}, {"subject", "subject"},
-		{"provenance", "provenance"}, {"confidence", "confidence"}, {"workflow_path", "workflow_path"},
+		{"provenance", "provenance"}, {"confidence", "confidence"}, {"workflow_path", "workflow_path"}, {"evidence", "evidence"}, {"execution", "execution"}, {"coverage", "coverage"}, {"condition", "condition"},
 	},
 	"FederatedAccessAsset": {
 		{"trust_type", "trust_type"}, {"subject", "subject"},
-		{"provenance", "provenance"}, {"confidence", "confidence"}, {"workflow_path", "workflow_path"},
+		{"provenance", "provenance"}, {"confidence", "confidence"}, {"workflow_path", "workflow_path"}, {"evidence", "evidence"}, {"execution", "execution"}, {"coverage", "coverage"}, {"condition", "condition"},
 	},
 	// ContainsData (Asset→DataClass, DSPM classification) is low-volume: bounded
 	// by data-storing assets × a handful of DataClass sentinels, not topology.

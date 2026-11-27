@@ -110,6 +110,13 @@ type treeResponse struct {
 // returned rather than logged in here.
 func (c *Collector) repoTree(ctx context.Context, baseURL, token string, r repo) (treeResponse, bool) {
 	url := fmt.Sprintf("%s/repos/%s/git/trees/%s?recursive=1", baseURL, r.FullName, r.DefaultBranch)
+	if ctx.Err() != nil {
+		return treeResponse{}, false
+	}
+	cache, key := repositoryCache(ctx), repositoryReadKey{URL: url, Token: token}
+	if tree, ok := cache.tree(key); ok {
+		return tree, true
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return treeResponse{}, false
@@ -124,6 +131,10 @@ func (c *Collector) repoTree(ctx context.Context, baseURL, token string, r repo)
 		}
 		return treeResponse{}, false
 	}
+	if ctx.Err() != nil {
+		return treeResponse{}, false
+	}
+	cache.rememberTree(key, tree)
 	return tree, true
 }
 
@@ -199,6 +210,13 @@ type contentResponse struct {
 
 func (c *Collector) fetchFileContent(ctx context.Context, baseURL, token string, r repo, path string) (string, bool) {
 	url := fmt.Sprintf("%s/repos/%s/contents/%s?ref=%s", baseURL, r.FullName, path, r.DefaultBranch)
+	if ctx.Err() != nil {
+		return "", false
+	}
+	cache, key := repositoryCache(ctx), repositoryReadKey{URL: url, Token: token}
+	if content, ok := cache.file(key); ok {
+		return content, true
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", false
@@ -215,10 +233,12 @@ func (c *Collector) fetchFileContent(ctx context.Context, baseURL, token string,
 	}
 	// GitHub base64 content is newline-wrapped.
 	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(cr.Content, "\n", ""))
-	if err != nil {
+	if err != nil || len(decoded) > iacMaxFileBytes || ctx.Err() != nil {
 		return "", false
 	}
-	return string(decoded), true
+	content := string(decoded)
+	cache.rememberFile(key, content)
+	return content, true
 }
 
 func iacSeverity(s string) finding.Severity {

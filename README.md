@@ -22,7 +22,7 @@ Use the web UI, ask questions in plain English, write Cypher, or connect your ow
 AI can investigate and propose; a person approves every state-changing action. Bring a hosted or local
 model, or run without one: inventory, graph queries, checks and scoring work without an LLM.
 
-![Writing a Cypher query in the Graph page: the internet reaches a web server whose role can escalate to an administrator, then opening that server shows its details and findings](docs/images/attack-path-dark.gif)
+![The Graph page showing an attack path: the internet reaches the acme-web-1 server, its role can escalate to an administrator role, and that role can read every secret. Selecting each node highlights its connections and lists its relationships.](docs/images/attack-path-dark.gif)
 
 - **See why a finding matters.** Rank findings using modeled exposure, exploitability and blast radius,
   then inspect the evidence and relationships behind the score.

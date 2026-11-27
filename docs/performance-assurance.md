@@ -276,3 +276,13 @@ read success does not establish that a graph rebuild succeeded. Bounded graph
 source reads, correlation inputs and a completed larger replay remain required;
 neither an aborted run nor synthetic Collect results earn live connector or
 whole-profile capacity coverage.
+
+
+PERF-05/11/12 now track the [production source-reader measurements](performance/source-read-measurements.md):
+the projected correlation reader reduces million-input query peak memory to
+202.1 MB while retaining the 600,000-row refusal; the graph reader passes three
+isolated million-asset retained-result checks. Partial invalidations use bounded
+analysis batches, narrow SQL seed pages and explicit busy-lane admission.
+The 100,000-row query has a measured latency cost. Whole-system million-asset
+acceptance, transient rule-output bounds and swap-disabled capacity remain open;
+these focused improvements earn no full-profile coverage credit.

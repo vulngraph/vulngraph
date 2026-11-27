@@ -2,8 +2,10 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -56,19 +58,19 @@ func TestCorrelateBuffer_AddDedupesAndUnions(t *testing.T) {
 	size := b.add([]string{"b", "c"})
 	require.Equal(t, 3, size, "b deduped, union of {a,b} and {b,c} is size 3")
 
-	got := b.drain()
+	got := drainIDs(t, b)
 	require.ElementsMatch(t, []string{"a", "b", "c"}, got)
 }
 
 func TestCorrelateBuffer_DrainEmptiesAndReturnsNilWhenEmpty(t *testing.T) {
 	b := newCorrelateBuffer()
-	require.Nil(t, b.drain(), "nothing accumulated yet")
+	require.Nil(t, drainIDs(t, b), "nothing accumulated yet")
 
 	b.add([]string{"a"})
-	got := b.drain()
+	got := drainIDs(t, b)
 	require.Equal(t, []string{"a"}, got)
 
-	require.Nil(t, b.drain(), "second drain in a row sees an empty buffer")
+	require.Nil(t, drainIDs(t, b), "second drain in a row sees an empty buffer")
 }
 
 func TestCorrelateBuffer_AddReturnsRunningSize(t *testing.T) {
@@ -99,7 +101,7 @@ func TestCorrelateBuffer_ConcurrentAddNeverLosesAnID(t *testing.T) {
 	}
 	wg.Wait()
 
-	got := b.drain()
+	got := drainIDs(t, b)
 	require.Len(t, got, goroutines*perGoroutine)
 
 	want := make([]string, 0, goroutines*perGoroutine)
@@ -109,7 +111,7 @@ func TestCorrelateBuffer_ConcurrentAddNeverLosesAnID(t *testing.T) {
 		}
 	}
 	require.ElementsMatch(t, want, got)
-	require.Nil(t, b.drain(), "drain emptied the buffer")
+	require.Nil(t, drainIDs(t, b), "drain emptied the buffer")
 }
 
 // TestCorrelateBuffer_ConcurrentAddRacingDrain proves the same no-loss
@@ -133,7 +135,7 @@ func TestCorrelateBuffer_ConcurrentAddRacingDrain(t *testing.T) {
 			case <-stopDraining:
 				return
 			default:
-				batch := b.drain()
+				batch := drainIDs(t, b)
 				if len(batch) > 0 {
 					mu.Lock()
 					drained = append(drained, batch...)
@@ -158,7 +160,7 @@ func TestCorrelateBuffer_ConcurrentAddRacingDrain(t *testing.T) {
 	drainWG.Wait()
 
 	// Whatever is left in the buffer after the drainer stops is also owed.
-	drained = append(drained, b.drain()...)
+	drained = append(drained, drainIDs(t, b)...)
 
 	want := make([]string, 0, goroutines*perGoroutine)
 	for g := 0; g < goroutines; g++ {
@@ -184,28 +186,22 @@ func TestCorrelateCoalescer_FlushEnqueuesUnionWhenUnderCapacity(t *testing.T) {
 	c.Add([]string{"b", "c"})
 
 	ins := &fakeJobInserter{}
-	c.flush(context.Background(), ins, fakeJobLister{jobs: 3})
+	c.flush(context.Background(), ins, fakeJobLister{})
 
 	require.Equal(t, 1, ins.callCount(), "one job for the whole burst")
 	require.ElementsMatch(t, []string{"a", "b", "c"}, ins.lastArgs().ChangedIDs)
 }
 
-// TestCorrelateCoalescer_FlushRespectsBackpressure proves the backpressure gate: at
-// or over correlateQueueMax, flush must not enqueue — same gate
-// enqueuePartialCorrelate always had, now checked at flush time.
 func TestCorrelateCoalescer_FlushRespectsBackpressure(t *testing.T) {
 	c := newCorrelateCoalescer()
 	c.Add([]string{"a", "b"})
-
 	ins := &fakeJobInserter{}
-	c.flush(context.Background(), ins, fakeJobLister{jobs: correlateQueueMax})
-
-	require.Equal(t, 0, ins.callCount(), "at capacity, the coalesced flush is skipped")
-	// The buffer was already drained before the backpressure check ran, so a
-	// dropped-under-backpressure batch does not stick around to be retried by
-	// the very next tick with stale data; the full sweep is the documented
-	// backstop for this path, same as before coalescing existed.
-	require.Nil(t, c.buf.drain())
+	c.flush(t.Context(), ins, fakeJobLister{jobs: correlateQueueMax})
+	// This fake has undecodable rows. Uncertain coverage must remain pending.
+	require.Zero(t, ins.callCount())
+	ids, full, _ := c.buf.drain()
+	require.Empty(t, ids)
+	require.True(t, full)
 }
 
 func TestCorrelateCoalescer_FlushUnderCapacityStillEnqueues(t *testing.T) {
@@ -213,7 +209,7 @@ func TestCorrelateCoalescer_FlushUnderCapacityStillEnqueues(t *testing.T) {
 	c.Add([]string{"a"})
 
 	ins := &fakeJobInserter{}
-	c.flush(context.Background(), ins, fakeJobLister{jobs: correlateQueueMax - 1})
+	c.flushWithAdmission(context.Background(), ins, fakeJobLister{jobs: correlateQueueMax - 1}, true)
 
 	require.Equal(t, 1, ins.callCount())
 }
@@ -421,62 +417,53 @@ func TestRunCorrelateCoalescer_SizeThresholdFlushesBeforeTick(t *testing.T) {
 	<-runDone
 }
 
-// TestCorrelateCoalescer_FlushChunksLargeUnion proves chunking: a
-// drained batch bigger than maxPartialCorrelateIDs is split into multiple
-// CorrelateArgs jobs, each capped at maxPartialCorrelateIDs, never one job
-// carrying the whole union — this is what keeps the coalesced flush inside
-// the ClickHouse IN-clause query-size ceiling maxPartialCorrelateIDs exists
-// to protect, under a burst big enough to cross it (e.g. syncWorkers=20
-// concurrent 200-ID batches landing in one coalesce window).
-func TestCorrelateCoalescer_FlushChunksLargeUnion(t *testing.T) {
-	c := newCorrelateCoalescer()
-
-	const total = maxPartialCorrelateIDs*4 + 37 // 4 full chunks + 1 partial
-	ids := make([]string, total)
-	for i := range ids {
-		ids[i] = fmt.Sprintf("id-%d", i)
+func TestCorrelateCoalescer_LargeUnionPromotesOneFull(t *testing.T) {
+	for _, ids := range [][]string{makeBatchIDs(maxPartialCorrelateIDs + 1), {strings.Repeat("x", maxPartialCorrelateBytes/6)}} {
+		c := newCorrelateCoalescer()
+		c.Add(ids)
+		require.Empty(t, c.buf.ids, "promotion releases large ID map")
+		ins := &fakeJobInserter{}
+		c.flush(t.Context(), ins, fakeJobLister{})
+		require.Equal(t, 1, ins.callCount())
+		require.Empty(t, ins.lastArgs().ChangedIDs)
 	}
-	c.Add(ids)
-
-	ins := &fakeJobInserter{}
-	c.flush(context.Background(), ins, fakeJobLister{jobs: 0})
-
-	require.Equal(t, 5, ins.callCount(), "4 full-size chunks plus 1 remainder chunk")
-
-	var gotIDs []string
-	seenChunkSizes := map[int]int{}
-	ins.mu.Lock()
-	for _, call := range ins.calls {
-		require.LessOrEqual(t, len(call.ChangedIDs), maxPartialCorrelateIDs,
-			"no single job may exceed maxPartialCorrelateIDs — that is the whole point of chunking")
-		seenChunkSizes[len(call.ChangedIDs)]++
-		gotIDs = append(gotIDs, call.ChangedIDs...)
-	}
-	ins.mu.Unlock()
-
-	require.Equal(t, 4, seenChunkSizes[maxPartialCorrelateIDs], "4 chunks at exactly the cap")
-	require.Equal(t, 1, seenChunkSizes[37], "1 remainder chunk")
-	require.ElementsMatch(t, ids, gotIDs, "no id lost or duplicated across the chunk split")
 }
-
-// TestCorrelateCoalescer_FlushChunkInsertFailureDoesNotBlockOtherChunks
-// proves a failing Insert for one chunk doesn't stop the remaining chunks
-// from going out — chunking must not turn one bad chunk into a lost flush.
-func TestCorrelateCoalescer_FlushChunkInsertFailureDoesNotBlockOtherChunks(t *testing.T) {
+func TestCorrelateCoalescer_AnalysisBatchSharesContextBeyondSQLPage(t *testing.T) {
+	ids := makeBatchIDs(10000)
 	c := newCorrelateCoalescer()
-
-	const total = maxPartialCorrelateIDs*2 + 5
-	ids := make([]string, total)
+	c.Add(ids)
+	ins := &fakeJobInserter{}
+	c.flush(t.Context(), ins, fakeJobLister{})
+	require.Equal(t, 1, ins.callCount())
+	require.ElementsMatch(t, ids, ins.lastArgs().ChangedIDs)
+	encoded, err := json.Marshal(ins.lastArgs())
+	require.NoError(t, err)
+	require.LessOrEqual(t, len(encoded), maxPartialCorrelateBytes)
+}
+func TestCorrelateCoalescer_FailedEnqueueRetainsFullFollowup(t *testing.T) {
+	c := newCorrelateCoalescer()
+	c.Add(makeBatchIDs(400))
+	failed := &failNInserter{failFirst: 2}
+	for range 2 {
+		c.flush(t.Context(), failed, fakeJobLister{})
+		require.True(t, c.buf.full)
+	}
+	c.flush(t.Context(), failed, fakeJobLister{})
+	require.False(t, c.buf.full)
+	require.Equal(t, 1, failed.succeeded)
+}
+func drainIDs(t *testing.T, b *correlateBuffer) []string {
+	t.Helper()
+	ids, full, _ := b.drain()
+	require.False(t, full)
+	return ids
+}
+func makeBatchIDs(n int) []string {
+	ids := make([]string, n)
 	for i := range ids {
 		ids[i] = fmt.Sprintf("id-%d", i)
 	}
-	c.Add(ids)
-
-	failing := &failNInserter{failFirst: 1}
-	c.flush(context.Background(), failing, fakeJobLister{jobs: 0})
-
-	require.Equal(t, 3, failing.attempts, "all 3 chunks must be attempted even though the first failed")
-	require.Equal(t, 2, failing.succeeded, "the 2 chunks after the failing one still go out")
+	return ids
 }
 
 // failNInserter fails the first failFirst Insert calls, then succeeds.
@@ -496,4 +483,50 @@ func (f *failNInserter) Insert(_ context.Context, _ river.JobArgs, _ *river.Inse
 	}
 	f.succeeded++
 	return &rivertype.JobInsertResult{}, nil
+}
+
+func TestCorrelateCoalescer_BusyLaneUnionsWithoutResettingAge(t *testing.T) {
+	c := newCorrelateCoalescer()
+	ins := &fakeJobInserter{}
+	busy := listedCorrelateJobs{[]*rivertype.JobRow{{State: rivertype.JobStateRunning, EncodedArgs: []byte("{}")}}}
+	c.Add([]string{"a"})
+	oldest := c.buf.oldest
+	c.flush(t.Context(), ins, busy)
+	c.Add([]string{"b"})
+	c.flush(t.Context(), ins, busy)
+	require.Zero(t, ins.callCount())
+	require.Equal(t, oldest, c.buf.oldest)
+	c.flush(t.Context(), ins, fakeJobLister{})
+	require.Equal(t, 1, ins.callCount())
+	require.ElementsMatch(t, []string{"a", "b"}, ins.lastArgs().ChangedIDs)
+}
+func TestCorrelateCoalescer_AdmissionDeadlineAndShutdownPersistWhileBusy(t *testing.T) {
+	busy := listedCorrelateJobs{[]*rivertype.JobRow{{State: rivertype.JobStateRunning, EncodedArgs: []byte("{}")}}}
+	for _, force := range []bool{false, true} {
+		c := newCorrelateCoalescer()
+		c.Add([]string{"a"})
+		if !force {
+			c.buf.oldest = time.Now().Add(-correlateCoalesceMaxWait - time.Second)
+		}
+		ins := &fakeJobInserter{}
+		c.flushWithAdmission(t.Context(), ins, busy, force)
+		require.Equal(t, 1, ins.callCount())
+		require.Equal(t, []string{"a"}, ins.lastArgs().ChangedIDs)
+	}
+}
+func TestCorrelateCoalescer_PendingFullCoversAlreadyCommittedChange(t *testing.T) {
+	c := newCorrelateCoalescer()
+	c.Add([]string{"a"})
+	ins := &fakeJobInserter{}
+	c.flush(t.Context(), ins, listedCorrelateJobs{[]*rivertype.JobRow{{State: rivertype.JobStateAvailable, EncodedArgs: []byte("{}")}}})
+	require.Zero(t, ins.callCount())
+	n, full, _ := c.buf.state()
+	require.Zero(t, n)
+	require.False(t, full)
+}
+
+type listedCorrelateJobs struct{ jobs []*rivertype.JobRow }
+
+func (l listedCorrelateJobs) JobList(context.Context, *river.JobListParams) (*river.JobListResult, error) {
+	return &river.JobListResult{Jobs: l.jobs}, nil
 }

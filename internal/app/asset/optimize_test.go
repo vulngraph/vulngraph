@@ -529,7 +529,7 @@ func TestOptimizeBudgetsAreConsistent(t *testing.T) {
 	require.Positive(t, OptimizeRotationPeriod)
 }
 
-// repo.go's assetSelect comment is the load-bearing explanation for why this
+// The merge-cost policy explains why this
 // package reads `assets FINAL`, and it has now been WRONG twice in opposite
 // directions: first claiming an optimizeAssets job existed when none did, then
 // claiming the job "deliberately SKIPS assets" in the same diff that added

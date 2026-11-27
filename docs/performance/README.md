@@ -143,3 +143,7 @@ modules/functions, removal of `workflow_ingest.go`, and
 expanded CIAccess scenarios. The exact-entry guard intentionally fails until this
 mapping is reviewed. Keep `collect.github.apps` and workflow/cloud-declaration
 families separate where their pagination, grant membership and fan-out differ.
+
+[Correlation and graph source measurements](source-read-measurements.md) record
+query-memory improvements, the selective latency tradeoff, unchanged correlation
+refusal, bounded invalidation admission and remaining mixed-capacity gaps.

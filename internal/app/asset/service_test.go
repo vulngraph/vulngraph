@@ -705,7 +705,7 @@ func TestIngest_PinFirstDiscoveredAt_RepoErrorIsNonFatal(t *testing.T) {
 // connector-sync Ingest call can carry thousands of ARN/DNS-shaped ids, and
 // ClickHouse's IN clause is query-string-interpolated (no true bind-parameter
 // form), so an unchunked call risks exceeding max_query_size exactly the way
-// internal/jobs/sync.go's maxPartialCorrelateIDs and asset.purgeEdgeChunk
+// internal/jobs/sync.go's maxChangeLogAssets and asset.purgeEdgeChunk
 // already guard against for the same ARN-length ids. No single ByIDs call
 // here may exceed pinFirstDiscoveredAtChunkSize.
 func TestIngest_ChunksFirstDiscoveredAtLookup(t *testing.T) {

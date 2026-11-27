@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -74,28 +75,6 @@ const (
 	// FindByExactName's doc comment for why this exists as its own query
 	// instead of routing through the free-text Search filter.
 	selectAssetByName = assetArgMaxSelect + ` WHERE name = ? GROUP BY id ORDER BY max(last_seen) DESC LIMIT ?`
-
-	// assetSelect uses FINAL to read the deduplicated ReplacingMergeTree
-	// directly. List applies WHERE filters to it (including an id IN subquery
-	// for the exposed filter), which is the filtered-FINAL shape CLAUDE.md
-	// says to avoid on assets; moving those paths to key-select then ByIDs is
-	// not done yet.
-	//
-	// It relies on background merges keeping duplication low, plus a daily
-	// OPTIMIZE job (internal/jobs/optimize.go) that also covers `assets` once
-	// its old proj_by_last_seen projection is gone (skipReasonFor refuses to
-	// optimize while that projection is live, since the merge would have to
-	// rebuild it too — see optimize.go).
-	//
-	// Do not read the job as a guarantee. Every table it touches is unpartitioned,
-	// so each pass is a full-table rewrite; it runs daily, per-table time-bounded,
-	// and skips anything above the size guard. Duplication here is bounded by
-	// background merges first and that daily pass second. If that ever stops being
-	// enough, the fix is a smaller sort key or a partition key, not a faster
-	// rewrite treadmill.
-	assetSelect = `SELECT id, name, type, provider, region, account_id, endpoint,
-		public_ip, private_ip, domain, tags, metadata, risk_score, discovered_at, first_discovered_at, last_seen
-		FROM asset_current_with_derivations`
 
 	// assetSummary and the List query are NOT here: both apply inventoryReadCond,
 	// which is built from quotedCSV at init, so they are vars (see below).
@@ -454,8 +433,14 @@ var assetSummary = `SELECT provider, type, uniqExact(id) AS n,
 // very large number of dead pods would load into the Go heap and then into Ladybug on
 // every rebuild, which matters for a memory-bounded worker, and they are nodes no
 // traversal should reach.
-var listAllForSyncQ = fmt.Sprintf("%s WHERE type NOT IN (%s) AND %s ORDER BY id LIMIT %d",
-	assetSelect, quotedCSV(NeverSyncTypes), EphemeralLivenessCond, syncAssetLimit)
+// Select the capped set using narrow current-version keys, then hydrate only
+// those versions. No wide rows participate in the global id sort. The shared
+// storage snapshot enforced by CH.Select keeps both asset references coherent.
+var listAllForSyncKeys = fmt.Sprintf("SELECT type,id,synced_at FROM assets FINAL WHERE type NOT IN (%s) AND %s ORDER BY id LIMIT %d",
+	quotedCSV(NeverSyncTypes), EphemeralLivenessCond, syncAssetLimit)
+
+var listAllForSyncQ = fmt.Sprintf(selectHydratedAssets, listAllForSyncKeys) +
+	" SETTINGS query_plan_join_swap_table='false', optimize_aggregation_in_order=1"
 
 // Attack-path critical edge types — loaded with NO limit so they always appear in
 // the graph regardless of bulk edge volume. Tier membership is declared in the
@@ -774,7 +759,7 @@ const assetPageLimit = 100
 // Inventory excludes declared resources, the only rows with derived metadata.
 // Carry the selected version into hydration so old wide observations are not
 // read again. Grouping retains FINAL's (type,id) identity for duplicate writes.
-const selectAssetPage = `SELECT a.id, a.current.1, a.type, a.current.2, a.current.3,
+const selectHydratedAssets = `SELECT a.id, a.current.1, a.type, a.current.2, a.current.3,
  a.current.4, a.current.5, a.current.6, a.current.7, a.current.8, a.current.9, a.current.10,
  greatest(a.current.11,r.risk_score), a.current.12, a.current.13, a.current.14 AS last_seen
  FROM (SELECT id,type,argMax(tuple(name,provider,region,account_id,endpoint,public_ip,private_ip,domain,
@@ -784,8 +769,9 @@ const selectAssetPage = `SELECT a.id, a.current.1, a.type, a.current.2, a.curren
   SELECT id,max(risk_score) AS risk_score FROM asset_finding_risk
   WHERE id!='' AND (generation,digest)=(SELECT max((generation,digest)) FROM asset_finding_risk WHERE id='' AND pinned=1)
   GROUP BY id
- ) AS r ON a.id=r.id
- ORDER BY last_seen DESC,a.id DESC`
+ ) AS r ON a.id=r.id`
+
+const selectAssetPage = selectHydratedAssets + ` ORDER BY last_seen DESC,a.id DESC`
 
 // listQuery builds the inventory page SQL and its args. It is separate from List
 // so the query text is assertable without a database: listQuery is what
@@ -924,6 +910,9 @@ func (r *CHRepo) ListAllForSync(ctx context.Context, proj SyncProjection) (Asset
 	if err != nil {
 		return AssetSyncResult{}, fmt.Errorf("ListAllForSync: %w", err)
 	}
+	// Callers already retain the complete slice; sorting it here preserves the
+	// previous id order without a second wide-row sort in ClickHouse.
+	sort.Slice(assets, func(i, j int) bool { return assets[i].ID < assets[j].ID })
 	res := AssetSyncResult{Assets: assets, Truncated: len(assets) >= syncAssetLimit}
 	if res.Truncated {
 		log.FromContext(ctx).Warn().Int("limit", syncAssetLimit).

@@ -2,7 +2,11 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/riverqueue/river"
@@ -11,14 +15,13 @@ import (
 	"github.com/vulngraph/vulngraph/pkg/log"
 )
 
-// correlateCoalesceInterval bounds how long a changed-ID can sit in the
-// buffer before it goes out. Sync completions arrive in bursts — syncWorkers
-// (20) each finish their own connector sweep independently, so up to 20 calls
-// to enqueuePartialCorrelate can land within the same second or two. 5s is
-// short enough that "immediately after a sync" still reads as immediate, but
-// long enough that a whole burst reliably lands inside one window rather than
-// spilling across two ticks.
+// Inspect buffered invalidations every five seconds. While the analysis lane
+// is busy, share one bounded union instead of queuing another global replay.
 const correlateCoalesceInterval = 5 * time.Second
+
+// Persist even a low-rate partial after one minute of busy-lane buffering.
+// This bounds admission delay, not queue completion or source freshness.
+const correlateCoalesceMaxWait = time.Minute
 
 // correlateCoalesceFlushTimeout bounds one flush's queue-depth check plus its
 // Insert, on a context detached from whatever triggered the flush (a tick, a
@@ -27,49 +30,81 @@ const correlateCoalesceInterval = 5 * time.Second
 // trigger it, and must still complete promptly during the shutdown drain.
 const correlateCoalesceFlushTimeout = 10 * time.Second
 
-// correlateBuffer is the pure accumulate/drain half of the coalescer: no
-// River, no context, no time — so it gets exhaustive table + concurrency
-// tests without faking any infra. Every method is mutex-guarded and safe for
-// concurrent use.
+// Buffer invalidations only until the next flush. A large union promotes to a
+// full follow-up request instead of retaining unbounded IDs or creating many
+// jobs that each reload the same global context.
 type correlateBuffer struct {
-	mu  sync.Mutex
-	ids map[string]struct{}
+	mu     sync.Mutex
+	ids    map[string]struct{}
+	bytes  int
+	full   bool
+	oldest time.Time
 }
 
-func newCorrelateBuffer() *correlateBuffer {
-	return &correlateBuffer{ids: make(map[string]struct{})}
-}
-
-// add merges changedIDs into the buffer (deduplicating, same as the map the
-// old per-call code built from changedAssetIDs) and returns the buffer's size
-// AFTER the merge, so the caller can decide whether the size-threshold flush
-// trigger has been crossed. add never loses an ID; it stays in the buffer
-// until drain empties it.
-func (b *correlateBuffer) add(changedIDs []string) int {
+func newCorrelateBuffer() *correlateBuffer { return &correlateBuffer{ids: make(map[string]struct{})} }
+func (b *correlateBuffer) add(ids []string) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for _, id := range changedIDs {
+	return b.addLocked(ids)
+}
+func (b *correlateBuffer) addLocked(ids []string) int {
+	if len(ids) > 0 && b.oldest.IsZero() {
+		b.oldest = time.Now()
+	}
+	for _, id := range ids {
+		if b.full {
+			return maxPartialCorrelateIDs
+		}
+		if _, ok := b.ids[id]; ok {
+			continue
+		}
+		if len(b.ids) >= maxPartialCorrelateIDs || b.bytes+correlateIDBytes(id)+32 > maxPartialCorrelateBytes {
+			b.full = true
+			b.ids = make(map[string]struct{})
+			b.bytes = 0
+			return maxPartialCorrelateIDs
+		}
 		b.ids[id] = struct{}{}
+		b.bytes += correlateIDBytes(id)
 	}
 	return len(b.ids)
 }
-
-// drain empties the buffer and returns everything it held, in no particular
-// order. nil (not an error) is the correct "nothing to flush" signal here —
-// this is a size on an in-process map with no failure path, not evidence
-// a decision depends on (the known-ness rule for evidence doesn't apply).
-func (b *correlateBuffer) drain() []string {
+func (b *correlateBuffer) restore(ids []string, full bool, oldest time.Time) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if len(b.ids) == 0 {
-		return nil
+	if !oldest.IsZero() && (b.oldest.IsZero() || oldest.Before(b.oldest)) {
+		b.oldest = oldest
 	}
-	out := make([]string, 0, len(b.ids))
+	if full {
+		b.full = true
+		b.ids = make(map[string]struct{})
+		b.bytes = 0
+	} else {
+		b.addLocked(ids)
+	}
+}
+func (b *correlateBuffer) drain() ([]string, bool, time.Time) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var ids []string
 	for id := range b.ids {
-		out = append(out, id)
+		ids = append(ids, id)
 	}
+	full, oldest := b.full, b.oldest
+	b.full = false
+	b.oldest = time.Time{}
+	b.bytes = 0
 	b.ids = make(map[string]struct{})
-	return out
+	return ids, full, oldest
+}
+func (b *correlateBuffer) state() (int, bool, time.Duration) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var age time.Duration
+	if !b.oldest.IsZero() {
+		age = time.Since(b.oldest)
+	}
+	return len(b.ids), b.full, age
 }
 
 // jobInserter is the one river.Client method flush needs beyond jobLister —
@@ -89,22 +124,14 @@ type correlateClient interface {
 	jobLister
 }
 
-// correlateCoalescer batches enqueuePartialCorrelate calls across a short
-// window so a burst of sync completions produces a small number of
-// partial-correlate jobs covering the union of their changed IDs, instead of
-// one job per completion.
-//
-// Best-effort: an accepted ID goes out on the next tick, an earlier
-// size-triggered flush, or the shutdown drain. It is dropped under
-// correlateQueueMax backpressure, when a chunk's Insert fails (logged at
-// Error), or if the process dies before a flush. The periodic full correlate
-// (defaultCorrelateInterval) and the boot sweep cover all three. flush() also
-// chunks the drained set at maxPartialCorrelateIDs
-// so a large burst produces multiple smaller jobs rather than one oversized
-// IN-clause.
+// correlateCoalescer shares complete analysis across a short burst of changes.
+// Enqueue failures retain a bounded full-needed flag for the next flush. Process
+// death can still lose buffered invalidations; a successful boot/periodic sweep
+// is the recovery path, not a promise that the next sweep will succeed.
 type correlateCoalescer struct {
 	buf      *correlateBuffer
 	flushNow chan struct{}
+	flushing atomic.Int32
 }
 
 func newCorrelateCoalescer() *correlateCoalescer {
@@ -138,59 +165,97 @@ func (c *correlateCoalescer) Add(changedIDs []string) {
 	}
 }
 
-// flush drains the buffer and, if it held anything, enqueues one
-// CorrelateArgs job per maxPartialCorrelateIDs-sized chunk of the union —
-// after checking the same correlateQueueMax backpressure
-// enqueuePartialCorrelate always checked (see the type doc).
-//
-// The backpressure check runs ONCE per flush, not once per chunk: at or over
-// correlateQueueMax the whole drained batch is dropped (not partially
-// enqueued), the same "drop under backpressure, the full sweep is the
-// backstop" semantics as an uncoalesced enqueue — coalescing only changes how
-// big a batch one drop covers. Chunking drops no ID: it is pure slicing of
-// an already-drained slice. A chunk whose Insert fails is logged and not
-// re-queued.
+// flush schedules one bounded partial, or a full follow-up for a large union.
+// A pending full job can cover writes committed before this lookup; a RUNNING
+// full job may already have captured its source and must never absorb them.
 func (c *correlateCoalescer) flush(ctx context.Context, client jobInserter, lister jobLister) {
-	ids := c.buf.drain()
-	if len(ids) == 0 {
+	c.flushWithAdmission(ctx, client, lister, false)
+}
+func (c *correlateCoalescer) flushWithAdmission(ctx context.Context, client jobInserter, lister jobLister, force bool) {
+	c.flushing.Add(1)
+	defer c.flushing.Add(-1)
+	ids, full, oldest := c.buf.drain()
+	if len(ids) == 0 && !full {
 		return
 	}
 	logger := log.FromContext(ctx)
-	if depth, err := correlateQueueDepth(ctx, lister); err == nil && depth >= correlateQueueMax {
-		logger.Warn().Int("queue_depth", depth).Int("coalesced_ids", len(ids)).
-			Msg("coalesced partial correlate skipped — correlate queue at capacity; full sweep will cover")
+	if !full {
+		depth, err := correlateQueueDepth(ctx, lister)
+		if err != nil {
+			c.buf.restore(nil, true, oldest)
+			logger.Error().Err(err).Msg("correlate depth unknown; full follow-up retained")
+			return
+		}
+		full = depth >= correlateQueueMax
+		if depth > 0 && !full && !force {
+			covered, err := pendingFullCorrelate(ctx, lister)
+			if err != nil {
+				c.buf.restore(nil, true, oldest)
+				logger.Error().Err(err).Msg("pending full coverage unknown; retained")
+				return
+			}
+			if covered {
+				return
+			}
+			if time.Since(oldest) < correlateCoalesceMaxWait {
+				c.buf.restore(ids, false, oldest)
+				return
+			}
+		}
+	}
+	if full {
+		if err := enqueueCorrelateFollowup(ctx, client, lister); err != nil {
+			c.buf.restore(nil, true, oldest)
+			logger.Error().Err(err).Msg("correlate full follow-up enqueue failed; retained for retry")
+		}
 		return
 	}
-	chunks := chunkIDs(ids, maxPartialCorrelateIDs)
-	for i, chunk := range chunks {
-		if _, err := client.Insert(ctx, CorrelateArgs{ChangedIDs: chunk}, nil); err != nil {
-			logger.Error().Err(err).
-				Int("chunk", i+1).Int("chunks_total", len(chunks)).
-				Int("chunk_ids", len(chunk)).Int("total_coalesced_ids", len(ids)).
-				Msg("coalesced partial correlate chunk enqueue failed")
-		}
+	sort.Strings(ids)
+	if _, err := client.Insert(ctx, CorrelateArgs{ChangedIDs: ids}, nil); err != nil {
+		c.buf.restore(nil, true, oldest)
+		logger.Error().Err(err).Int("changed_ids", len(ids)).Msg("partial correlate enqueue failed; full follow-up retained")
 	}
 }
 
-// chunkIDs splits ids into slices of at most size elements each, preserving
-// every element (the last chunk holds the remainder). size <= 0 is treated
-// as "no splitting" — one chunk holding everything — since flush always
-// calls this with the positive maxPartialCorrelateIDs constant; the guard
-// only exists so a future caller with a bad size fails obviously instead of
-// looping forever.
-func chunkIDs(ids []string, size int) [][]string {
-	if size <= 0 || len(ids) <= size {
-		return [][]string{ids}
+func enqueueCorrelateFollowup(ctx context.Context, client jobInserter, lister jobLister) error {
+	covered, err := pendingFullCorrelate(ctx, lister)
+	if err != nil {
+		return err
 	}
-	chunks := make([][]string, 0, (len(ids)+size-1)/size)
-	for i := 0; i < len(ids); i += size {
-		end := i + size
-		if end > len(ids) {
-			end = len(ids)
+	if covered {
+		return nil
+	}
+	// River cannot exclude running from uniqueness. Competing replicas may
+	// enqueue duplicate follow-ups, but never lose a post-snapshot invalidation.
+	if _, err := client.Insert(ctx, CorrelateArgs{}, nil); err != nil {
+		return fmt.Errorf("enqueue correlate follow-up: %w", err)
+	}
+	return nil
+}
+func pendingFullCorrelate(ctx context.Context, lister jobLister) (bool, error) {
+
+	pending := []rivertype.JobState{rivertype.JobStateAvailable, rivertype.JobStatePending, rivertype.JobStateScheduled, rivertype.JobStateRetryable}
+	jobs, err := lister.JobList(ctx, river.NewJobListParams().Queues(queueCorrelate).Kinds(CorrelateArgs{}.Kind()).States(pending...).First(correlateQueueMax+1))
+	if err != nil {
+		return false, fmt.Errorf("find pending correlate follow-up: %w", err)
+	}
+	for _, job := range jobs.Jobs {
+		// Recheck even for adapters that return more states than requested.
+		if job == nil {
+			return false, fmt.Errorf("find pending correlate: nil job")
 		}
-		chunks = append(chunks, ids[i:end])
+		if job.State == rivertype.JobStateRunning {
+			continue
+		}
+		var args CorrelateArgs
+		if err := json.Unmarshal(job.EncodedArgs, &args); err != nil {
+			return false, fmt.Errorf("decode pending correlate: %w", err)
+		}
+		if len(args.ChangedIDs) == 0 {
+			return true, nil
+		}
 	}
-	return chunks
+	return false, nil
 }
 
 // RunCorrelateCoalescer drives the package-level partial-correlate
@@ -225,7 +290,7 @@ func RunCorrelateCoalescer(ctx context.Context, stop <-chan struct{}, client cor
 		select {
 		case <-stop:
 			flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), correlateCoalesceFlushTimeout)
-			c.flush(flushCtx, client, client)
+			c.flushWithAdmission(flushCtx, client, client, true)
 			cancel()
 			return
 		case <-ticker.C:
@@ -250,4 +315,21 @@ func flushOnTick(ctx context.Context, c *correlateCoalescer, client correlateCli
 	flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), correlateCoalesceFlushTimeout)
 	defer cancel()
 	c.flush(flushCtx, client, client)
+}
+
+// Conservative upper bound for JSON argument escaping and separators.
+func correlateIDBytes(id string) int { return 6*len(id) + 3 }
+
+func validateCorrelateIDs(ids []string) error {
+	if len(ids) > maxPartialCorrelateIDs {
+		return fmt.Errorf("partial correlate: %d IDs exceed work unit limit", len(ids))
+	}
+	bytes := 32
+	for _, id := range ids {
+		bytes += correlateIDBytes(id)
+	}
+	if bytes > maxPartialCorrelateBytes {
+		return fmt.Errorf("partial correlate: escaped argument charge %d exceeds limit", bytes)
+	}
+	return nil
 }

@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "status": "partial",
+  "full_profile_coverage_credit": 0,
+  "cohort": "Deployed ClickHouse 26.8.34.13, Linux ARM64, 2 ClickHouse CPUs / 3 GiB server / 2 GiB query; 1 worker CPU / 4 GiB RAM + 4 GiB swap allowance",
+  "scope": "Query and returned-row semantics with the unchanged 600,000-row refusal; not complete million-asset production correlation",
+  "repetitions": 3,
+  "measurements": [
+    {
+      "logical_assets": 5000,
+      "physical_asset_versions": 10000,
+      "expected_truncated": false,
+      "source_patch_sha256": "7394326d708c88d0e2064cadc4f4f75fbe352d77b58b5f92ef7fa81f12253527",
+      "variants": {
+        "baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "errors": [],
+          "successful_query_peak_bytes": 40888312,
+          "successful_sql_median_ms": 25,
+          "successful_elapsed_with_oracle_median_seconds": 0.036356342,
+          "max_attempt_query_bytes": 40888312,
+          "max_allocated_bytes": 25039976
+        },
+        "production": {
+          "attempts": 3,
+          "successful": 3,
+          "errors": [],
+          "successful_query_peak_bytes": 30833556,
+          "successful_sql_median_ms": 17,
+          "successful_elapsed_with_oracle_median_seconds": 0.028998598,
+          "max_attempt_query_bytes": 30833556,
+          "max_allocated_bytes": 24360760
+        }
+      }
+    },
+    {
+      "logical_assets": 100000,
+      "physical_asset_versions": 200000,
+      "expected_truncated": false,
+      "source_patch_sha256": "7394326d708c88d0e2064cadc4f4f75fbe352d77b58b5f92ef7fa81f12253527",
+      "variants": {
+        "baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "errors": [],
+          "successful_query_peak_bytes": 272109425,
+          "successful_sql_median_ms": 236,
+          "successful_elapsed_with_oracle_median_seconds": 0.395342197,
+          "max_attempt_query_bytes": 272109425,
+          "max_allocated_bytes": 529834136
+        },
+        "production": {
+          "attempts": 3,
+          "successful": 3,
+          "errors": [],
+          "successful_query_peak_bytes": 192727727,
+          "successful_sql_median_ms": 314,
+          "successful_elapsed_with_oracle_median_seconds": 0.47580721,
+          "max_attempt_query_bytes": 192727727,
+          "max_allocated_bytes": 529425008
+        }
+      }
+    },
+    {
+      "logical_assets": 1000000,
+      "physical_asset_versions": 2000000,
+      "expected_truncated": true,
+      "source_patch_sha256": "7394326d708c88d0e2064cadc4f4f75fbe352d77b58b5f92ef7fa81f12253527",
+      "variants": {
+        "baseline": {
+          "attempts": 3,
+          "successful": 2,
+          "errors": [
+            "measure production-correlation:baseline:0: Select: scan: code: 241, message: (total) memory limit exceeded: would use 1.37 GiB (attempt to allocate chunk of 4.03 MiB), current RSS: 3.00 GiB, maximum: 3.00 GiB. OvercommitTracker decision: Query was selected to stop by OvercommitTracker. Untracked memory across all threads: -11.17 MiB: While executing AggregatingTransform"
+          ],
+          "successful_query_peak_bytes": 1442100467,
+          "successful_sql_median_ms": 2923.5,
+          "successful_elapsed_with_oracle_median_seconds": 3.582611889,
+          "max_attempt_query_bytes": 1442100467,
+          "max_allocated_bytes": 3260229256
+        },
+        "production": {
+          "attempts": 3,
+          "successful": 3,
+          "errors": [],
+          "successful_query_peak_bytes": 202082785,
+          "successful_sql_median_ms": 2897,
+          "successful_elapsed_with_oracle_median_seconds": 3.542242528,
+          "max_attempt_query_bytes": 202082785,
+          "max_allocated_bytes": 3260158432
+        }
+      }
+    }
+  ],
+  "graph_loader": {
+    "logical_assets": 1000000,
+    "physical_asset_versions": 2000000,
+    "source_patch_sha256": "5724da6eff689bcf14c5824ba8054d3f2014273094c3390e39f25adf3fc760d3",
+    "runtime_asset_repository_sha256": "7758e75609e18fddd6eb51b88a2293db2f0143657f697c323ac97f9f9b6ee11f",
+    "scope": "retained production result and independent projected-field oracle; isolated source, not concurrent native build",
+    "variants": {
+      "baseline": {
+        "attempts": 3,
+        "successful": 0,
+        "errors": [
+          "measure graph-source:baseline:0: Select: scan: code: 241, message: Query memory limit exceeded: would use 2.02 GiB (attempt to allocate chunk of 63.00 MiB), maximum: 2.00 GiB: While executing MergingSortedTransform",
+          "measure graph-source:baseline:1: Select: scan: code: 241, message: Query memory limit exceeded: would use 2.05 GiB (attempt to allocate chunk of 63.50 MiB), maximum: 2.00 GiB: While executing MergeSortingTransform",
+          "measure graph-source:baseline:2: Select: scan: code: 241, message: Query memory limit exceeded: would use 2.05 GiB (attempt to allocate chunk of 63.50 MiB), maximum: 2.00 GiB: While executing MergeSortingTransform"
+        ],
+        "successful_peak_query_bytes": null,
+        "successful_elapsed_with_oracle_median_seconds": null
+      },
+      "keyed_ordered_aggregation": {
+        "attempts": 3,
+        "successful": 3,
+        "errors": [],
+        "successful_peak_query_bytes": 1279252315,
+        "successful_elapsed_with_oracle_median_seconds": 5.583771388
+      },
+      "production": {
+        "attempts": 3,
+        "successful": 3,
+        "errors": [],
+        "successful_peak_query_bytes": 1122076512,
+        "successful_elapsed_with_oracle_median_seconds": 6.14664043
+      }
+    }
+  },
+  "final_100k_cost_gate": {
+    "passed": true,
+    "attempts": 3,
+    "successful_query_peak_bytes": 190054454,
+    "regression_ceiling_bytes": 234881024,
+    "fixed_profile_ceiling_bytes": 536870912,
+    "deliberate_old_query_regression_rejected": true,
+    "source_patch_sha256": "c3df2f2e7c12270a21de0db89f40a88cac07165b09098a2900f9d0f9c8a7acf7"
+  }
+}

@@ -61,7 +61,7 @@ func TestCHRepoSemantics_OrganizationProjectionAndApplicability(t *testing.T) {
 		{ID: secret + "-ungranted", Name: "ungranted secret", Type: "secretsmanager_secret", Provider: asset.ProviderAWS, AccountID: account},
 	}
 	repo, stored, ids := semanticsStore(t, rows)
-	for _, mode := range []string{"full", "types", "by IDs"} {
+	for _, mode := range []string{"full", "types"} {
 		t.Run(mode, func(t *testing.T) {
 			loaded := semanticsLoad(t, repo, mode, rows, ids)
 			byID := semanticsAssetMap(loaded)
@@ -138,7 +138,7 @@ func TestCHRepoSemantics_NetworkProjectionAndEdgeProperties(t *testing.T) {
 		{ID: prefix + "azure-unread-nics", Name: "unread NICs", Type: "azure_vm", Provider: asset.ProviderAzure, AccountID: prefix + "subscription", Metadata: map[string]string{"nic_nsgs": "[]", "network_interfaces_complete": "false"}},
 	}
 	repo, stored, ids := semanticsStore(t, rows)
-	for _, mode := range []string{"full", "types", "by IDs"} {
+	for _, mode := range []string{"full", "types"} {
 		t.Run(mode, func(t *testing.T) {
 			loaded := semanticsLoad(t, repo, mode, rows, ids)
 			byID := semanticsAssetMap(loaded)
@@ -229,8 +229,6 @@ func semanticsLoad(t *testing.T, repo *CHRepo, mode string, seed []asset.Asset, 
 			}
 		}
 		loaded, truncated, err = repo.LoadViewForTypes(t.Context(), types)
-	case "by IDs":
-		loaded, err = repo.LoadByIDs(t.Context(), ids)
 	default:
 		t.Fatalf("unknown loader %s", mode)
 	}
@@ -259,4 +257,22 @@ func semanticsAssetMap(rows []asset.Asset) map[string]asset.Asset {
 		out[a.ID] = a
 	}
 	return out
+}
+
+func TestCHRepoSeeds_BatchesActivationWithoutMatchingFields(t *testing.T) {
+	suffix := uuid.NewString()
+	var rows []asset.Asset
+	for i := 0; i < 405; i++ {
+		rows = append(rows, asset.Asset{ID: fmt.Sprintf("seed-%s-%04d", suffix, i), Type: "iam_role", AccountID: "account", Name: "omitted", Metadata: map[string]string{"policies": "omitted"}})
+	}
+	repo, _, ids := semanticsStore(t, rows)
+	got, err := repo.LoadByIDs(t.Context(), ids)
+	require.NoError(t, err)
+	require.Len(t, got, len(rows))
+	for _, a := range got {
+		require.Equal(t, "iam_role", a.Type)
+		require.Equal(t, "account", a.AccountID)
+		require.Empty(t, a.Name)
+		require.Empty(t, a.Metadata)
+	}
 }

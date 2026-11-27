@@ -202,28 +202,14 @@ const projectMetadataExpr = `toJSONString(mapFilter((k, v) -> k IN (%s), JSONExt
 // than selected whole — see projectMetadataExpr. Annotation producers publish
 // only their owned field intents; no projected row is written back over the
 // collector's complete observation.
-const loadView = `SELECT id,
-	argMax(name, synced_at), argMax(type, synced_at), argMax(account_id, synced_at),
-	argMax(public_ip, synced_at), argMax(private_ip, synced_at), argMax(domain, synced_at), argMax(tags, synced_at),
-	` + projectMetadataExpr + `
-	FROM asset_versions_with_derivations
-	WHERE type IN (%s) AND ` + asset.EphemeralLivenessCond + `
-	GROUP BY id
-	LIMIT ?`
+// Matching fields are projected before latest-row aggregation. The breaker
+// still refuses an incomplete graph at 600,000 relevant assets.
+const loadView = loadViewSource + ` LIMIT ?` + loadViewSettings
 
-// loadByIDs selects specific assets by ID for partial correlate seed.
-// Uses the same minimal columns (and the same metadata projection) as
-// loadView so the same scan helper applies. id is the GROUP BY key, so
-// filtering it in WHERE prunes on the primary key and aggregates only the
-// requested ids — not the whole table (this runs on every connector sync via
-// PartialCorrelate).
-const loadByIDs = `SELECT id,
-	argMax(name, synced_at), argMax(type, synced_at), argMax(account_id, synced_at),
-	argMax(public_ip, synced_at), argMax(private_ip, synced_at), argMax(domain, synced_at), argMax(tags, synced_at),
-	` + projectMetadataExpr + `
-	FROM asset_versions_with_derivations
-	WHERE id IN (%s)
-	GROUP BY id`
+// Seeds activate rules and account-scoped invalidations only. Matching fields
+// come from the later complete view, so large batches do not retain policy maps.
+const loadByIDs = `SELECT id, argMax(type, synced_at), argMax(account_id, synced_at)
+ FROM assets WHERE id IN (%s) GROUP BY id`
 
 // metadataKeyPlaceholders/metadataKeyArgs are metadataProjectedKeys pre-built
 // into a CHIn clause once at package init — every loadView/loadByIDs call
@@ -238,20 +224,10 @@ type CHRepo struct {
 
 func NewCHRepo(ch *db.CH) *CHRepo { return &CHRepo{ch: ch} }
 
-// loadViewSpillBytes makes the correlation aggregation spill to disk instead of
-// dying. loadView is a GROUP BY id over hundreds of thousands of assets whose
-// argMax state carries `metadata` (a JSON String) and can peak in the low
-// GiBs — not because that's over the server's memory cap alone, but because it
-// runs concurrently with the findings pages and their own cache floor.
-//
-// Spilling is the right trade here: this is a once-per-sweep bulk read with a
-// generous timeout, and ClickHouse's temp space is on the data disk with ample
-// headroom, so a few GiB of merge-sort spill is free. A retryable kill costs a
-// whole correlate sweep; extra seconds cost nothing.
-//
-// It bounds the aggregation, NOT the result: scanAssets still materialises every
-// row in the worker's heap, which is what correlationLimit is for.
-const loadViewSpillBytes = 1 << 30 // 1 GiB
+// Projected latest-row aggregation spills before exhausting the shared server
+// budget. Temporary IO and client result retention remain measured costs; this
+// threshold does not replace the unchanged result-count circuit breaker.
+const loadViewSpillBytes = 128 << 20 // 128 MiB; measured with the projected tuple
 
 func (r *CHRepo) scanAssets(ctx context.Context, query string, args ...any) ([]asset.Asset, error) {
 	ctx = r.ch.WithQuerySettings(ctx, map[string]any{
@@ -260,25 +236,10 @@ func (r *CHRepo) scanAssets(ctx context.Context, query string, args ...any) ([]a
 	var assets []asset.Asset
 	err := r.ch.Select(ctx, func(rows driver.Rows) error {
 		for rows.Next() {
-			var (
-				a        asset.Asset
-				metaJSON string
-			)
-			// name is REQUIRED: rules match on it (DeploysTo's compute-service
-			// lookup among them), and an empty Name silently kills them.
-			// The `if name != ""` guard in NewGraph's computeServiceByName is
-			// load-bearing and must stay: an empty key would make every compute
-			// service match reposByName[""].
-			//
-			// account_id is REQUIRED here even though the view is otherwise minimal:
-			// GCPImpersonation groups service accounts by AccountID to keep a
-			// project-level impersonation grant within its project. Dropping it
-			// collapses every SA into the "" bucket and fans impersonation out
-			// across ALL projects. See gcp_impersonation.go.
-			if err := rows.Scan(&a.ID, &a.Name, &a.Type, &a.AccountID, &a.PublicIP, &a.PrivateIP, &a.Domain, &a.Tags, &metaJSON); err != nil {
-				return fmt.Errorf("scan: %w", err)
+			a, err := scanCorrelationAsset(rows)
+			if err != nil {
+				return err
 			}
-			a.Metadata = decodeMeta(metaJSON)
 			assets = append(assets, a)
 		}
 		return nil
@@ -325,23 +286,54 @@ func (r *CHRepo) LoadViewForTypes(ctx context.Context, types []string) ([]asset.
 	return assets, len(assets) >= correlationLimit, nil
 }
 
-// LoadByIDs fetches specific assets by ID for the partial correlate seed load.
+// LoadByIDs loads activation fields in bounded SQL requests. Seed pages are
+// not one snapshot; the later complete view supplies all matching observations.
 func (r *CHRepo) LoadByIDs(ctx context.Context, ids []string) ([]asset.Asset, error) {
-	if len(ids) == 0 {
-		return nil, nil
+	var out []asset.Asset
+	for len(ids) > 0 {
+		n := 0
+		bytes := 0
+		for n < len(ids) && n < 200 {
+			cost := 6*len(ids[n]) + 3
+			if cost > 128<<10 {
+				return nil, fmt.Errorf("LoadByIDs: ID exceeds seed query byte limit")
+			}
+			if bytes+cost > 128<<10 {
+				break
+			}
+			bytes += cost
+			n++
+		}
+		rows, err := r.loadSeedPage(ctx, ids[:n])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rows...)
+		ids = ids[n:]
 	}
+	return out, nil
+}
+
+func (r *CHRepo) loadSeedPage(ctx context.Context, ids []string) ([]asset.Asset, error) {
 	qCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	placeholders, args := dbutil.CHIn(ids)
 
-	placeholders, idArgs := dbutil.CHIn(ids)
-	query := fmt.Sprintf(loadByIDs, metadataKeyPlaceholders, placeholders)
-	args := append(append([]any{}, metadataKeyArgs...), idArgs...)
-
-	assets, err := r.scanAssets(qCtx, query, args...)
+	var out []asset.Asset
+	err := r.ch.Select(qCtx, func(rows driver.Rows) error {
+		for rows.Next() {
+			var a asset.Asset
+			if err := rows.Scan(&a.ID, &a.Type, &a.AccountID); err != nil {
+				return fmt.Errorf("LoadByIDs scan: %w", err)
+			}
+			out = append(out, a)
+		}
+		return rows.Err()
+	}, fmt.Sprintf(loadByIDs, placeholders), args...)
 	if err != nil {
 		return nil, fmt.Errorf("LoadByIDs: %w", err)
 	}
-	return assets, nil
+	return out, nil
 }
 
 func decodeMeta(s string) map[string]string {
@@ -353,4 +345,15 @@ func decodeMeta(s string) map[string]string {
 		return nil
 	}
 	return m
+}
+
+func scanCorrelationAsset(rows driver.Rows) (asset.Asset, error) {
+	var a asset.Asset
+	var metaJSON string
+	// Name and AccountID are matching inputs, not display-only columns.
+	if err := rows.Scan(&a.ID, &a.Name, &a.Type, &a.AccountID, &a.PublicIP, &a.PrivateIP, &a.Domain, &a.Tags, &metaJSON); err != nil {
+		return a, fmt.Errorf("scan correlation asset: %w", err)
+	}
+	a.Metadata = decodeMeta(metaJSON)
+	return a, nil
 }

@@ -30,6 +30,7 @@ const TRAVERSABLE = new Set([
   "runs_in",
   "deploys_to",
   "executes_as",
+  "has_role",
   "can_assume",
   "can_escalate",
   "can_escalate_to",
@@ -52,6 +53,13 @@ function severityFor(risk: number): AttackPath["severity"] {
   if (risk >= SCORE_THRESHOLDS.page) return "critical";
   if (risk >= SCORE_THRESHOLDS.high) return "high";
   return "medium";
+}
+
+// pathSummary names the hops a list row shows: where the path starts, the node
+// it goes through first, and where it ends.
+export function pathSummary(p: AttackPath): string[] {
+  const { hops } = p;
+  return hops.length > 2 ? [hops[0].label, hops[1].label, hops[hops.length - 1].label] : hops.map((h) => h.label);
 }
 
 // computeAttackPaths enumerates the shortest entry→target chain for each
@@ -118,6 +126,12 @@ export function computeAttackPaths(nodes: GraphViewNode[], edges: GraphViewEdge[
     }
     chain.reverse();
 
+    // The chain starts where the attacker enters: the internet node the entry's
+    // exposure edge points at, when the result includes it.
+    const exposure = edges.findIndex(
+      (e) => e.label === "exposed_to_internet" && e.source === entry.id && e.target !== entry.id && byId.has(e.target) && !isHidden(e.target),
+    );
+
     const seqKey = chain.map((c) => c.id).join(">");
     if (seenSeq.has(seqKey)) continue;
     seenSeq.add(seqKey);
@@ -126,6 +140,13 @@ export function computeAttackPaths(nodes: GraphViewNode[], edges: GraphViewEdge[
       const n = byId.get(c.id);
       return { id: c.id, label: n?.label ?? c.id, sub: n?.sub, via: c.via };
     });
+    if (exposure >= 0) {
+      const e = edges[exposure];
+      const n = byId.get(e.target);
+      hops[0].via = "exposed_to_internet";
+      hops.unshift({ id: e.target, label: n?.label ?? e.target, sub: n?.sub });
+      edgeKeys.add(`${e.source}->${e.target}-${exposure}`);
+    }
     const targetRisk = byId.get(hit)?.risk ?? 80;
     paths.push({ id: seqKey, hops, edgeKeys, severity: severityFor(targetRisk), targetRisk });
   }

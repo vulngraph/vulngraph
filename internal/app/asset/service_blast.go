@@ -57,20 +57,19 @@ func (s *Service) BlastRadiusAccounts(ctx context.Context, seedID string, maxDep
 	if maxDepth <= 0 {
 		maxDepth = defaultMaxDepth
 	}
-	seed, err := s.repo.AccountsByIDs(ctx, []string{seedID})
-	if err != nil {
-		return BlastAccountCounts{}, fmt.Errorf("BlastRadiusAccounts: seed: %w", err)
-	}
-	if _, ok := seed[seedID]; !ok {
-		return BlastAccountCounts{}, fmt.Errorf("BlastRadiusAccounts: seed: %w", ErrNotFound)
-	}
 	walk, err := s.walkBlastRadius(ctx, seedID, maxDepth, DirAttack)
 	if err != nil {
 		return BlastAccountCounts{}, err
 	}
-	accounts, err := s.repo.AccountsByIDs(ctx, blastNodeIDs(walk.nodes))
+	// Validate the seed and read reachable accounts in the same current-version
+	// lookup. An orphaned edge cannot make an absent seed look measured.
+	ids := append(blastNodeIDs(walk.nodes), seedID)
+	accounts, err := s.repo.AccountsByIDs(ctx, ids)
 	if err != nil {
 		return BlastAccountCounts{}, fmt.Errorf("BlastRadiusAccounts: hydrate: %w", err)
+	}
+	if _, ok := accounts[seedID]; !ok {
+		return BlastAccountCounts{}, fmt.Errorf("BlastRadiusAccounts: seed: %w", ErrNotFound)
 	}
 	out := BlastAccountCounts{Total: len(walk.nodes), ByAccount: map[string]int{}, Truncated: walk.truncated}
 	for i, ep := range walk.nodes {

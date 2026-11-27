@@ -68,13 +68,15 @@ func TestBlastAccountSummaryMatchesFullWalk(t *testing.T) {
 
 type failedAccountRepo struct {
 	*fakeRepo
-	calls  int
-	failAt int
-	err    error
+	calls   int
+	lookups [][]string
+	failAt  int
+	err     error
 }
 
 func (r *failedAccountRepo) AccountsByIDs(ctx context.Context, ids []string) (map[string]string, error) {
 	r.calls++
+	r.lookups = append(r.lookups, append([]string(nil), ids...))
 	if r.calls == r.failAt {
 		return nil, r.err
 	}
@@ -85,13 +87,27 @@ func TestBlastAccountFailuresCannotEstablishDistribution(t *testing.T) {
 	svc := NewService(newFakeRepo())
 	_, err := svc.BlastRadiusAccounts(t.Context(), "missing", 2)
 	require.ErrorIs(t, err, ErrNotFound)
-	for _, failAt := range []int{1, 2} {
-		repo := &failedAccountRepo{fakeRepo: newFakeRepo(), failAt: failAt, err: errors.New("read failed")}
-		repo.addAsset("seed")
-		repo.addAsset("other")
-		repo.link("seed", "other", "runs_in")
-		counts, err := NewService(repo).BlastRadiusAccounts(t.Context(), "seed", 2)
-		require.ErrorIs(t, err, repo.err)
-		require.Nil(t, counts.ByAccount)
-	}
+	repo := &failedAccountRepo{fakeRepo: newFakeRepo(), failAt: 1, err: errors.New("read failed")}
+	repo.addAsset("seed")
+	repo.addAsset("other")
+	repo.link("seed", "other", "runs_in")
+	counts, err := NewService(repo).BlastRadiusAccounts(t.Context(), "seed", 2)
+	require.ErrorIs(t, err, repo.err)
+	require.Nil(t, counts.ByAccount)
+}
+
+func TestBlastAccountSummaryReadsSeedAndAccountsTogether(t *testing.T) {
+	repo := &failedAccountRepo{fakeRepo: newFakeRepo()}
+	repo.addAsset("seed")
+	repo.addAsset("other")
+	repo.link("seed", "other", "runs_in")
+	counts, err := NewService(repo).BlastRadiusAccounts(t.Context(), "seed", 2)
+	require.NoError(t, err)
+	require.Equal(t, 1, counts.Total)
+	require.Equal(t, 1, repo.calls, "seed validation and account hydration need only one current-version read")
+	require.ElementsMatch(t, []string{"seed", "other"}, repo.lookups[0])
+	delete(repo.assets, "seed")
+	counts, err = NewService(repo).BlastRadiusAccounts(t.Context(), "seed", 2)
+	require.ErrorIs(t, err, ErrNotFound, "orphaned edges must not establish a measured distribution for an absent seed")
+	require.Nil(t, counts.ByAccount)
 }

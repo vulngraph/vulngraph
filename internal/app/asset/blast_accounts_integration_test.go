@@ -84,6 +84,6 @@ func TestBlastAccountProjectionMatchesFullWalk(t *testing.T) {
 	require.Positive(t, fullBytes)
 	require.Positive(t, countBytes)
 	require.Less(t, countBytes, fullBytes/4, "account counting must not read full metadata")
-	require.EqualValues(t, 4, queries, "seed, two edge hops and one account hydration")
+	require.EqualValues(t, 3, queries, "two edge hops and one combined seed/account lookup")
 	t.Logf("full_read_bytes=%d account_read_bytes=%d queries=%d", fullBytes, countBytes, queries)
 }

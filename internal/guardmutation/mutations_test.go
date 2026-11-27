@@ -43,6 +43,21 @@ type Mutation struct {
 // still applied and verified independently.
 var mutations = []Mutation{
 	{
+		Guard: "TestCancelledInventoryCannotOverwriteHistory", Pkg: "./internal/app/asset",
+		File: "internal/app/asset/service.go",
+		Old:  "if err := ctx.Err(); err != nil {\n\t\treturn fmt.Errorf(\"Ingest: observation interrupted: %w\", err)",
+		New:  "if err := ctx.Err(); false {\n\t\treturn fmt.Errorf(\"Ingest: observation interrupted: %w\", err)",
+		Why:  "lets an interrupted history lookup publish an inventory version with a replacement first-observed timestamp",
+	},
+	{
+		Guard: "TestEnrichCancellationCannotPublishDegradedOutput", Pkg: "./internal/app/enrich",
+		File: "internal/app/enrich/service.go",
+		Old:  "if err := ctx.Err(); err != nil {\n\t\treturn Score{}, fmt.Errorf(\"Enrich: evaluation interrupted: %w\", err)",
+		New:  "if err := ctx.Err(); false {\n\t\treturn Score{}, fmt.Errorf(\"Enrich: evaluation interrupted: %w\", err)",
+		Why:  "allows write budgets to publish a degraded score after cancellation interrupted its evaluation",
+	},
+
+	{
 		Guard: "TestListKeysQueryJoinsOnlyWhenNeeded", Pkg: "./internal/app/finding",
 		File: "internal/app/finding/repo.go",
 		Old:  "if needsEnrichment {", New: "if needsEnrichment || true {",

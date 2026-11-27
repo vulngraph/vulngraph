@@ -85,6 +85,27 @@ class TrendContract(unittest.TestCase):
         with self.assertRaises(ValueError):
             trend.measurements(roots[1])
 
+    def test_includes_late_wave_costs_and_rejects_invalid_samples(self):
+        root = self.fixture("late-waves")
+        path = root / "soak.json"
+        data = trend.read(path)
+        data["waves"].extend([
+            dict(seconds=3, heap_bytes_after_gc=50, process_peak_rss_bytes=100),
+            dict(seconds=9, heap_bytes_after_gc=20, process_peak_rss_bytes=100),
+        ])
+        path.write_text(json.dumps(data))
+        _, _, values = trend.measurements(root)
+        self.assertEqual(values["soak/sustained/median_wave_seconds"], 3)
+        self.assertEqual(values["soak/sustained/max_wave_seconds"], 9)
+        self.assertEqual(values["soak/all_waves/max_heap_bytes_after_gc"], 50)
+        self.assertEqual(values["soak/all_waves/max_process_peak_rss_bytes"], 100)
+        self.assertEqual(values["soak/all_waves/final_heap_bytes_after_gc"], 20)
+        for invalid in [-1, float("nan")]:
+            data["waves"][-1]["heap_bytes_after_gc"] = invalid
+            path.write_text(json.dumps(data))
+            with self.assertRaises(ValueError):
+                trend.measurements(root)
+
     def summary(self, samples, machine="bench-1"):
         import statistics
         return {"format_version": 1, "commit": "fixture", "cohort": {"environment": {"stable_machine_id": machine}},

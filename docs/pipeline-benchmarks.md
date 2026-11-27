@@ -205,7 +205,8 @@ python3 scripts/performance_trend.py compare /tmp/baseline.json /tmp/candidate.j
 
 Create baselines from a clean committed tree. Summaries require three successful,
 distinct runs at the same revision and reject missing scenario coverage,
-read errors or incomplete recovery. They include collection, organization
+read errors or incomplete recovery. Later waves contribute sustained timing and
+memory peaks as well as the initial/restart samples. Summaries include collection, organization
 reconciliation, sync, graph and consumed-queue timings and costs. Hardware,
 container image identities and limits, toolchain and fixture counts must match
 before two summaries can be compared. A regression needs both a median more

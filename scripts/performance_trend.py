@@ -121,6 +121,16 @@ def measurements(root):
     for index, name in enumerate(["initial", "restart", "steady"]):
         for key in ["seconds", "heap_bytes_after_gc", "process_peak_rss_bytes"]:
             values[f"soak/{name}/{key}"] = soak["waves"][index][key]
+    wave_keys = ["seconds", "heap_bytes_after_gc", "process_peak_rss_bytes"]
+    for wave in soak["waves"]:
+        if any(not isinstance(wave[k], (int, float)) or not math.isfinite(wave[k]) or wave[k] < 0 for k in wave_keys):
+            raise ValueError(f"{root}: invalid sustained wave measurement")
+    steady = soak["waves"][2:]
+    values["soak/sustained/median_wave_seconds"] = statistics.median(w["seconds"] for w in steady)
+    values["soak/sustained/max_wave_seconds"] = max(w["seconds"] for w in steady)
+    for key in ["heap_bytes_after_gc", "process_peak_rss_bytes"]:
+        values[f"soak/all_waves/max_{key}"] = max(w[key] for w in soak["waves"])
+    values["soak/all_waves/final_heap_bytes_after_gc"] = soak["waves"][-1]["heap_bytes_after_gc"]
     for name, latency in soak["reads"].items():
         for key in ["p50_seconds", "p95_seconds", "p99_seconds", "max_seconds"]:
             values[f"reads/{name}/{key}"] = latency[key]

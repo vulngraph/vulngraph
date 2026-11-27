@@ -95,6 +95,9 @@ func (s *Service) ChangeLog(ctx context.Context, assetID string, limit int) ([]F
 // Ingest stores a batch of assets and their edges.
 func (s *Service) Ingest(ctx context.Context, assets []Asset, edges []Edge) error {
 	s.pinFirstDiscoveredAt(ctx, assets)
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("Ingest: observation interrupted: %w", err)
+	}
 	if err := s.repo.UpsertAssets(ctx, assets); err != nil {
 		return fmt.Errorf("Ingest: %w", err)
 	}
@@ -116,6 +119,9 @@ func (s *Service) IngestEdges(ctx context.Context, edges []Edge) error {
 // annotating an existing asset's metadata rather than emitting an edge).
 func (s *Service) IngestAssets(ctx context.Context, assets []Asset) error {
 	s.pinFirstDiscoveredAt(ctx, assets)
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("IngestAssets: observation interrupted: %w", err)
+	}
 	if err := s.repo.UpsertAssets(ctx, assets); err != nil {
 		return fmt.Errorf("IngestAssets: %w", err)
 	}
@@ -145,6 +151,9 @@ func (s *Service) pinFirstDiscoveredAt(ctx context.Context, assets []Asset) {
 		return
 	}
 	for start := 0; start < len(assets); start += pinFirstDiscoveredAtChunkSize {
+		if ctx.Err() != nil {
+			return // callers reject interrupted observations before durable writes
+		}
 		end := min(start+pinFirstDiscoveredAtChunkSize, len(assets))
 		chunk := assets[start:end]
 

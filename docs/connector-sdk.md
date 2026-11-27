@@ -43,6 +43,21 @@ Existing collectors under `internal/collect/` (`aws`, `gcp`, `azure`, `github`,
 `kubernetes`, `okta`, `google`) are the reference implementations. Keep the provider SDK
 behind an unexported interface so the mapping logic is unit-tested without network calls.
 
+Deletion also requires the family to appear in the audited allowlist in
+`internal/app/forget/domain.go`. The current families are EC2 instances, security
+groups, VPCs, addresses and subnets; GCP Compute instances; Azure VMs; GitHub
+installation repositories; and Kubernetes pods. Other families retain inventory
+until their own enumeration and scope contracts are covered.
+
+An enforceable scope must select the same population as stored asset metadata.
+Kubernetes pod regions are cluster names: a namespace completion cannot stand in
+for the entire cluster. The pod claim is emitted only after the namespace listing
+and every namespace's pod pages complete. A missing namespace is then covered by
+the completed cluster enumeration. A permission failure, expired snapshot or
+repeated continuation token cannot produce that claim. Azure VM pages must carry
+valid identities; GitHub truncated, malformed or repeated repository pages cannot
+authorize deletion. Enrichment failures do not imply the parent resource is absent.
+
 ## `Check` — rules Vulngraph *evaluates*
 
 A check is a value, not a type: an ID, metadata, a provider and optional asset type, and a

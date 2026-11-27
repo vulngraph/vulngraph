@@ -144,6 +144,7 @@ func (c *Collector) Collect(ctx context.Context, cfg map[string]string) (collect
 	// truthfully mean.
 	namespacesFullyEnumerated := true
 	var namespaceAssetCount int
+	var podCount int
 
 	for _, ns := range namespaces {
 		nsName := ns.Name
@@ -169,8 +170,8 @@ func (c *Collector) Collect(ctx context.Context, cfg map[string]string) (collect
 				Msg("k8s serviceaccount collection skipped")
 			result.Partial = true
 		} else {
-			// ListServiceAccounts makes one unpaginated call (no Limit set, see
-			// client.go), so a nil error IS the whole namespace's ServiceAccount
+			// ListServiceAccounts exhausts every page (see client.go), so a
+			// nil error IS the whole namespace's ServiceAccount
 			// set. len(sas) is also exactly what gets emitted as
 			// k8s_service_account assets below (every SA becomes an asset,
 			// unconditionally), so the count claimed here matches what's stored.
@@ -191,15 +192,15 @@ func (c *Collector) Collect(ctx context.Context, cfg map[string]string) (collect
 		if err != nil {
 			return collect.Result{}, fmt.Errorf("Collect: list pods %s: %w", nsName, err)
 		}
-		// A nil error here is the whole namespace's Pod set (one unpaginated
-		// call, and an error aborts the entire sweep rather than being
-		// swallowed) — claim only the k8s_pod type. The "container" and
+		// A nil error here proves every page of the namespace's Pod set
+		// was read (an error aborts the entire sweep) — claim only the k8s_pod type. The "container" and
 		// "container_image" assets podAsset also produces below are NOT
 		// claimed: their identity is keyed cross-namespace (an image digest is
 		// shared by any pod that runs it) and their count here is not a full
 		// enumeration of either type, so a claim would misrepresent what this
 		// listing actually proved.
 		result.MarkComplete(nsName+"/pods", []string{"k8s_pod"}, len(pods))
+		podCount += len(pods)
 		if nsName == "kube-system" {
 			kubeSystemPods = pods
 		}
@@ -378,7 +379,7 @@ func (c *Collector) Collect(ctx context.Context, cfg map[string]string) (collect
 				}
 			}
 			if cmErr == nil {
-				// One unpaginated call; a nil error is the whole namespace's
+				// Every page was read; a nil error is the whole namespace's
 				// ConfigMap set. cmAssetCount, not len(cms): only ConfigMaps
 				// with a plaintext-secret hit become k8s_configmap assets, and
 				// that's the type this scope is claimed for.
@@ -410,6 +411,12 @@ func (c *Collector) Collect(ctx context.Context, cfg map[string]string) (collect
 			known.listedNamespaces[nsName] = true
 		}
 	}
+
+	// Stored pod regions are cluster names, not namespaces. Only the complete
+	// namespace walk can authorize absence for that region, including pods in
+	// namespaces that have themselves disappeared. A failed pod page returns
+	// before this claim; per-namespace claims remain unenforceable.
+	result.MarkComplete(clusterName+"/kubernetes:pods", []string{"k8s_pod"}, podCount)
 
 	// k8s_namespace is a single cluster-wide scope (ListNamespaces has no
 	// per-namespace granularity), so it can only be claimed complete when

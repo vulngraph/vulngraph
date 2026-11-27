@@ -28,7 +28,7 @@ func TestBranchProtectionForbiddenDoesNotSplitIntoPerRepoRequests(t *testing.T) 
 				resp.StatusCode = tc.status
 				return resp, nil
 			})}}
-			var repos []repo
+			repos := make([]repo, 0)
 			for i := range 1000 {
 				repos = append(repos, repo{FullName: fmt.Sprintf("org/repo%d", i), DefaultBranch: "main"})
 			}

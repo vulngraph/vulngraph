@@ -81,12 +81,31 @@ func collectVMs(ctx context.Context, cred azcore.TokenCredential, subscriptionID
 
 	var assets []asset.Asset
 	var edges []asset.Edge
+	seenIDs, seenLinks := map[string]bool{}, map[string]bool{}
 
 	pager := vmClient.NewListAllPager(nil)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("collectVMs: list: %w", err)
+		}
+		if page.Value == nil {
+			return nil, nil, fmt.Errorf("collectVMs: response omitted the VM list")
+		}
+		if page.NextLink != nil && *page.NextLink != "" {
+			if seenLinks[*page.NextLink] {
+				return nil, nil, fmt.Errorf("collectVMs: repeated pagination link")
+			}
+			seenLinks[*page.NextLink] = true
+		}
+		for _, vm := range page.Value {
+			if vm == nil || vm.ID == nil || *vm.ID == "" {
+				return nil, nil, fmt.Errorf("collectVMs: list returned a VM without an identity")
+			}
+			if seenIDs[*vm.ID] {
+				return nil, nil, fmt.Errorf("collectVMs: repeated VM identity")
+			}
+			seenIDs[*vm.ID] = true
 		}
 		// NIC reads are independent. Keep output in pager order while bounding
 		// in-flight API work; a failed/panicking mapping aborts this enumeration.
@@ -95,9 +114,6 @@ func collectVMs(ctx context.Context, cred azcore.TokenCredential, subscriptionID
 		var group errgroup.Group
 		group.SetLimit(8)
 		for i, vm := range page.Value {
-			if vm == nil || vm.ID == nil {
-				continue
-			}
 			group.Go(func() (err error) {
 				defer func() {
 					if p := recover(); p != nil {

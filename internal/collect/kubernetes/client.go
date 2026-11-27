@@ -30,123 +30,158 @@ type realK8s struct {
 }
 
 func (r *realK8s) ListNamespaces(ctx context.Context) ([]corev1.Namespace, error) {
-	list, err := r.cs.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+	return listPages(ctx, func(opts metav1.ListOptions) ([]corev1.Namespace, string, string, error) {
+		list, err := r.cs.CoreV1().Namespaces().List(ctx, opts)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return list.Items, list.Continue, list.ResourceVersion, nil
+	})
 }
 
 func (r *realK8s) ListPods(ctx context.Context, ns string) ([]corev1.Pod, error) {
-	list, err := r.cs.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+	return listPages(ctx, func(opts metav1.ListOptions) ([]corev1.Pod, string, string, error) {
+		list, err := r.cs.CoreV1().Pods(ns).List(ctx, opts)
+		if err != nil {
+			return nil, "", "", err
+		}
+		for _, pod := range list.Items {
+			if ns != "" && pod.Namespace != ns {
+				return nil, "", "", fmt.Errorf("pod page contains an object outside namespace %q", ns)
+			}
+		}
+		return list.Items, list.Continue, list.ResourceVersion, nil
+	})
 }
 
 func (r *realK8s) ListServices(ctx context.Context, ns string) ([]corev1.Service, error) {
-	list, err := r.cs.CoreV1().Services(ns).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+	return listPages(ctx, func(opts metav1.ListOptions) ([]corev1.Service, string, string, error) {
+		list, err := r.cs.CoreV1().Services(ns).List(ctx, opts)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return list.Items, list.Continue, list.ResourceVersion, nil
+	})
 }
 
 func (r *realK8s) ListDeployments(ctx context.Context, ns string) ([]appsv1.Deployment, error) {
-	list, err := r.cs.AppsV1().Deployments(ns).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+	return listPages(ctx, func(opts metav1.ListOptions) ([]appsv1.Deployment, string, string, error) {
+		list, err := r.cs.AppsV1().Deployments(ns).List(ctx, opts)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return list.Items, list.Continue, list.ResourceVersion, nil
+	})
 }
 
 func (r *realK8s) ListStatefulSets(ctx context.Context, ns string) ([]appsv1.StatefulSet, error) {
-	list, err := r.cs.AppsV1().StatefulSets(ns).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+	return listPages(ctx, func(opts metav1.ListOptions) ([]appsv1.StatefulSet, string, string, error) {
+		list, err := r.cs.AppsV1().StatefulSets(ns).List(ctx, opts)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return list.Items, list.Continue, list.ResourceVersion, nil
+	})
 }
 
 func (r *realK8s) ListDaemonSets(ctx context.Context, ns string) ([]appsv1.DaemonSet, error) {
-	list, err := r.cs.AppsV1().DaemonSets(ns).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+	return listPages(ctx, func(opts metav1.ListOptions) ([]appsv1.DaemonSet, string, string, error) {
+		list, err := r.cs.AppsV1().DaemonSets(ns).List(ctx, opts)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return list.Items, list.Continue, list.ResourceVersion, nil
+	})
 }
 
 func (r *realK8s) ListJobs(ctx context.Context, ns string) ([]batchv1.Job, error) {
-	list, err := r.cs.BatchV1().Jobs(ns).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+	return listPages(ctx, func(opts metav1.ListOptions) ([]batchv1.Job, string, string, error) {
+		list, err := r.cs.BatchV1().Jobs(ns).List(ctx, opts)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return list.Items, list.Continue, list.ResourceVersion, nil
+	})
 }
 
 func (r *realK8s) ListClusterRoles(ctx context.Context) ([]rbacv1.ClusterRole, error) {
-	list, err := r.cs.RbacV1().ClusterRoles().List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+	return listPages(ctx, func(opts metav1.ListOptions) ([]rbacv1.ClusterRole, string, string, error) {
+		list, err := r.cs.RbacV1().ClusterRoles().List(ctx, opts)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return list.Items, list.Continue, list.ResourceVersion, nil
+	})
 }
 
 func (r *realK8s) ListClusterRoleBindings(ctx context.Context) ([]rbacv1.ClusterRoleBinding, error) {
-	list, err := r.cs.RbacV1().ClusterRoleBindings().List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+	return listPages(ctx, func(opts metav1.ListOptions) ([]rbacv1.ClusterRoleBinding, string, string, error) {
+		list, err := r.cs.RbacV1().ClusterRoleBindings().List(ctx, opts)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return list.Items, list.Continue, list.ResourceVersion, nil
+	})
 }
 
 func (r *realK8s) ListRoles(ctx context.Context) ([]rbacv1.Role, error) {
-	list, err := r.cs.RbacV1().Roles(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+	return listPages(ctx, func(opts metav1.ListOptions) ([]rbacv1.Role, string, string, error) {
+		list, err := r.cs.RbacV1().Roles(metav1.NamespaceAll).List(ctx, opts)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return list.Items, list.Continue, list.ResourceVersion, nil
+	})
 }
 
 func (r *realK8s) ListRoleBindings(ctx context.Context) ([]rbacv1.RoleBinding, error) {
-	list, err := r.cs.RbacV1().RoleBindings(metav1.NamespaceAll).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+	return listPages(ctx, func(opts metav1.ListOptions) ([]rbacv1.RoleBinding, string, string, error) {
+		list, err := r.cs.RbacV1().RoleBindings(metav1.NamespaceAll).List(ctx, opts)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return list.Items, list.Continue, list.ResourceVersion, nil
+	})
 }
 
 func (r *realK8s) ListServiceAccounts(ctx context.Context, ns string) ([]corev1.ServiceAccount, error) {
-	list, err := r.cs.CoreV1().ServiceAccounts(ns).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+	return listPages(ctx, func(opts metav1.ListOptions) ([]corev1.ServiceAccount, string, string, error) {
+		list, err := r.cs.CoreV1().ServiceAccounts(ns).List(ctx, opts)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return list.Items, list.Continue, list.ResourceVersion, nil
+	})
 }
 
 func (r *realK8s) ListIngresses(ctx context.Context, ns string) ([]networkingv1.Ingress, error) {
-	list, err := r.cs.NetworkingV1().Ingresses(ns).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+	return listPages(ctx, func(opts metav1.ListOptions) ([]networkingv1.Ingress, string, string, error) {
+		list, err := r.cs.NetworkingV1().Ingresses(ns).List(ctx, opts)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return list.Items, list.Continue, list.ResourceVersion, nil
+	})
 }
 
 func (r *realK8s) ListNetworkPolicies(ctx context.Context, ns string) ([]networkingv1.NetworkPolicy, error) {
-	list, err := r.cs.NetworkingV1().NetworkPolicies(ns).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+	return listPages(ctx, func(opts metav1.ListOptions) ([]networkingv1.NetworkPolicy, string, string, error) {
+		list, err := r.cs.NetworkingV1().NetworkPolicies(ns).List(ctx, opts)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return list.Items, list.Continue, list.ResourceVersion, nil
+	})
 }
 
 func (r *realK8s) ListConfigMaps(ctx context.Context, ns string) ([]corev1.ConfigMap, error) {
-	list, err := r.cs.CoreV1().ConfigMaps(ns).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+	return listPages(ctx, func(opts metav1.ListOptions) ([]corev1.ConfigMap, string, string, error) {
+		list, err := r.cs.CoreV1().ConfigMaps(ns).List(ctx, opts)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return list.Items, list.Continue, list.ResourceVersion, nil
+	})
 }
 
 // issuerDiscoveryTimeout bounds the single unauthenticated-shaped GET below.

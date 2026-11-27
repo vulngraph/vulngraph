@@ -339,6 +339,29 @@ func (f *fakeRepo) EdgesFrom(_ context.Context, srcIDs []string) ([]Edge, error)
 	return out, nil
 }
 
+func (f *fakeRepo) EdgesForAttack(ctx context.Context, ids []string) ([]Edge, error) {
+	outgoing, err := f.EdgesFrom(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	incoming, err := f.EdgesTo(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	var out []Edge
+	for _, e := range outgoing {
+		if attackFollowsOut(e.EdgeType) {
+			out = append(out, e)
+		}
+	}
+	for _, e := range incoming {
+		if attackFollowsIn(e.EdgeType) {
+			out = append(out, e)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeRepo) EdgesTo(_ context.Context, dstIDs []string) ([]Edge, error) {
 	want := map[string]bool{}
 	for _, id := range dstIDs {
@@ -580,7 +603,10 @@ func TestBlastRadius_TruncatesAtNodeBudget(t *testing.T) {
 	br, err := svc.BlastRadius(context.Background(), "seed", 5)
 	require.NoError(t, err)
 	require.True(t, br.Truncated)
-	require.LessOrEqual(t, len(br.Assets), maxNodeBudget+1)
+	require.Len(t, br.Assets, maxNodeBudget, "the accepted portion of the final hop must be hydrated before returning")
+	for _, a := range br.Assets {
+		require.NotEmpty(t, a.Name, "accepted nodes must carry their hydrated attributes")
+	}
 }
 
 func TestList_ReturnsAllAssets(t *testing.T) {

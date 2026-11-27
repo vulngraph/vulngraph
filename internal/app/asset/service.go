@@ -22,6 +22,7 @@ type Repo interface {
 	FindPackageVersions(ctx context.Context, name string, limit int) ([]Asset, error)
 	EdgesFrom(ctx context.Context, srcIDs []string) ([]Edge, error)
 	EdgesTo(ctx context.Context, dstIDs []string) ([]Edge, error)
+	EdgesForAttack(ctx context.Context, ids []string) ([]Edge, error)
 	EdgesInto(ctx context.Context, dstID, edgeType string) ([]Edge, error)
 	EdgesIntoTypes(ctx context.Context, dstID string, edgeTypes []string) ([]Edge, error)
 	EdgesOut(ctx context.Context, srcID, edgeType string) ([]Edge, error)
@@ -579,11 +580,12 @@ func (s *Service) BlastRadiusDir(ctx context.Context, seedID string, maxDepth in
 
 		// Collect unseen far endpoints for this hop, respecting the node budget.
 		var hopEndpoints []endpoint
+	endpoints:
 		for _, e := range hopEdges {
 			for _, to := range farEndpoints(e, frontier, dir, seen) {
 				if len(seen) >= maxNodeBudget {
 					result.Truncated = true
-					return result, nil
+					break endpoints
 				}
 				seen[to.id] = true
 				hopEndpoints = append(hopEndpoints, to)
@@ -626,34 +628,32 @@ func (s *Service) BlastRadiusDir(ctx context.Context, seedID string, maxDepth in
 			next = append(next, ep.id)
 		}
 		frontier = next
+		if result.Truncated {
+			break
+		}
 	}
 	return result, nil
 }
 
 // hopEdges fetches one frontier hop's edges in the requested direction(s).
 func (s *Service) hopEdges(ctx context.Context, frontier []string, dir Direction) ([]Edge, error) {
+	if dir == DirAttack {
+		return s.repo.EdgesForAttack(ctx, frontier)
+	}
 	var edges []Edge
-	if dir == DirOut || dir == DirBoth || dir == DirAttack {
+	if dir == DirOut || dir == DirBoth {
 		out, err := s.repo.EdgesFrom(ctx, frontier)
 		if err != nil {
 			return nil, err
 		}
-		for _, e := range out {
-			if dir != DirAttack || attackFollowsOut(e.EdgeType) {
-				edges = append(edges, e)
-			}
-		}
+		edges = append(edges, out...)
 	}
-	if dir == DirIn || dir == DirBoth || dir == DirAttack {
+	if dir == DirIn || dir == DirBoth {
 		in, err := s.repo.EdgesTo(ctx, frontier)
 		if err != nil {
 			return nil, err
 		}
-		for _, e := range in {
-			if dir != DirAttack || attackFollowsIn(e.EdgeType) {
-				edges = append(edges, e)
-			}
-		}
+		edges = append(edges, in...)
 	}
 	return edges, nil
 }

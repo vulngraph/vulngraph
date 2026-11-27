@@ -278,6 +278,11 @@ func (b BlastRadius) countWithBreakdown(ctx context.Context, resourceID string) 
 		return 0, nil, err
 	}
 	bd := breakdownFromAssets(resourceID, br.Assets)
+	if br.Truncated {
+		// The visited assets are a lower bound, not an account distribution
+		// for the whole walk. A partial sample must never establish a discount.
+		return bd.Total, nil, nil
+	}
 	return bd.Total, &bd, nil
 }
 
@@ -288,7 +293,8 @@ func (b BlastRadius) countWithBreakdown(ctx context.Context, resourceID string) 
 // skipping there can never diverge from the un-skipped answer. Errors are
 // swallowed to a nil breakdown: the Ladybug count already stands as the score,
 // and a failed confirmation must not block or degrade it (see
-// countWithBreakdown doc).
+// countWithBreakdown doc). A truncated walk is also insufficient evidence for
+// discounting: its account sample may omit independent targets.
 func (b BlastRadius) confirmBreakdown(ctx context.Context, resourceID string, n int) *BlastBreakdown {
 	if n <= blastAccountCap || b.Provider == nil {
 		return nil
@@ -298,6 +304,9 @@ func (b BlastRadius) confirmBreakdown(ctx context.Context, resourceID string, n 
 		log.FromContext(ctx).Warn().Err(err).Str("resource_id", resourceID).
 			Msg("blast_radius: account breakdown fetch failed, scoring without same-account dedupe")
 		return nil
+	}
+	if br.Truncated {
+		return nil // retain the native count; an incomplete sample cannot discount it
 	}
 	bd := breakdownFromAssets(resourceID, br.Assets)
 	return &bd

@@ -93,7 +93,10 @@ jobs:
           PERF_ENVELOPE_PACKAGE: ./internal/app/correlate
           PERF_ENVELOPE_TEST: ^TestProductionCorrelationLoaderCosts$
           PERF_ENVELOPE_SWAP: equal
-        run: bash scripts/benchmark-connector-envelope.sh target "$RUNNER_TEMP/correlation-source-throughput"
+        run: |
+          PERF_LINUX_GO_CACHE="$(go env GOCACHE)"
+          export PERF_LINUX_GO_CACHE
+          bash scripts/benchmark-connector-envelope.sh target "$RUNNER_TEMP/correlation-source-throughput"
       - name: Check latest-row joins and lifecycle parity
         timeout-minutes: 15
         env:

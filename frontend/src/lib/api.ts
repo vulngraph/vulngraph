@@ -198,7 +198,7 @@ export type DecisionRun = Schemas["DecisionRun"];
 export type DecisionRunResult = Schemas["DecisionRunResult"];
 export type DecisionAuditRow = Schemas["DecisionAuditRow"];
 export type ComplianceCoverage = Schemas["ComplianceCoverage"];
-// Requirement-level frameworks (ADR 093): NIST 800-53, PCI DSS, SOC 2, ISO 27001, HIPAA.
+// Requirement-level frameworks (ADR 093): NIST 800-53 plus any loaded from FRAMEWORKS_DIR.
 export type ComplianceFrameworkList = Schemas["ComplianceFrameworkList"];
 export type ComplianceFramework = Schemas["ComplianceFramework"];
 export type ComplianceRequirement = Schemas["ComplianceRequirement"];

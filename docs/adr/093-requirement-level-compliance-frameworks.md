@@ -1,6 +1,13 @@
 # ADR 093 — Compliance frameworks are rolled up per requirement
 
-**Status:** accepted (2026-10-10)
+**Status:** accepted (2026-10-10), amended (2026-11-26)
+
+**Amendment.** Only NIST SP 800-53 Rev. 5 ships built in. The PCI DSS, SOC 2, ISO/IEC 27001 and
+HIPAA files moved to `docs/frameworks` as examples, because most of their requirements are about
+policy and process and cannot be assessed from configuration. An operator loads their own
+framework files (the same format, the same validation) from `FRAMEWORKS_DIR`, and each framework
+reports where its mapping came from. The benchmark-watch generator now builds NIST only. The
+decisions below describe the mapping format and the rollup, which are unchanged.
 
 ## Context
 

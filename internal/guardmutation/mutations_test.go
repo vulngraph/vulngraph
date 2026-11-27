@@ -502,9 +502,9 @@ var mutations = []Mutation{
 	},
 	{
 		Guard: "TestFrameworkFilesAreCanonical", Pkg: "./internal/checks/frameworks",
-		File: "internal/checks/frameworks/iso_27001_2022.yaml",
-		Old:  "{id: \"A.5.1\", title:",
-		New:  "{id: \"A.5.1\",  title:",
+		File: "internal/checks/frameworks/nist_800_53_r5.yaml",
+		Old:  "{id: \"AC-2\", title:",
+		New:  "{id: \"AC-2\",  title:",
 		Why:  "a hand edit to a generated mapping file that the next regeneration would silently revert",
 	},
 	{
@@ -4990,6 +4990,13 @@ var mutations = []Mutation{
 			"  disk-scan-envelope-key: {{ default (printf \"disk-scan-envelope|%s\" .Values.secret.secretKey | sha256sum | trunc 32 | b64enc) .Values.secret.diskScanEnvelopeKey | quote }}\n",
 		Why: "the disk-scan envelope key is rendered into the Secret even with disk scanning off, so \"off\" still " +
 			"leaves a credential-sealing key in the cluster",
+	},
+	{
+		Guard: "TestChartFrameworksDirOnlyWhenConfigured", Pkg: "./cmd/graph",
+		File: "deploy/helm-chart/graph/templates/deployment-serve.yaml",
+		Old:  "{{- if .Values.config.frameworksConfigMap }}\n# serve-only: your own requirement frameworks",
+		New:  "{{- if true }}\n# serve-only: your own requirement frameworks",
+		Why:  "FRAMEWORKS_DIR rendered on serve with no ConfigMap configured, so serve would refuse to start on a directory that is not mounted",
 	},
 	{
 		Guard: "TestDiskScanRoleIsTheSnapshotActionList", Pkg: "./deploy/aws",

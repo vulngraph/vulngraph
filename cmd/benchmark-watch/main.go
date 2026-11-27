@@ -182,11 +182,7 @@ func writeBundle(dir string, b fs.FS) error {
 // checkFrameworks regenerates the framework mappings from the bundle and
 // reports which committed files differ; with -update it rewrites them.
 func checkFrameworks(bundle fs.FS, bs []benchmarks.Benchmark, o options) ([]string, error) {
-	current, err := frameworks.LoadDir(o.fwDir)
-	if err != nil {
-		return nil, fmt.Errorf("checkFrameworks: %w", err)
-	}
-	generated, err := upstream.GenerateFrameworks(bundle, bs, current)
+	generated, err := upstream.GenerateFrameworks(bundle, bs)
 	if err != nil {
 		return nil, fmt.Errorf("checkFrameworks: %w", err)
 	}

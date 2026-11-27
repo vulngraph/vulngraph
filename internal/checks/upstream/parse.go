@@ -92,10 +92,9 @@ type ProwlerFramework struct {
 
 // ProwlerRequirement is one requirement and the Prowler checks mapped to it.
 type ProwlerRequirement struct {
-	ID         string           `json:"Id"`
-	Name       string           `json:"Name"`
-	Checks     []string         `json:"Checks"`
-	Attributes []map[string]any `json:"Attributes"`
+	ID     string   `json:"Id"`
+	Name   string   `json:"Name"`
+	Checks []string `json:"Checks"`
 }
 
 // decodeProwler parses a Prowler compliance JSON; a file with no
@@ -109,15 +108,6 @@ func decodeProwler(raw []byte) (ProwlerFramework, error) {
 		return ProwlerFramework{}, errors.New("decodeProwler: no requirements")
 	}
 	return f, nil
-}
-
-// section returns the requirement's first Attributes "Section" string.
-func (r ProwlerRequirement) section() string {
-	if len(r.Attributes) == 0 {
-		return ""
-	}
-	s, _ := r.Attributes[0]["Section"].(string)
-	return s
 }
 
 func prowlerIDs(f ProwlerFramework) []string {

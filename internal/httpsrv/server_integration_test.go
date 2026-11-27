@@ -79,7 +79,7 @@ func buildServer(t *testing.T) (*http.Server, func(email string) *http.Cookie) {
 	assetSvc := asset.NewService(asset.NewCHRepo(ch))
 	findingSvc := finding.NewService(finding.NewCHRepo(ch))
 	suppressSvc := suppress.NewService(suppress.NewPGRepo(pool)).WithAudit(suppress.NewCHAuditRepo(ch))
-	complianceCatalog, err := compliance.LoadCatalog()
+	complianceCatalog, err := compliance.LoadCatalog("")
 	require.NoError(t, err)
 
 	suffix := time.Now().Format("150405.000000")

@@ -1,5 +1,6 @@
 import { Handle, Position, useStore } from "@xyflow/react";
 import { typeMetaFor } from "../../lib/assetMeta";
+import { DOT_ZOOM, dotDiameter } from "./overview";
 
 export type AssetNodeData = {
   label: string;
@@ -18,11 +19,6 @@ export type AssetNodeData = {
   border: string;
 };
 
-// Below this zoom a node collapses to a dot. Kept low (0.35) so node cards stay
-// readable across the normal fit range — a higher threshold (e.g. 0.55) puts a
-// fit-to-view graph just under it, rendering every node as a bare dot.
-const DOT_ZOOM = 0.35;
-
 function signalDots(d: AssetNodeData) {
   const dots: string[] = [];
   if (d.toxicCombo) dots.push("bg-red");
@@ -33,13 +29,14 @@ function signalDots(d: AssetNodeData) {
 }
 
 export function AssetNode({ data, selected }: { data: AssetNodeData; selected?: boolean }) {
-  const far = useStore((s) => s.transform[2] < DOT_ZOOM);
+  const zoom = useStore((s) => s.transform[2]);
+  const far = zoom < DOT_ZOOM;
   const meta = typeMetaFor(data.rawType ?? "");
   const Icon = meta.icon;
   const dots = signalDots(data);
 
   if (far) {
-    const size = Math.round(8 + ((data.width - 140) / 60) * 10);
+    const size = dotDiameter(data.width, zoom);
     return (
       <>
         <Handle type="target" position={Position.Left} className="!opacity-0" />

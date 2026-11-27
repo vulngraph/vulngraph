@@ -14,7 +14,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useForceLayout } from "./graph/useForceLayout";
 import { computeAttackPaths, type AttackPath } from "./graph/attackPaths";
-import { edgeLabel, shortenLabel, typeLabel } from "./graph/labels";
+import { edgeLabel, edgeType, shortenLabel, typeLabel } from "./graph/labels";
 import { AttackPathPanel } from "./graph/AttackPathPanel";
 import { NodeContextMenu, type MenuAction } from "./graph/NodeContextMenu";
 import { NodePeekPanel } from "./graph/NodePeekPanel";
@@ -125,11 +125,10 @@ export function GraphView({
   // renders instead of disconnected dots. Edges still missing an endpoint are dropped.
   const edges = useMemo<GraphViewEdge[]>(() => {
     return rawEdges
-      .map((e) => ({
-        ...e,
-        source: e.source || sentinelEndpoint(e.label),
-        target: e.target || sentinelEndpoint(e.label),
-      }))
+      .map((e) => {
+        const label = e.label ? edgeType(e.label) : e.label;
+        return { ...e, label, source: e.source || sentinelEndpoint(label), target: e.target || sentinelEndpoint(label) };
+      })
       .filter((e) => e.source && e.target && e.source !== e.target);
   }, [rawEdges]);
 
@@ -283,7 +282,7 @@ export function GraphView({
     setPeek(null);
     setActivePathId(p.id);
     setStepIdx(0);
-    flyToHop(p, 0);
+    rfApi?.fitView({ nodes: p.hops.map((h) => ({ id: h.id })), padding: 0.35, maxZoom: 1.2, duration: 700 });
   }
 
   function clearPath() {
@@ -406,7 +405,7 @@ export function GraphView({
       // canvas clean instead of a fog of always-on 8px text.
       const showLabel = !grouped && (onPath || (peek != null && (e.source === peek.id || e.target === peek.id)));
       const strokeColor = onPath ? "#f0abfc" : baseColor;
-      const strokeWidth = onPath ? 2.5 : isExposed || isPrivilege ? 1.5 : 1;
+      const strokeWidth = onPath ? 4 : isExposed || isPrivilege ? 1.5 : 1;
       out.push({
         id: edgeKey,
         source: src,
@@ -414,10 +413,11 @@ export function GraphView({
         type: "relationship",
         label: showLabel && e.label ? edgeLabel(e.label) : undefined,
         animated: false, // animation on custom edges would need CSS; keep clean
+        data: { onPath },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          width: 8,
-          height: 8,
+          width: onPath ? 14 : 8,
+          height: onPath ? 14 : 8,
           color: dimmed ? `${strokeColor}26` : strokeColor,
         },
         style: {

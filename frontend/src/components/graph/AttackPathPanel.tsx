@@ -1,4 +1,4 @@
-import type { AttackPath } from "./attackPaths";
+import { pathSummary, type AttackPath } from "./attackPaths";
 import { edgeLabel, shortenLabel, typeLabel } from "./labels";
 
 // AttackPathPanel lists candidate internet→admin chains and walks one hop-by-hop.
@@ -53,8 +53,8 @@ export function AttackPathPanel({
               className="mb-1 w-full rounded border border-border-subtle bg-surface-2 px-2 py-1.5 text-left hover:border-fuchsia-400/40 hover:bg-fuchsia-400/5">
               <div className="flex items-center gap-1.5">
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${p.severity === "critical" ? "bg-red" : p.severity === "high" ? "bg-orange" : "bg-amber"}`} />
-                <span className="truncate text-[11px] text-text-2" title={`${shortenLabel(p.hops[0].label)} → ${shortenLabel(p.hops[p.hops.length - 1].label)}`}>
-                  {shortenLabel(p.hops[0].label)} <span className="text-text-3">→</span> {shortenLabel(p.hops[p.hops.length - 1].label)}
+                <span className="truncate text-[11px] text-text-2" title={pathSummary(p).map(shortenLabel).join(" → ")}>
+                  {pathSummary(p).map(shortenLabel).join(" → ")}
                 </span>
               </div>
               <div className="mt-0.5 pl-3 text-[11px] uppercase tracking-wide text-text-3">{p.severity} · {p.hops.length} hops</div>

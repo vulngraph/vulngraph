@@ -41,6 +41,8 @@ func (K8sServiceTargets) InterestedIn() []string {
 
 func (K8sServiceTargets) Correlate(g Graph) []asset.Edge {
 	var edges []asset.Edge
+	workloads := g.Workloads()
+	index := newWorkloadSelectorIndex(workloads, g.K8sServices())
 	// Workload ID → index of its one exposure edge in edges, so the surviving
 	// edge does not depend on the order Services and workloads are read in.
 	exposed := map[string]int{}
@@ -68,13 +70,9 @@ func (K8sServiceTargets) Correlate(g Graph) []asset.Edge {
 		tier := k8sServiceTier(svc)
 		targetedOwners := map[string]bool{} // owner IDs already given a targets edge from THIS service
 
-		for _, w := range g.Workloads() {
-			// A Service only ever selects pods in its own cluster and namespace;
-			// identical labels in another cluster are a different application.
-			if wc, ok := namespacedClusterOf(w.ID); !ok || wc != cluster {
-				continue
-			}
-			if w.Metadata["namespace"] != ns || !labelsMatch(w.Tags, selector) {
+		for _, i := range index.candidates(cluster, ns, selector) {
+			w := workloads[i]
+			if !labelsMatch(w.Tags, selector) {
 				continue
 			}
 			edges = append(edges, targetsEdge(svc.ID, w.ID, w.Type))
@@ -214,7 +212,7 @@ func parseSelector(s string) map[string]string {
 // value) in the workload's labels — Kubernetes service-selection semantics.
 func labelsMatch(labels, selector map[string]string) bool {
 	for k, v := range selector {
-		if labels[k] != v {
+		if value, present := labels[k]; !present || value != v {
 			return false
 		}
 	}

@@ -120,6 +120,9 @@ func (s *Service) Correlate(ctx context.Context) (int, error) {
 	var edges []asset.Edge
 	var annotated []asset.Asset
 	for _, r := range s.rules {
+		if err := ctx.Err(); err != nil {
+			return 0, fmt.Errorf("Correlate: %w", err)
+		}
 		found := r.Correlate(g)
 		logger.Info().Str("rule", r.Name()).Int("edges", len(found)).Msg("correlation rule complete")
 		edges = append(edges, found...)
@@ -131,6 +134,9 @@ func (s *Service) Correlate(ctx context.Context) (int, error) {
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return 0, fmt.Errorf("Correlate: %w", err)
+	}
 	edges = dedupe(edges)
 	if err := s.assets.IngestEdges(ctx, edges); err != nil {
 		return 0, fmt.Errorf("Correlate: %w", err)
@@ -276,6 +282,9 @@ func (s *Service) PartialCorrelate(ctx context.Context, changedIDs []string) (in
 			return 0, fmt.Errorf("PartialCorrelate: %w", ctx.Err())
 		}
 		edges = append(edges, r.Correlate(g)...)
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, fmt.Errorf("PartialCorrelate: %w", err)
 	}
 	edges = dedupe(edges)
 	if err := s.assets.IngestEdges(ctx, edges); err != nil {

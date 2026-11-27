@@ -144,6 +144,13 @@ row is sent alone. Wide, escaped metadata has a separate storage regression test
 Queued enrichment and scanning jobs are inserted but are not executed by this
 benchmark. `aws_org.json` measures account reconciliation separately.
 
+`correlations.log` also records three samples of Kubernetes selector matching
+and GCP impersonation at 100, 1,000 and 10,000 resources. These isolated Go
+benchmarks check their output on each iteration, exclude fixture construction,
+and report elapsed time and allocations. Selector matching uses a cluster- and
+namespace-scoped label index; the GCP fan-out cap is applied after a shared
+project ordering. Their timing does not include storage or queue execution.
+
 ## Consumed queues and sustained reads
 
 ```sh

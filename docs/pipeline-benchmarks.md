@@ -141,6 +141,9 @@ The insert-only queue is emptied before each measurement so saturation from a
 previous connector cannot hide enqueue costs. Native inventory/finding writes
 use at most 2,000 rows and a 4 MiB estimated payload per batch; a single oversized
 row is sent alone. Wide, escaped metadata has a separate storage regression test.
+Observation history reads only the required date columns. A wide-row storage
+regression checks the newest persisted first-seen dates and requires those
+lookups to read less than one quarter of the full-row query bytes.
 Queued enrichment and scanning jobs are inserted but are not executed by this
 benchmark. `aws_org.json` measures account reconciliation separately.
 

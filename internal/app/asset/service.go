@@ -128,7 +128,7 @@ func (s *Service) IngestAssets(ctx context.Context, assets []Asset) error {
 	return nil
 }
 
-// pinFirstDiscoveredAtChunkSize bounds each ByIDs lookup pinFirstDiscoveredAt
+// pinFirstDiscoveredAtChunkSize bounds each history lookup pinFirstDiscoveredAt
 // issues. ClickHouse's IN clause is query-string-interpolated by the driver,
 // so a full connector-sync Ingest call must chunk its ids rather than pass an
 // unbounded batch into one IN list and risk max_query_size.
@@ -141,7 +141,7 @@ const pinFirstDiscoveredAtChunkSize = 500
 // mean "last collected" for every re-observed asset. Mutates assets in
 // place.
 //
-// A ByIDs failure on one chunk is LOGGED, not silent, and that chunk's assets
+// A history-read failure on one chunk is LOGGED, not silent, and that chunk's assets
 // fall through to the repo's firstDiscoveredAt() floor (DiscoveredAt) —
 // best-effort, but visibly so: a silent skip here would reintroduce the
 // "last collected, not first discovered" bug this column exists to fix,
@@ -161,22 +161,18 @@ func (s *Service) pinFirstDiscoveredAt(ctx context.Context, assets []Asset) {
 		for i, a := range chunk {
 			ids[i] = a.ID
 		}
-		existing, err := s.repo.ByIDs(ctx, ids)
+		byID, err := s.firstObservationTimes(ctx, ids)
 		if err != nil {
 			log.FromContext(ctx).Warn().Err(err).Int("chunk_size", len(chunk)).
 				Msg("asset: FirstDiscoveredAt carry-forward lookup failed — assets fall back to DiscoveredAt")
 			continue
-		}
-		byID := make(map[string]Asset, len(existing))
-		for _, a := range existing {
-			byID[a.ID] = a
 		}
 		for i, a := range chunk {
 			prev, ok := byID[a.ID]
 			if !ok {
 				continue
 			}
-			chunk[i].FirstDiscoveredAt = earliest(prev.FirstDiscoveredAt, prev.DiscoveredAt, a.FirstDiscoveredAt, a.DiscoveredAt)
+			chunk[i].FirstDiscoveredAt = earliest(prev, a.FirstDiscoveredAt, a.DiscoveredAt)
 		}
 	}
 }

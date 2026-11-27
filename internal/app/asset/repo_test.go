@@ -151,6 +151,7 @@ var assetReadersRequiringLiveness = map[string]string{
 // assets table WITHOUT the liveness gate, each with a reason. A reader missing
 // from both maps fails TestAssetReadersApplyLiveness.
 var livenessExemptAssetQueries = map[string]string{
+	"firstObservationsByIDs":     "history carry-forward for a new observation, not an inventory listing. It must retain dates from expired ephemeral rows when a resource reappears. TestObservationHistoryUsesNarrowReads checks the newest persisted date for a reappearing pod.",
 	"blastAccountsByIDs":         "the account-only projection of the existing ByIDs detail read. It must preserve the same account assignment for every endpoint selected by the freshness-filtered blast walk, including historical detail rows. TestBlastAccountProjectionMatchesFullWalk pins this parity; this query does not list inventory or populate the native graph.",
 	"retireAssetVersions":        "a conditional DELETE applying complete-enumeration proof to all stored versions, not an inventory reader",
 	"retirementLastSeen":         "checks the latest observation against a deletion proof; includes every version to preserve resurrection",

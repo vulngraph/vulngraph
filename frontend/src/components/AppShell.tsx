@@ -30,7 +30,7 @@ const tabs: { to: string; label: string; icon: LucideIcon; shortcut: string }[] 
   { to: "/home",        label: "Home",        icon: Crosshair,  shortcut: "h" },
   { to: "/decisions",   label: "Decisions",   icon: Activity,   shortcut: "d" },
   { to: "/investigate", label: "Investigate", icon: Telescope,  shortcut: "i" },
-  { to: "/compliance",  label: "Compliance",  icon: ShieldCheck, shortcut: "c" },
+  { to: "/compliance",  label: "Posture",     icon: ShieldCheck, shortcut: "c" },
 ];
 
 // Active-tab style for the top tab bar.

@@ -176,7 +176,7 @@ func worker(ctx context.Context, getenv func(string) string) error {
 	}
 	if graphDB != nil {
 		defer graphDB.Close()
-		graphDB.WithPackageInventory(explore.NewCHRepo(ch), assetSvc)
+		graphDB.WithPackageInventory(explore.NewCHRepo(ch).WithDeletionVerifier(assetSvc), assetSvc)
 	}
 	if msg := workerGraphOffWarning(getenv); msg != "" {
 		log.FromContext(ctx).Warn().Msg(msg)

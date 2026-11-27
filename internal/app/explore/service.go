@@ -17,6 +17,12 @@ const (
 	maxHopsPerStep  = 5
 )
 
+// DeletionVerifier excludes proven-deleted identities without treating an
+// unobserved identity as absent. The asset service also verifies reappearance.
+type DeletionVerifier interface {
+	VerifyDeletedAssets(context.Context, []string) (map[string]bool, error)
+}
+
 // Repo is the graph storage the engine reads. CHRepo implements it.
 type Repo interface {
 	// MatchSeed returns up to limit assets matching the seed selector.

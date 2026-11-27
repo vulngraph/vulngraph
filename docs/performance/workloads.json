@@ -4036,7 +4036,8 @@
       ],
       "status": "unmeasured",
       "entries": [
-        "module:internal/app/explore/repo.go"
+        "module:internal/app/explore/repo.go",
+        "module:internal/app/explore/repo_liveness.go"
       ],
       "next_action": "Measure required scenarios on all profiles/native architectures; retain raw costs and independent persisted-output readback."
     },
@@ -4146,6 +4147,7 @@
         "module:internal/app/explore/ladybug_rpc_repo.go",
         "module:internal/app/explore/local_ladybug_repo.go",
         "module:internal/app/explore/repo.go",
+        "module:internal/app/explore/repo_liveness.go",
         "module:internal/app/explore/service.go",
         "module:internal/app/explore/tiered_repo.go"
       ],
@@ -5506,6 +5508,7 @@
         "module:internal/app/asset/service.go",
         "module:internal/app/asset/service_blast.go",
         "module:internal/app/asset/service_derivations.go",
+        "module:internal/app/asset/service_edge_liveness.go",
         "module:internal/app/asset/service_lineage.go",
         "module:internal/app/asset/service_observation.go",
         "module:internal/app/asset/service_package_queries.go",

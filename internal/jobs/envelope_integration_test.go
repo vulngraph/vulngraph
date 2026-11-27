@@ -48,6 +48,7 @@ type envelopeReport struct {
 	Resources         int                    `json:"fixture_assets_excluding_stable_sentinel"`
 	CollectHoldMillis int                    `json:"modeled_whole_result_hold_milliseconds"`
 	Sizes             []int                  `json:"connector_asset_counts"`
+	Scopes            []envelopeScope        `json:"connector_scopes"`
 	Queues            map[string]int         `json:"queue_worker_limits"`
 	Peak              map[string]int         `json:"observed_active_peaks"`
 	Memory            memlimit.Budget        `json:"go_memory_budget"`
@@ -68,6 +69,9 @@ func TestConnectorMemoryEnvelope(t *testing.T) {
 	resources, err := strconv.Atoi(os.Getenv("PERF_ENVELOPE_ASSETS"))
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, n, 2)
+	scopes, err := envelopeScopes(os.Getenv("PERF_ENVELOPE_SCOPE_COUNTS"), n)
+	require.NoError(t, err)
+	require.Len(t, scopes, n)
 	require.GreaterOrEqual(t, resources, n*20)
 	dir := os.Getenv("PERF_ENVELOPE_DIR")
 	require.NotEmpty(t, dir)
@@ -77,13 +81,14 @@ func TestConnectorMemoryEnvelope(t *testing.T) {
 	require.NoError(t, err)
 	trace := &envelopeTrace{file: traceFile, active: map[string]int{}, peak: map[string]int{}}
 	defer traceFile.Close()
-	r := &envelopeReport{Version: 3, Source: os.Getenv("PERF_COMMIT"), Platform: runtime.GOOS + "/" + runtime.GOARCH,
-		Connectors: n, Resources: resources, Sizes: envelopeSizes(n, resources), Queues: map[string]int{},
-		Scope: []string{"one worker replica; production queue concurrency", "explicit wave controller and final reconciliation; not production periodic scheduling latency", "synthetic AWS-shaped Collect Result allocation; no SDK/API cost or quota proof",
+	r := &envelopeReport{Version: 5, Source: os.Getenv("PERF_COMMIT"), Platform: runtime.GOOS + "/" + runtime.GOARCH,
+		Connectors: n, Resources: resources, Scopes: scopes, Sizes: envelopeScopeSizes(scopes, resources), Queues: map[string]int{},
+		Scope: []string{"one worker replica; production queue concurrency", "provider round-robin admission; version4 grouped providers sequentially", "explicit wave controller and final reconciliation; not production periodic scheduling latency", "synthetic per-provider Collect Result allocation; no SDK/API cost or quota proof",
 			"24 correlation rules; default CSPM checks; four local enrichment sources; native graph",
 			"HTTP domain handlers over loopback; no authentication middleware or browser",
 			"250ms worker samples include benchmark observer; no forced GC; native allocator bytes not separately available",
 			"atomic graph pointer swap does not prove a committed cross-table ClickHouse generation",
+			"proof-aware fallback deletion behavior has a separate adversarial replay; raw delayed correlation rows are counted explicitly",
 			"no external feeds, scans, LLM, additional replicas or 24-hour soak"}}
 	t.Cleanup(func() {
 		r.Passed = r.Passed && !t.Failed()
@@ -117,7 +122,7 @@ func TestConnectorMemoryEnvelope(t *testing.T) {
 	cipher, err := connector.NewCipher(testKey(t))
 	require.NoError(t, err)
 	conns := connector.NewService(connector.NewPGRepo(pool), cipher)
-	inv := asset.NewService(asset.NewCHRepo(ch))
+	inv := asset.NewService(asset.NewCHRepo(ch)).WithDeletionProofs(conns)
 	cache := enrichcache.NewService(enrichcache.NewPGRepo(pool))
 	findings := finding.NewService(finding.NewCHRepo(ch)).WithResolveObserver(cache)
 	stable := asset.Asset{ID: "envelope-stable", Name: "stable", Type: "container_image", Provider: asset.ProviderAWS, LastSeen: time.Now()}
@@ -141,9 +146,11 @@ func TestConnectorMemoryEnvelope(t *testing.T) {
 	require.GreaterOrEqual(t, hold, 0)
 	require.LessOrEqual(t, hold, 5000, "modeled collection hold is bounded")
 	r.CollectHoldMillis = hold
-	producer := &envelopeCollector{trace: trace, hold: time.Duration(hold) * time.Millisecond}
+	producer := &envelopeCollector{trace: trace, hold: time.Duration(hold) * time.Millisecond, scopes: scopes}
 	registry := collect.NewRegistry()
-	registry.Register(connector.TypeAWS, producer)
+	for _, kind := range []connector.Type{connector.TypeAWS, connector.TypeGCP, connector.TypeKubernetes, connector.TypeGitHub} {
+		registry.Register(kind, producer)
+	}
 	ids := make([]string, n)
 	for i, size := range r.Sizes {
 		ids[i] = uuid.NewString()
@@ -151,7 +158,7 @@ func TestConnectorMemoryEnvelope(t *testing.T) {
 		require.NoError(t, e)
 		enc, e := cipher.EncryptWithAAD(cfg, []byte("connector:"+ids[i]))
 		require.NoError(t, e)
-		_, e = pool.Exec(ctx, "INSERT INTO connectors(id,type,name,config_enc) VALUES($1,'aws',$2,$3)", ids[i], fmt.Sprintf("envelope-%d", i), enc)
+		_, e = pool.Exec(ctx, "INSERT INTO connectors(id,type,name,config_enc) VALUES($1,$2,$3,$4)", ids[i], scopes[i].Kind, fmt.Sprintf("envelope-%d", i), enc)
 		require.NoError(t, e)
 	}
 	correlation := &envelopeCorrelator{Service: correlate.NewService(correlate.NewCHRepo(ch), inv, []correlate.Rule{
@@ -159,7 +166,7 @@ func TestConnectorMemoryEnvelope(t *testing.T) {
 		correlate.K8sManifestOwnership{}, correlate.TFOwnership{}, correlate.DeclaredIdentityOwnership{}, correlate.ImageOwnership{}, correlate.SecurityGroupAllows{},
 		correlate.SharedSecurityGroup{}, correlate.GCPFirewallApplies{}, correlate.GCPFirewallReachability{}, correlate.K8sServiceTargets{}, correlate.InternetReachability{},
 		correlate.FederationTrust{}, correlate.GCPWorkloadIdentity{}, correlate.IRSATrust{}, correlate.K8sPodServiceAccount{}, correlate.IAMEffectivePermissions{},
-		correlate.SecretAccess{}, correlate.DataClassification{}, correlate.HumanIdentityFederation{}}), trace: trace}
+		correlate.SecretAccess{}, correlate.DataClassification{}, correlate.HumanIdentityFederation{}}).WithViewMetrics(trace), trace: trace}
 	blast := &soakBlast{assets: inv, graph: graph}
 	observed := &soakEnricher{service: enrich.NewService(findings, enrich.NewSignalCHRepo(ch), []enrich.Source{
 		enrich.BaseSeverity{}, enrich.KEV{}, enrich.ExposureType{}, enrich.BlastRadius{Counter: blast, Provider: blast}}), values: map[string]soakEnrichmentValue{}}
@@ -204,8 +211,8 @@ func TestConnectorMemoryEnvelope(t *testing.T) {
 		}
 		start := time.Now()
 		trace.write(map[string]any{"event": "wave_start", "wave": name})
-		for _, id := range ids {
-			_, err = client.Insert(ctx, SyncConnectorArgs{ConnectorID: id}, nil)
+		for _, i := range envelopeSchedule(scopes) {
+			_, err = client.Insert(ctx, SyncConnectorArgs{ConnectorID: ids[i]}, nil)
 			require.NoError(t, err)
 		}
 		// Start broad work after a quarter of scopes committed, so it reads a
@@ -216,17 +223,17 @@ func TestConnectorMemoryEnvelope(t *testing.T) {
 		require.NoError(t, err)
 		_, err = client.Insert(ctx, LadybugRebuildArgs{}, nil)
 		require.NoError(t, err)
-		failed := envelopeDrain(t, ctx, pool, trace)
+		failed := envelopeDrain(t, ctx, pool, ch, trace, r)
 		partialCorrelateCoalescer.flush(ctx, client, client)
-		failed += envelopeDrain(t, ctx, pool, trace)
+		failed += envelopeDrain(t, ctx, pool, ch, trace, r)
 		if wave == 4 {
 			_, err = client.Insert(ctx, InventoryRetirementArgs{}, nil)
 			require.NoError(t, err)
-			failed += envelopeDrain(t, ctx, pool, trace)
+			failed += envelopeDrain(t, ctx, pool, ch, trace, r)
 		}
 		_, err = client.Insert(ctx, CorrelateArgs{}, fullCorrelateOpts())
 		require.NoError(t, err)
-		failed += envelopeDrain(t, ctx, pool, trace)
+		failed += envelopeDrain(t, ctx, pool, ch, trace, r)
 
 		if failed > 0 {
 			r.Failures = append(r.Failures, fmt.Sprintf("%s: %d terminal failed jobs", name, failed))
@@ -244,10 +251,10 @@ func TestConnectorMemoryEnvelope(t *testing.T) {
 			finish := trace.begin("oracle", name)
 			defer finish(nil)
 			verifyCtx := ch.WithQuerySettings(ctx, map[string]any{"log_comment": "envelope-output-oracle"})
-			envelopeVerifyStream(t, verifyCtx, ch, r.Sizes, wave)
-			native := envelopeVerifyNative(t, verifyCtx, graph, r.Sizes, wave, nativeBaseline)
+			r.Waves[len(r.Waves)-1]["retained_raw_correlation_edges_to_deleted_assets"] = envelopeVerifyStream(t, verifyCtx, ch, r.Sizes, scopes, wave)
+			native := envelopeVerifyNative(t, verifyCtx, graph, r.Sizes, scopes, wave, nativeBaseline)
 			r.Waves[len(r.Waves)-1]["native_node_count"] = native
-			envelopeVerifyFindings(t, verifyCtx, findings, r.Sizes, wave)
+			envelopeVerifyFindings(t, verifyCtx, findings, r.Sizes, scopes, wave)
 			var enrichment soakReport
 			verifySoakEnrichment(t, verifyCtx, pool, ch, findings, observed, &enrichment)
 			r.Waves[len(r.Waves)-1]["verified_enrichment_scores"] = enrichment.VerifiedScores
@@ -275,8 +282,8 @@ func envelopeWaitOverlap(t *testing.T, ctx context.Context, pool *pgxpool.Pool, 
 		trace.mu.Lock()
 		enriching := trace.active["enrich"]
 		trace.mu.Unlock()
-		if count >= max(1, scopes/4) && (!needEnrichment || enriching > 0) {
-			trace.write(map[string]any{"event": "overlap_trigger", "completed_scopes": count, "configured_scopes": scopes, "active_enrich": enriching})
+		if count >= max(1, scopes/4) && (!needEnrichment || enriching > 0 || count >= scopes) {
+			trace.write(map[string]any{"event": "overlap_trigger", "completed_scopes": count, "configured_scopes": scopes, "active_enrich": enriching, "missed_enrichment_overlap": needEnrichment && enriching == 0})
 			return
 		}
 		select {
@@ -287,7 +294,7 @@ func envelopeWaitOverlap(t *testing.T, ctx context.Context, pool *pgxpool.Pool, 
 	}
 }
 
-func envelopeDrain(t *testing.T, ctx context.Context, pool *pgxpool.Pool, trace *envelopeTrace) int {
+func envelopeDrain(t *testing.T, ctx context.Context, pool *pgxpool.Pool, ch *db.CH, trace *envelopeTrace, report *envelopeReport) int {
 	t.Helper()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -312,6 +319,7 @@ func envelopeDrain(t *testing.T, ctx context.Context, pool *pgxpool.Pool, trace 
 		require.NoError(t, rows.Err())
 		rows.Close()
 		trace.write(map[string]any{"event": "queues", "counts": counts})
+		envelopeCheckCorrelationLimit(t, ctx, pool, ch, trace, report)
 		if pending == 0 {
 			return failed
 		}

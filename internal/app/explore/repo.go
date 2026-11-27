@@ -70,10 +70,15 @@ var (
 const idChunkSize = 500
 
 type CHRepo struct {
-	ch *db.CH
+	ch        *db.CH
+	deletions DeletionVerifier
 }
 
 func NewCHRepo(ch *db.CH) *CHRepo { return &CHRepo{ch: ch} }
+
+// WithDeletionVerifier preserves unknown references while excluding endpoints
+// whose deletion is proven and has no newer observation.
+func (r *CHRepo) WithDeletionVerifier(v DeletionVerifier) *CHRepo { r.deletions = v; return r }
 
 func (r *CHRepo) MatchSeed(ctx context.Context, m NodeMatch, limit int) ([]Node, error) {
 	qCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -97,7 +102,11 @@ func (r *CHRepo) MatchSeed(ctx context.Context, m NodeMatch, limit int) ([]Node,
 		args = append(condArgs, limit)
 	}
 
-	return r.scanNodes(qCtx, query, args)
+	nodes, err := r.scanNodes(qCtx, query, args)
+	if err != nil {
+		return nil, err
+	}
+	return r.withoutDeletedNodes(qCtx, nodes)
 }
 
 // chEdgeTypes translates the caller's edge filters into the snake_case
@@ -155,6 +164,11 @@ func (r *CHRepo) Neighbors(ctx context.Context, ids, edgeTypes []string, dir Dir
 			return nil, nil, false, fmt.Errorf("Neighbors: in: %w", err)
 		}
 		edges = append(edges, in...)
+	}
+
+	edges, err := r.withoutDeletedEdges(qCtx, edges)
+	if err != nil {
+		return nil, nil, false, err
 	}
 
 	// Fetch the asset rows for every endpoint we don't already have on the

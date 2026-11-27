@@ -94,6 +94,13 @@ func blastNodeIDs(nodes []endpoint) []string {
 
 func (s *Service) walkBlastRadius(ctx context.Context, seedID string, maxDepth int, dir Direction) (blastWalk, error) {
 	var result blastWalk
+	deleted, err := s.VerifyDeletedAssets(ctx, []string{seedID})
+	if err != nil {
+		return result, fmt.Errorf("BlastRadius: seed deletion proof: %w", err)
+	}
+	if deleted[seedID] {
+		return result, fmt.Errorf("BlastRadius: seed: %w", ErrNotFound)
+	}
 	seen := map[string]bool{seedID: true}
 	seenEdge := map[string]bool{}
 	frontier := []string{seedID}
@@ -101,6 +108,10 @@ func (s *Service) walkBlastRadius(ctx context.Context, seedID string, maxDepth i
 		hopEdges, err := s.hopEdges(ctx, frontier, dir)
 		if err != nil {
 			return result, fmt.Errorf("BlastRadius: depth %d: %w", depth, err)
+		}
+		hopEdges, err = s.withoutDeletedEndpoints(ctx, hopEdges)
+		if err != nil {
+			return result, fmt.Errorf("BlastRadius: deletion proofs: %w", err)
 		}
 		for _, e := range hopEdges {
 			key := e.SrcID + "\x00" + e.DstID + "\x00" + e.EdgeType

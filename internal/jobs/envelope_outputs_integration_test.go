@@ -22,7 +22,7 @@ func envelopeNativeCount(t *testing.T, ctx context.Context, graph *graphstore.Se
 	return n
 }
 
-func envelopeVerifyNative(t *testing.T, ctx context.Context, graph *graphstore.Service, sizes []int, wave int, baseline int64) int64 {
+func envelopeVerifyNative(t *testing.T, ctx context.Context, graph *graphstore.Service, sizes []int, scopes []envelopeScope, wave int, baseline int64) int64 {
 	t.Helper()
 	var resources int64
 	for _, n := range sizes {
@@ -34,7 +34,13 @@ func envelopeVerifyNative(t *testing.T, ctx context.Context, graph *graphstore.S
 	nodes := envelopeNativeCount(t, ctx, graph, "MATCH (n) RETURN count(n) AS n")
 	require.Equal(t, resources+baseline, nodes, "actual native nodes include baseline sentinels and schema rows")
 	edges := envelopeNativeCount(t, ctx, graph, "MATCH ()-[e]->() RETURN count(e) AS n")
-	require.Equal(t, resources-int64(len(sizes)), edges)
+	crossEdges := 0
+	for _, scope := range scopes {
+		if scope.Kind == "kubernetes" && scope.CloudTarget >= 0 {
+			crossEdges += 2
+		}
+	}
+	require.Equal(t, resources-int64(len(sizes))+int64(crossEdges), edges)
 	// ExecutesAs carries risk toward the role, never back toward the source.
 	// Each workload must therefore retain its exact independently known base
 	// contribution, including after changed findings and graph score refreshes.
@@ -47,33 +53,51 @@ func envelopeVerifyNative(t *testing.T, ctx context.Context, graph *graphstore.S
  AND ((a.id ENDS WITH '01' AND a.score <> %d) OR (NOT (a.id ENDS WITH '01') AND a.score <> 0))
  RETURN count(a) AS n`, score))
 	require.Zero(t, wrongScores, "native workload scores must reflect the current derived generation")
-	wrong := envelopeNativeCount(t, ctx, graph, "MATCH (a:Asset)-[:ExecutesAs]->(r:IamRole) WHERE a.account_id <> r.account_id RETURN count(a) AS n")
-	require.Zero(t, wrong, "relationships must retain their original account")
-	counts, err := graph.RunCypher(ctx, "MATCH (a:Asset)-[e:ExecutesAs]->(r:IamRole) RETURN r.id AS id, count(e) AS edges, count(DISTINCT a.id) AS sources", len(sizes)+10, len(sizes)+10)
+	counts, err := graph.RunCypher(ctx, "MATCH (a)-[e]->(r) RETURN r.id AS id, count(e) AS edges, count(DISTINCT a.id) AS sources", len(sizes)+10, len(sizes)+10)
 	require.NoError(t, err)
-	require.Len(t, counts.Rows, len(sizes))
-	byRole := make(map[string]int64, len(sizes))
+	type totals struct{ edges, sources int64 }
+	byTarget := map[string]totals{}
 	for c, n := range sizes {
+		target := envelopeID(c, 0)
+		switch scopes[c].Kind {
+		case "gcp":
+			target = fmt.Sprintf("serviceAccount:envelope-%04d@synthetic.invalid", c)
+		case "kubernetes":
+			target = fmt.Sprintf("synthetic-cluster-%04d/namespace/workloads/serviceaccount/envelope", c)
+		case "github":
+			target = envelopeID(scopes[c].CloudTarget, 0)
+		}
 		want := int64(n - 1)
 		if wave == 4 {
 			want--
 		}
-		byRole[envelopeID(c, 0)] = want
+		old := byTarget[target]
+		old.edges += want
+		old.sources += want
+		byTarget[target] = old
+		if scopes[c].Kind == "kubernetes" && scopes[c].CloudTarget >= 0 {
+			target = fmt.Sprintf("serviceAccount:envelope-%04d@synthetic.invalid", scopes[c].CloudTarget)
+			old = byTarget[target]
+			old.edges += 2
+			old.sources++
+			byTarget[target] = old
+		}
 	}
+	require.Len(t, counts.Rows, len(byTarget))
 	for _, row := range counts.Rows {
 		id, ok := row["id"].(string)
 		require.True(t, ok)
-		want, exists := byRole[id]
+		want, exists := byTarget[id]
 		require.True(t, exists, id)
-		require.Equal(t, want, row["edges"], id)
-		require.Equal(t, want, row["sources"], id)
-		delete(byRole, id)
+		require.Equal(t, want.edges, row["edges"], id)
+		require.Equal(t, want.sources, row["sources"], id)
+		delete(byTarget, id)
 	}
-	require.Empty(t, byRole)
+	require.Empty(t, byTarget)
 	return nodes
 }
 
-func envelopeVerifyFindings(t *testing.T, ctx context.Context, findings *finding.Service, sizes []int, wave int) {
+func envelopeVerifyFindings(t *testing.T, ctx context.Context, findings *finding.Service, sizes []int, scopes []envelopeScope, wave int) {
 	t.Helper()
 	ids := make([]string, 0, 500)
 	wantResources := map[string]string{}
@@ -99,6 +123,9 @@ func envelopeVerifyFindings(t *testing.T, ctx context.Context, findings *finding
 	for c, n := range sizes {
 		for i := 1; i < n; i += 100 {
 			resource := envelopeID(c, i)
+			if scopes[c].Kind == "kubernetes" {
+				resource = fmt.Sprintf("synthetic-cluster-%04d/pod/workloads/%s", c, resource)
+			}
 			id := "finding-" + resource
 			ids = append(ids, id)
 			wantResources[id] = resource

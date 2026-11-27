@@ -17,6 +17,9 @@ case "$profile" in
  million) connectors=500; assets=1000000;;
  two-million) connectors=500; assets=2000000;;
 esac
+if [[ -n "${PERF_ENVELOPE_SCOPE_COUNTS:-}" ]]; then
+  connectors="$(python3 -c 'import json,sys; x=json.loads(sys.argv[1]); assert set(x)<=set(("aws","gcp","kubernetes","github")); assert all(type(v) is int and 0<=v<=10000 for v in x.values()); print(sum(x.values()))' "$PERF_ENVELOPE_SCOPE_COUNTS")"
+fi
 helm_limits=(--set-string "clickhouse.tuning.maxServerMemoryBytes=$server_memory" --set-string "clickhouse.tuning.maxMemoryBytes=$query_memory")
 output="${2:?choose a fresh output directory}"
 mkdir -p "$output"
@@ -146,6 +149,7 @@ bounded 3500 docker run --name "$worker" --network "$suffix" --cpus "$worker_cpu
  --user "$(id -u):$(id -g)" -v "$output:/evidence" -v "$root:/workspace:ro" -w /evidence \
  -e GOMAXPROCS="$worker_cpus" -e PERF_ENVELOPE_ISOLATED=1 -e PERF_ENVELOPE_DIR=/evidence \
  -e PERF_ENVELOPE_CONNECTORS="$connectors" -e PERF_ENVELOPE_ASSETS="$assets" -e PERF_COMMIT="$PERF_COMMIT" \
+ -e PERF_ENVELOPE_SCOPE_COUNTS="${PERF_ENVELOPE_SCOPE_COUNTS:-}" \
  -e PERF_ENVELOPE_COLLECT_HOLD_MS="${PERF_ENVELOPE_COLLECT_HOLD_MS:-500}" \
  -e PERF_ENVELOPE_REPRODUCE_HISTORICAL_LOST_UPDATE="${PERF_ENVELOPE_REPRODUCE_HISTORICAL_LOST_UPDATE:-0}" \
  -e PERF_POSTGRES_URL="postgres://bench:$password@$pg:5432/vg_query_perf?sslmode=disable" \

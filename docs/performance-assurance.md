@@ -253,3 +253,26 @@ Version-key hydration passes the measured 100,000-asset query budgets, but an
 empty selective page still reads 5,002 rows versus its 2,002-row joined baseline.
 Retain that scan tradeoff and the empty-derived-state latency overhead in further
 mixed-load work; the focused fix earns no full-profile coverage credit.
+
+PERF-05/11/12 also track delayed correlation writes after an authoritative
+resource deletion. The real Postgres/ClickHouse regression writes A → B → C,
+retires B, then writes the old relationships again. ClickHouse fallback explore
+and blast-radius traversal must consult the durable deletion proof before
+expanding the frontier. Missing, never-observed identities remain visible; a
+newer observation restores a deleted identity. Proof-read failures are errors,
+not empty results. This check does not replace ephemeral-expiry policy or make
+raw retained relationship rows disappear.
+
+The three-node, three-repeat replay measures the cost of that correctness check:
+explore median 8.47 → 19.99 ms and blast median 14.99 → 26.74 ms, each adding
+three bounded Postgres proof lookups and two ClickHouse observation reads.
+These are small-fixture costs, not tail-latency or scaling guarantees. The
+mixed-provider synthetic harness now includes cross-scope relationships,
+round-robin provider admission, and complete/partial/deletion/reappearance waves.
+Its 5,000-asset replay passes all six waves. The million-asset diagnostic still
+fails the unchanged 600,000-relevant-asset correlation breaker before completing
+a wave. Two graph-source asset reads also failed ClickHouse memory limits; HTTP
+read success does not establish that a graph rebuild succeeded. Bounded graph
+source reads, correlation inputs and a completed larger replay remain required;
+neither an aborted run nor synthetic Collect results earn live connector or
+whole-profile capacity coverage.

@@ -362,7 +362,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 		return fmt.Errorf("serve: %w", err)
 	}
 	if serveLadybug != nil {
-		serveLadybug.WithPackageInventory(explore.NewCHRepo(ch), assetSvc)
+		serveLadybug.WithPackageInventory(explore.NewCHRepo(ch).WithDeletionVerifier(assetSvc), assetSvc)
 		serveSnapPath := getenv("SERVE_LADYBUG_SNAPSHOT_PATH")
 		// Same recorder as the worker, so a rebuild here shows on THIS pod's
 		// /metrics. Without it the serve replica could rebuild unobserved.
@@ -436,7 +436,7 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	//   2. Worker Ladybug RPC (network hop; covers the serve Ladybug's initial sync window,
 	//      its errors and its empty answers to ID-keyed lookups)
 	//   3. ClickHouse BFS (always available — no Cypher support)
-	chRepo := explore.NewCHRepo(ch)
+	chRepo := explore.NewCHRepo(ch).WithDeletionVerifier(assetSvc)
 	var exploreRepo explore.Repo = chRepo
 	var cypherRunner explore.CypherRunner
 	var ladybugRepo *explore.LadybugRPCRepo // hoisted so serve.go can use it for NodeStats

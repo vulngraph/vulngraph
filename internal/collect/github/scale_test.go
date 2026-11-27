@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/vulngraph/vulngraph/internal/collect"
@@ -22,20 +23,31 @@ func TestConnectorScale(t *testing.T) {
 	old := maxPages
 	maxPages = 101
 	t.Cleanup(func() { maxPages = old })
-	for _, denied := range []bool{false, true} {
+	for _, scenario := range []struct{ denied, pending bool }{{}, {denied: true}, {pending: true}} {
+		denied := scenario.denied
 		name, scope := "github", "paginated repositories, SBOM, branch protection, CODEOWNERS, populated workflows, App installation grants and narrowed token scopes"
 		if denied {
 			name, scope = "github_denied", "installation pagination, SBOM and populated workflows, App installation grants and narrowed token scopes; denied GraphQL"
 		}
+		if scenario.pending {
+			name, scope = "github_pending", scope+"; one pending SBOM poll per repository, virtual backoff"
+		}
 		for _, n := range sizes {
 			t.Run(fmt.Sprintf("%s/%d", name, n), func(t *testing.T) {
-				var calls atomic.Int64
+				var calls, apiCalls, downloads, sbomCalls, waits atomic.Int64
+				polls := make([]atomic.Int64, n)
 				prior := map[string]map[string]string{}
 				transport := collectbench.Transport(func(req *http.Request) (*http.Response, error) {
 					calls.Add(1)
+					if req.URL.Host == "sbom-download.example.test" {
+						downloads.Add(1)
+						require.Empty(t, req.Header.Get("Authorization"))
+						return collectbench.Response(req, `{"SPDXID":"SPDXRef-DOCUMENT","spdxVersion":"SPDX-2.3","packages":[{"externalRefs":[{"referenceType":"purl","referenceLocator":"pkg:golang/example.com/lib@v1.0.0"}]}]}`), nil
+					}
 					if req.URL.Host != "api.github.com" {
 						return nil, fmt.Errorf("unexpected fixture host %s", req.URL.Host)
 					}
+					apiCalls.Add(1)
 					path := req.URL.Path
 					body := "[]"
 					status := http.StatusOK
@@ -65,8 +77,22 @@ func TestConnectorScale(t *testing.T) {
 							return nil, err
 						}
 						body = string(b)
-					case strings.HasSuffix(path, "/dependency-graph/sbom"):
-						body = `{"sbom":{"packages":[{"externalRefs":[{"referenceType":"purl","referenceLocator":"pkg:golang/example.com/lib@v1.0.0"}]}]}}`
+					case strings.HasSuffix(path, "/dependency-graph/sbom/generate-report"):
+						sbomCalls.Add(1)
+						body = jsonString(map[string]string{"sbom_url": "https://api.github.com" + strings.TrimSuffix(path, "generate-report") + "fetch-report/" + sbomFixtureUUID})
+						status = http.StatusCreated
+					case strings.Contains(path, "/dependency-graph/sbom/fetch-report/"):
+						sbomCalls.Add(1)
+						index, err := strconv.Atoi(strings.TrimPrefix(strings.Split(path, "/")[3], "repo"))
+						require.NoError(t, err)
+						resp := collectbench.Response(req, "")
+						resp.StatusCode = http.StatusFound
+						resp.Header.Set("Location", fmt.Sprintf("https://sbom-download.example.test/repo%d.json", index))
+						if scenario.pending && polls[index].Add(1) == 1 {
+							resp.StatusCode = http.StatusAccepted
+							resp.Header.Del("Location")
+						}
+						return resp, nil
 					case strings.Contains(path, "/git/trees/"):
 						body = `{"tree":[{"path":".github/workflows/ci.yml","type":"blob"}],"truncated":false}`
 					case strings.Contains(path, "/branches/"):
@@ -107,11 +133,22 @@ func TestConnectorScale(t *testing.T) {
 					return resp, nil
 				})
 				cfg := map[string]string{"app_id": "123", "installation_id": "456", "private_key_pem": collectbench.PrivateKey(t)}
-				collectbench.Run(t, name, scope, "github_repo", n, func() { calls.Store(0); rateLimitStates.Delete("fixture-scale") }, func() (collect.Result, int, error) {
+				collectbench.Run(t, name, scope, "github_repo", n, func() {
+					calls.Store(0)
+					apiCalls.Store(0)
+					downloads.Store(0)
+					sbomCalls.Store(0)
+					waits.Store(0)
+					for i := range polls {
+						polls[i].Store(0)
+					}
+					rateLimitStates.Delete("fixture-scale")
+				}, func() (collect.Result, int, error) {
 					var before, after runtime.MemStats
 					runtime.ReadMemStats(&before)
 					c := New()
 					c.client = &http.Client{Transport: transport}
+					c.sbomWait = func(ctx context.Context, _ time.Duration) error { waits.Add(1); return ctx.Err() }
 					c.SetPriorRepoMetadata(func(_ context.Context, ids []string) (map[string]map[string]string, error) {
 						selected := make(map[string]map[string]string, len(ids))
 						for _, id := range ids {
@@ -124,7 +161,15 @@ func TestConnectorScale(t *testing.T) {
 					r, err := c.Collect(context.Background(), cfg)
 					runtime.ReadMemStats(&after)
 					require.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(n)*384*1024+16*1024*1024, "allocation budget must remain linear")
-					require.Less(t, int(calls.Load()), 4*n+200, "request count must remain linear")
+					requestMultiplier, wantSBOM, wantWaits := 6, 2*n, 0
+					if scenario.pending {
+						requestMultiplier, wantSBOM, wantWaits = 7, 3*n, n
+					}
+					require.Less(t, int(calls.Load()), requestMultiplier*n+200, "async protocol request count must remain linear")
+					require.EqualValues(t, n, downloads.Load())
+					require.EqualValues(t, wantSBOM, sbomCalls.Load())
+					require.EqualValues(t, wantWaits, waits.Load())
+					t.Log("SBOM_REQUEST_COST " + jsonString(map[string]any{"scenario": name, "repositories": n, "api_requests": apiCalls.Load(), "download_requests": downloads.Load(), "sbom_api_requests": sbomCalls.Load(), "virtual_waits": waits.Load()}))
 					require.NoError(t, err)
 					counts := map[string]int{}
 					for _, a := range r.Assets {
@@ -159,6 +204,9 @@ func TestConnectorScale(t *testing.T) {
 					prior = map[string]map[string]string{}
 					for _, a := range r.Assets {
 						if a.Type == "github_repo" || a.Type == "github_visibility_snapshot" {
+							if a.Type == "github_repo" {
+								require.Equal(t, "complete", a.Metadata["sbom_coverage"])
+							}
 							prior[a.ID] = a.Metadata
 						}
 					}

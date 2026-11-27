@@ -73,7 +73,25 @@ func fakeGitHub(t *testing.T, totalRepos int) *httptest.Server {
 		fmt.Fprint(w, `]}`)
 	})
 
-	srv := httptest.NewServer(mux)
+	// The baseline repository fixture supplies a valid empty async SBOM. More
+	// specific SBOM handlers can override this fallback for package/error tests.
+	mux.HandleFunc("GET /repos/", func(w http.ResponseWriter, r *http.Request) {
+		sbomPrefix := "https://" + r.Host + strings.Split(r.URL.Path, "/dependency-graph/sbom/")[0] + "/dependency-graph/sbom/"
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/dependency-graph/sbom/generate-report"):
+			w.WriteHeader(http.StatusCreated)
+			fmt.Fprintf(w, `{"sbom_url":%q}`, sbomPrefix+"fetch-report/"+sbomFixtureUUID)
+		case strings.Contains(r.URL.Path, "/dependency-graph/sbom/fetch-report/"):
+			w.Header().Set("Location", sbomPrefix+"fixture-report")
+			w.WriteHeader(http.StatusFound)
+		case strings.HasSuffix(r.URL.Path, "/dependency-graph/sbom/fixture-report"):
+			require.Empty(t, r.Header.Get("Authorization"))
+			fmt.Fprint(w, `{"SPDXID":"SPDXRef-DOCUMENT","spdxVersion":"SPDX-2.3","packages":[]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	srv := httptest.NewTLSServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
 }

@@ -152,7 +152,10 @@ resident-memory improvement.
 The denied-GraphQL variant preserves the same relationship counts and requests;
 its median times were 10.04 / 70.02 / 684.50 ms. First and repeat collections have
 the same request counts; repeat collections additionally read prior snapshots
-through the fixture callback. Gates enforce fewer than `4*N+200` requests after reuse (the baseline gate was `12*N+200`) and
+through the fixture callback. These historical fixtures used the retired synchronous
+SBOM response. The [asynchronous SBOM follow-up](github-async-sbom-reports.md)
+records the supported protocol's additional requests and current ceilings.
+The historical gates enforced fewer than `4*N+200` requests after reuse (the baseline gate was `12*N+200`) and
 less than `384 KiB*N+16 MiB` total allocation, plus exact relationship counts.
 
 Independent replay reads persisted collector fixtures, runs production AWS/GCP
@@ -185,7 +188,10 @@ Before reuse, the fixture spent eight REST reads per repository: four independen
 tree reads (Terraform, Kubernetes YAML, workflows and identifier harvest), three
 reads of the same workflow file, and one SBOM read. The shared readers now finish
 within each repository, using one successful tree read and one successful file
-read for these consumers; the SBOM still needs its own read. Pagination, batched
+read for these consumers; those historical fixtures modeled one SBOM read.
+The supported asynchronous SBOM flow now needs generation, fetch and download,
+plus any pending polls; see the follow-up above for current request measurements.
+Pagination, batched
 branch-protection/CODEOWNERS GraphQL requests and App/GHAS enumeration add requests.
 
 Reuse is in memory for one repository in one sync. Exact URL (base, repository,

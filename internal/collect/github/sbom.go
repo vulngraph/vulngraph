@@ -3,7 +3,6 @@ package github
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"net/url"
 	"sort"
 	"strings"
@@ -14,10 +13,8 @@ import (
 	"github.com/vulngraph/vulngraph/pkg/log"
 )
 
-// sbomConcurrency bounds the SBOM fan-out: one request per repo, at most this
-// many in flight. 8 triggers secondary-rate-limit (429) bursts against the
-// GitHub dependency-graph API — 3 stays well within the sustained-request limit
-// while keeping wall-clock time reasonable.
+// sbomConcurrency bounds concurrent report jobs. It does not guarantee that
+// requests avoid primary or secondary GitHub rate limits.
 const sbomConcurrency = 3
 
 // purlEcosystems maps a purl type to the OSV ecosystem name. A purl
@@ -50,10 +47,18 @@ type pkgCoords struct {
 // (bounded fan-out) and returns one "package" asset per distinct dependency
 // plus a repo→package "depends_on" edge per occurrence. A repo whose SBOM is
 // unavailable (dependency graph disabled, 404/403) is logged and skipped —
-// package inventory degrades, collection never fails on it.
-func (c *Collector) collectPackages(ctx context.Context, baseURL, token string, repos []repo) ([]asset.Asset, []asset.Edge) {
+// package inventory degrades and coverage remains unknown. The caller marks
+// the result partial so absence cannot reconcile previously observed packages.
+func (c *Collector) collectPackages(ctx context.Context, baseURL, token string, repos []repo) ([]asset.Asset, []asset.Edge, map[string]string) {
 	logger := log.FromContext(ctx)
 	now := time.Now()
+	coverage := make(map[string]string, len(repos))
+	for _, r := range repos {
+		coverage[r.FullName] = "unknown"
+		if r.Archived {
+			coverage[r.FullName] = "not_collected_archived"
+		}
+	}
 
 	var (
 		mu     sync.Mutex
@@ -62,12 +67,17 @@ func (c *Collector) collectPackages(ctx context.Context, baseURL, token string, 
 		wg     sync.WaitGroup
 		sem    = make(chan struct{}, sbomConcurrency)
 	)
+scan:
 	for _, r := range repos {
 		if r.Archived {
 			continue
 		}
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			break scan
+		}
 		wg.Add(1)
-		sem <- struct{}{}
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
@@ -86,6 +96,7 @@ func (c *Collector) collectPackages(ctx context.Context, baseURL, token string, 
 			}
 			mu.Lock()
 			defer mu.Unlock()
+			coverage[r.FullName] = "complete"
 			for _, p := range pkgs {
 				if _, seen := byPurl[p.Purl]; !seen {
 					byPurl[p.Purl] = asset.Asset{
@@ -126,36 +137,19 @@ func (c *Collector) collectPackages(ctx context.Context, baseURL, token string, 
 		}
 		return edges[i].DstID < edges[j].DstID
 	})
-	return assets, edges
+	return assets, edges, coverage
 }
 
 // fetchSBOM downloads one repo's SPDX SBOM and returns the dependencies that
 // carry a purl in an OSV-covered ecosystem.
 func (c *Collector) fetchSBOM(ctx context.Context, baseURL, token, fullName string) ([]pkgCoords, error) {
-	u := baseURL + "/repos/" + fullName + "/dependency-graph/sbom"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	body, err := c.fetchSBOMReport(ctx, baseURL, token, fullName)
 	if err != nil {
 		return nil, fmt.Errorf("fetchSBOM: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/vnd.github+json")
-
-	var body struct {
-		SBOM struct {
-			Packages []struct {
-				ExternalRefs []struct {
-					ReferenceType    string `json:"referenceType"`
-					ReferenceLocator string `json:"referenceLocator"`
-				} `json:"externalRefs"`
-			} `json:"packages"`
-		} `json:"sbom"`
-	}
-	if err := c.doJSON(req, http.StatusOK, &body); err != nil {
-		return nil, fmt.Errorf("fetchSBOM: %s: %w", fullName, err)
-	}
 
 	var out []pkgCoords
-	for _, p := range body.SBOM.Packages {
+	for _, p := range body.Packages {
 		for _, ref := range p.ExternalRefs {
 			if ref.ReferenceType != "purl" {
 				continue

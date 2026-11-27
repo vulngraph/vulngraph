@@ -65,27 +65,40 @@ func TestParsePurl(t *testing.T) {
 // fakeGitHubWithSBOM extends the repo fixture with per-repo SBOM responses.
 // Repos absent from the map get a 404, as GitHub returns when the dependency
 // graph is disabled.
+const sbomFixtureUUID = "00000000-0000-4000-8000-000000000001"
+
 func fakeGitHubWithSBOM(t *testing.T, totalRepos int, sboms map[string][]string) *httptest.Server {
 	t.Helper()
 	srv := fakeGitHub(t, totalRepos)
 	mux := srv.Config.Handler.(*http.ServeMux)
-	mux.HandleFunc("GET /repos/{owner}/{repo}/dependency-graph/sbom", func(w http.ResponseWriter, r *http.Request) {
+	prefix := "/repos/{owner}/{repo}/dependency-graph/sbom/"
+	mux.HandleFunc("GET "+prefix+"generate-report", func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "Bearer ghs_installation_token", r.Header.Get("Authorization"))
 		full := r.PathValue("owner") + "/" + r.PathValue("repo")
-		purls, ok := sboms[full]
-		if !ok {
+		if _, ok := sboms[full]; !ok {
 			http.NotFound(w, r)
 			return
 		}
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprintf(w, `{"sbom_url":%q}`, srv.URL+"/repos/"+full+"/dependency-graph/sbom/fetch-report/"+sbomFixtureUUID)
+	})
+	mux.HandleFunc("GET "+prefix+"fetch-report/{uuid}", func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "Bearer ghs_installation_token", r.Header.Get("Authorization"))
+		w.Header().Set("Location", srv.URL+"/repos/"+r.PathValue("owner")+"/"+r.PathValue("repo")+"/dependency-graph/sbom/fixture-report")
+		w.WriteHeader(http.StatusFound)
+	})
+	mux.HandleFunc("GET "+prefix+"fixture-report", func(w http.ResponseWriter, r *http.Request) {
+		require.Empty(t, r.Header.Get("Authorization"))
+		purls := sboms[r.PathValue("owner")+"/"+r.PathValue("repo")]
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"sbom":{"packages":[`)
+		fmt.Fprint(w, `{"SPDXID":"SPDXRef-DOCUMENT","spdxVersion":"SPDX-2.3","packages":[`)
 		for i, p := range purls {
 			if i > 0 {
 				fmt.Fprint(w, ",")
 			}
 			fmt.Fprintf(w, `{"externalRefs":[{"referenceCategory":"PACKAGE-MANAGER","referenceType":"purl","referenceLocator":%q}]}`, p)
 		}
-		fmt.Fprint(w, `]}}`)
+		fmt.Fprint(w, `]}`)
 	})
 	return srv
 }
@@ -100,6 +113,7 @@ func TestCollect_Packages(t *testing.T) {
 
 	res, err := c.Collect(context.Background(), validConfig(t))
 	require.NoError(t, err)
+	require.True(t, res.Partial, "unavailable report cannot prove empty package inventory")
 
 	var pkgs []string
 	for _, a := range res.Assets {
@@ -140,7 +154,7 @@ func TestCollect_ArchivedRepoSkipsSBOM(t *testing.T) {
 	// Scoped to the SBOM endpoint, not all of /repos/: an archived repo IS
 	// legitimately swept for secret-scanning alerts (a leaked credential
 	// outlives archival — see TestCollectGHAS_ArchivedRepoKeepsSecretsDropsCodeScanning).
-	mux.HandleFunc("GET /repos/org/old/dependency-graph/sbom", func(_ http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /repos/org/old/dependency-graph/sbom/", func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("archived repo must not be SBOM-fetched")
 	})
 	srv := httptest.NewServer(mux)

@@ -34,7 +34,7 @@ LLM, the page says so, and the domain-monitor verdicts are fixed sample text.
 1. **See it ranked.** Both Acme services run LiteLLM 1.83.0, which matches 16 advisories, four of them on
    the CISA known-exploited list. Each advisory names its fixed version.
 
-   ![The findings list filtered to supply chain: 16 LiteLLM advisories scored 50 to 100, the known-exploited ones marked KEV, each with the fixed version](images/prioritised-findings-dark.gif)
+   ![The findings list filtered to supply chain: 16 LiteLLM advisories scored 50 to 93, the known-exploited ones marked KEV, each with the fixed version](images/prioritised-findings-dark.gif)
 
 2. **Find where it runs.** One query returns every workload, image and package.
 
@@ -157,11 +157,11 @@ sweep" has a direct answer.
 The Home page leads with it: what needs a fix now, the highest-scored open findings, and the recent
 inventory and exposure changes with the findings attached to each.
 
-![The Home page: four findings that need a fix now, the highest-scored signals and the 24 recent inventory changes with their finding scores](images/home-changes-dark.png)
+![The Home page: four findings that need a fix now, the highest-scored signals and the 25 recent inventory changes with their finding scores](images/home-changes-dark.png)
 
 The Drift page lists every change with its findings.
 
-![The Drift page: 24 new inventory changes from the first sync, each with its findings](images/drift-dark.png)
+![The Drift page: 25 new inventory changes from the first sync, each with its findings](images/drift-dark.png)
 
 With an LLM configured, the chat panel answers the same question in words. It reads the same data through
 read-only tools (`list_findings`, `list_connectors`, `run_cypher`, and `get_cloudtrail_events` for who made a

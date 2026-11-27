@@ -325,6 +325,8 @@ type FrameworkSummary struct {
 	ID      string
 	Name    string
 	Version string
+	// Source is "built-in" or "custom: <file name>".
+	Source  string
 	Total   int
 	Passing int
 	Failing int

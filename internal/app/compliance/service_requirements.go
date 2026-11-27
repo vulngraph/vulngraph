@@ -26,8 +26,10 @@ type Catalog struct {
 	index      frameworks.Index
 }
 
-// LoadCatalog loads the embedded framework mappings and benchmark matrices.
-func LoadCatalog() (Catalog, error) {
+// LoadCatalog loads the embedded framework mappings and benchmark matrices,
+// plus the operator's own frameworks from customDir (FRAMEWORKS_DIR; empty
+// loads none). A custom file that does not load is an error, never skipped.
+func LoadCatalog(customDir string) (Catalog, error) {
 	bs, err := benchmarks.Load()
 	if err != nil {
 		return Catalog{}, fmt.Errorf("LoadCatalog: %w", err)
@@ -36,7 +38,11 @@ func LoadCatalog() (Catalog, error) {
 	if err != nil {
 		return Catalog{}, fmt.Errorf("LoadCatalog: %w", err)
 	}
-	return NewCatalog(fws, bs), nil
+	custom, err := frameworks.LoadCustom(customDir, fws, bs)
+	if err != nil {
+		return Catalog{}, fmt.Errorf("LoadCatalog: %w", err)
+	}
+	return NewCatalog(append(fws, custom...), bs), nil
 }
 
 // NewCatalog builds a catalog from already-loaded data (tests use it).
@@ -159,7 +165,7 @@ func (s *Service) frameworkStatuses(ctx context.Context) ([]FrameworkStatus, err
 	clouds := sortedClouds(est.clouds)
 	out := make([]FrameworkStatus, 0, len(s.catalog.frameworks))
 	for _, fw := range s.catalog.frameworks {
-		fs := FrameworkStatus{FrameworkSummary: FrameworkSummary{ID: fw.ID, Name: fw.Name, Version: fw.Version}, Clouds: clouds}
+		fs := FrameworkStatus{FrameworkSummary: FrameworkSummary{ID: fw.ID, Name: fw.Name, Version: fw.Version, Source: fw.Source}, Clouds: clouds}
 		for _, r := range fw.Requirements {
 			st := rollupRequirement(r, s.catalog.index, est)
 			fs.Total++

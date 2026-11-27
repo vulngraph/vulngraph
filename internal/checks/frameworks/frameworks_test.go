@@ -3,6 +3,8 @@ package frameworks
 import (
 	"bytes"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,13 +20,23 @@ func TestFrameworksAreWellFormed(t *testing.T) {
 	require.NoError(t, err)
 	fws, err := Load()
 	require.NoError(t, err)
-	ids := map[string]bool{}
+	require.Len(t, fws, 1, "NIST SP 800-53 is the only built-in framework; others load from FRAMEWORKS_DIR")
+	require.Equal(t, "nist-800-53-r5", fws[0].ID)
+	require.Equal(t, SourceBuiltIn, fws[0].Source)
+	require.NoError(t, Validate(fws[0], bs))
+}
+
+// TestDocsExampleFrameworksAreValid keeps the copy-and-adapt examples in
+// docs/frameworks loadable against the real benchmark matrices, so a matrix
+// change that removes a row they map cannot leave them quietly broken.
+func TestDocsExampleFrameworksAreValid(t *testing.T) {
+	bs, err := benchmarks.Load()
+	require.NoError(t, err)
+	fws, err := LoadCustom("../../../docs/frameworks", nil, bs)
+	require.NoError(t, err)
+	require.Len(t, fws, 4)
 	for _, fw := range fws {
-		require.NoError(t, Validate(fw, bs))
-		ids[fw.ID] = true
-	}
-	for _, want := range []string{"nist-800-53-r5", "pci-dss-4.0", "soc2-2017", "iso-27001-2022", "hipaa-security-rule"} {
-		require.True(t, ids[want], "framework %s missing", want)
+		require.True(t, strings.HasPrefix(fw.Source, "custom: "), "%s: source %q", fw.ID, fw.Source)
 	}
 }
 
@@ -112,4 +124,84 @@ func TestCanPassNeedsNoStructuralGap(t *testing.T) {
 			require.Equal(t, tt.want, ix.CanPass(tt.req))
 		})
 	}
+}
+
+const customFramework = `framework: acme-baseline
+name: "Acme baseline"
+version: "1"
+sources:
+  - "Acme security team"
+requirements:
+  - {id: "A.1", title: "Rotate access keys", controls: ["b/1.1"]}
+`
+
+func customMatrices() []benchmarks.Benchmark {
+	return []benchmarks.Benchmark{{ID: "b", Controls: []benchmarks.Control{{ID: "1.1"}}}}
+}
+
+func writeFramework(t *testing.T, dir, name, body string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600))
+}
+
+func TestLoadCustomLoadsFilesAndRecordsTheirSource(t *testing.T) {
+	dir := t.TempDir()
+	writeFramework(t, dir, "acme.yaml", customFramework)
+	writeFramework(t, dir, "notes.txt", "not a framework")
+	fws, err := LoadCustom(dir, []Framework{{ID: "nist-800-53-r5", Source: SourceBuiltIn}}, customMatrices())
+	require.NoError(t, err)
+	require.Len(t, fws, 1)
+	require.Equal(t, "acme-baseline", fws[0].ID)
+	require.Equal(t, "custom: acme.yaml", fws[0].Source)
+}
+
+func TestLoadCustomUnsetDirLoadsNothing(t *testing.T) {
+	fws, err := LoadCustom("", nil, customMatrices())
+	require.NoError(t, err)
+	require.Empty(t, fws)
+}
+
+func TestLoadCustomEmptyDirLoadsNothing(t *testing.T) {
+	fws, err := LoadCustom(t.TempDir(), nil, customMatrices())
+	require.NoError(t, err)
+	require.Empty(t, fws)
+}
+
+func TestLoadCustomRefusesWhatItCannotTrust(t *testing.T) {
+	dup := strings.Replace(customFramework, "acme-baseline", "nist-800-53-r5", 1)
+	cases := []struct {
+		name, file, body, want string
+	}{
+		{"unparseable yaml", "broken.yaml", "framework: [unclosed", "broken.yaml"},
+		{"unknown key", "typo.yaml", strings.Replace(customFramework, "controls:", "control:", 1), "typo.yaml"},
+		{"dangling control", "dangling.yaml", strings.Replace(customFramework, "b/1.1", "b/9.9", 1), "dangling.yaml"},
+		{"built-in id", "clash.yaml", dup, "already defined by built-in"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFramework(t, dir, c.file, c.body)
+			_, err := LoadCustom(dir, []Framework{{ID: "nist-800-53-r5", Source: SourceBuiltIn}}, customMatrices())
+			require.Error(t, err)
+			require.Contains(t, err.Error(), c.want)
+			require.Contains(t, err.Error(), c.file)
+		})
+	}
+}
+
+func TestLoadCustomRefusesTwoFilesWithOneID(t *testing.T) {
+	dir := t.TempDir()
+	writeFramework(t, dir, "a.yaml", customFramework)
+	writeFramework(t, dir, "b.yaml", customFramework)
+	_, err := LoadCustom(dir, nil, customMatrices())
+	require.ErrorContains(t, err, "already defined by custom: a.yaml")
+}
+
+func TestLoadCustomRefusesAMissingDirOrAFile(t *testing.T) {
+	_, err := LoadCustom(filepath.Join(t.TempDir(), "absent"), nil, customMatrices())
+	require.Error(t, err)
+	file := filepath.Join(t.TempDir(), "f.yaml")
+	require.NoError(t, os.WriteFile(file, []byte(customFramework), 0o600))
+	_, err = LoadCustom(file, nil, customMatrices())
+	require.ErrorContains(t, err, "not a directory")
 }

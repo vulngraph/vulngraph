@@ -3135,10 +3135,12 @@ export interface components {
             frameworks: components["schemas"]["FrameworkCoverage"][];
         };
         ComplianceFrameworkSummary: {
-            /** @description e.g. nist-800-53-r5, pci-dss-4.0 */
+            /** @description e.g. nist-800-53-r5, or the id of a custom framework */
             id: string;
             name: string;
             version: string;
+            /** @description Where the mapping was loaded from: built-in, or custom: <file name> for a file in FRAMEWORKS_DIR. */
+            source: string;
             total: number;
             passing: number;
             failing: number;
@@ -3162,7 +3164,7 @@ export interface components {
         };
         ComplianceRequirement: {
             id: string;
-            /** @description Short title; ISO, PCI and AICPA titles are paraphrased. */
+            /** @description Short title, paraphrased where the standard is copyrighted. */
             title: string;
             /**
              * @description failing — a mapped check has an open finding. passing — every in-scope mapped control is fully covered by checks, at least one evaluated live evidence, none is unevaluable, none fails. unknown — no open finding but the evidence is incomplete (a gap, an unevaluable check, or nothing evaluated); never counted as passing. manual — no benchmark control maps to the requirement.

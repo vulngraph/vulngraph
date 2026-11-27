@@ -5,8 +5,8 @@ import { server } from "../test/setup";
 import { meHandler } from "../test/handlers";
 import { renderApp } from "../test/render";
 
-const SUMMARY = { id: "pci-dss-4.0", name: "PCI DSS", version: "4.0.1", total: 3, passing: 1, failing: 1, unknown: 1, manual: 0 };
-const NIST = { id: "nist-800-53-r5", name: "NIST SP 800-53", version: "Rev. 5", total: 1, passing: 0, failing: 0, unknown: 0, manual: 1 };
+const SUMMARY = { id: "pci-dss-4.0", name: "PCI DSS", version: "4.0.1", source: "custom: pci_dss_4.0.yaml", total: 3, passing: 1, failing: 1, unknown: 1, manual: 0 };
+const NIST = { id: "nist-800-53-r5", name: "NIST SP 800-53", version: "Rev. 5", source: "built-in", total: 1, passing: 0, failing: 0, unknown: 0, manual: 1 };
 
 const req = (id: string, title: string, state: string, extra: Record<string, string[]> = {}) => ({
   id,
@@ -96,4 +96,12 @@ test("viewers do not get an export link the server would refuse", async () => {
   const section = await screen.findByRole("region", { name: "Framework requirements" });
   await within(section).findByText("Inbound traffic to the CDE restricted");
   expect(within(section).queryByText("Export CSV for auditors")).not.toBeInTheDocument();
+});
+
+test("each framework says where its mapping came from", async () => {
+  mock("analyst");
+  renderApp("/compliance");
+  const section = await screen.findByRole("region", { name: "Framework requirements" });
+  expect(await within(section).findByText("Mapping: custom: pci_dss_4.0.yaml")).toBeInTheDocument();
+  expect(within(section).getByText("Mapping: built-in")).toBeInTheDocument();
 });

@@ -15,39 +15,17 @@ import (
 	"github.com/vulngraph/vulngraph/internal/checks/frameworks"
 )
 
-// titleRule is where a framework's requirement titles come from.
-type titleRule int
-
-const (
-	// titlesHand: the standard's text is copyrighted, so titles are written
-	// by hand in the committed file and the generator only keeps them.
-	titlesHand titleRule = iota
-	// titlesProwlerName: the rest of Prowler's Name after the ID (HIPAA, a
-	// US regulation, public domain).
-	titlesProwlerName
-	// titlesNIST: the NIST OSCAL catalog (public domain).
-	titlesNIST
-)
-
 // frameworkMeta is the fixed header and ID grammar of each framework.
 type frameworkMeta struct {
 	name, version string
 	sources       []string
-	titles        titleRule
 	// id maps a Prowler requirement to its canonical requirement ID ("" to skip).
 	id func(ProwlerRequirement) string
-	// keepCommitted: requirements in the committed file stay even when no
-	// source maps them (the hand-listed full catalogue), so coverage counts
-	// against every requirement, not only the mapped ones.
-	keepCommitted bool
 }
 
 const prowlerAttribution = "Prowler compliance mappings (Apache-2.0, github.com/prowler-cloud/prowler), joined through Prowler's CIS and FSBP files"
 
-var (
-	nistID = regexp.MustCompile(`^([A-Z]{2}-[0-9]+)(\([0-9]+\))?`)
-	pciID  = regexp.MustCompile(`^\s*([A-Z]?[0-9]+(?:\.[0-9]+)*)\s*:`)
-)
+var nistID = regexp.MustCompile(`^([A-Z]{2}-[0-9]+)(\([0-9]+\))?`)
 
 // firstTok is the ID prefix of a Prowler Name ("CC6.1 …", "164.312(b) …").
 func firstTok(r ProwlerRequirement) string {
@@ -57,7 +35,7 @@ func firstTok(r ProwlerRequirement) string {
 
 var frameworkMetas = map[string]frameworkMeta{
 	"nist-800-53-r5": {
-		name: "NIST SP 800-53", version: "Rev. 5", titles: titlesNIST,
+		name: "NIST SP 800-53", version: "Rev. 5",
 		sources: []string{prowlerAttribution, "AWS Security Hub FSBP related requirements (NIST.800-53.r5)", "NIST OSCAL SP 800-53 Rev. 5 catalog (titles, public domain)"},
 		id: func(r ProwlerRequirement) string {
 			if m := nistID.FindStringSubmatch(firstTok(r)); m != nil {
@@ -66,38 +44,12 @@ var frameworkMetas = map[string]frameworkMeta{
 			return ""
 		},
 	},
-	"pci-dss-4.0": {
-		name: "PCI DSS", version: "4.0.1", titles: titlesHand,
-		sources: []string{prowlerAttribution, "AWS Security Hub FSBP related requirements (PCI DSS v4.0.1)"},
-		id: func(r ProwlerRequirement) string {
-			if m := pciID.FindStringSubmatch(r.section()); m != nil {
-				return m[1]
-			}
-			return ""
-		},
-	},
-	"soc2-2017": {
-		name: "SOC 2 Trust Services Criteria", version: "2017 (rev. 2022)", titles: titlesHand, keepCommitted: true,
-		sources: []string{prowlerAttribution},
-		id:      firstTok,
-	},
-	"iso-27001-2022": {
-		name: "ISO/IEC 27001 Annex A", version: "2022", titles: titlesHand, keepCommitted: true,
-		sources: []string{prowlerAttribution},
-		id:      func(r ProwlerRequirement) string { return r.ID },
-	},
-	"hipaa-security-rule": {
-		name: "HIPAA Security Rule", version: "45 CFR 164 Subpart C", titles: titlesProwlerName,
-		sources: []string{prowlerAttribution},
-		id:      firstTok,
-	},
 }
 
-// GenerateFrameworks rebuilds every framework mapping from a bundle fetched
-// with frameworks enabled. committed supplies the hand-written titles; a
-// requirement that needs one and has none is an error naming it, never a
-// placeholder title.
-func GenerateFrameworks(b fs.FS, bs []benchmarks.Benchmark, committed []frameworks.Framework) ([]frameworks.Framework, error) {
+// GenerateFrameworks rebuilds every built-in framework mapping from a bundle
+// fetched with frameworks enabled. A requirement the NIST catalog has no
+// title for is an error naming it, never a placeholder title.
+func GenerateFrameworks(b fs.FS, bs []benchmarks.Benchmark) ([]frameworks.Framework, error) {
 	ix := frameworks.NewIndex(bs)
 	byCheck, err := prowlerCheckRefs(b, bs, ix)
 	if err != nil {
@@ -107,17 +59,14 @@ func GenerateFrameworks(b fs.FS, bs []benchmarks.Benchmark, committed []framewor
 	if err != nil {
 		return nil, fmt.Errorf("GenerateFrameworks: %w", err)
 	}
-	var nist map[string]string
+	nist, err := nistTitles(b)
+	if err != nil {
+		return nil, fmt.Errorf("GenerateFrameworks: %w", err)
+	}
 	var out []frameworks.Framework
 	var errs []error
 	for _, src := range FrameworkSources {
-		meta := frameworkMetas[src.ID]
-		if meta.titles == titlesNIST && nist == nil {
-			if nist, err = nistTitles(b); err != nil {
-				return nil, fmt.Errorf("GenerateFrameworks: %w", err)
-			}
-		}
-		fw, err := generateOne(b, src, meta, byCheck, related, ix, committedTitles(committed, src.ID), nist)
+		fw, err := generateOne(b, src, frameworkMetas[src.ID], byCheck, related, ix, nist)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -135,7 +84,6 @@ func GenerateFrameworks(b fs.FS, bs []benchmarks.Benchmark, committed []framewor
 // row: evidence the source counts that graph does not evaluate, so the
 // requirement can never pass on what remains (ADR 093).
 type reqAcc struct {
-	title    string
 	refs     map[string]bool
 	unjoined map[string]bool
 }
@@ -143,7 +91,7 @@ type reqAcc struct {
 func newReqAcc() *reqAcc { return &reqAcc{refs: map[string]bool{}, unjoined: map[string]bool{}} }
 
 func generateOne(b fs.FS, src FrameworkSource, meta frameworkMeta, byCheck map[string]map[string][]string,
-	related map[string]string, ix frameworks.Index, committed map[string]string, nist map[string]string) (frameworks.Framework, error) {
+	related map[string]string, ix frameworks.Index, nist map[string]string) (frameworks.Framework, error) {
 	acc := map[string]*reqAcc{}
 	get := func(id string) *reqAcc {
 		if acc[id] == nil {
@@ -170,10 +118,6 @@ func generateOne(b fs.FS, src FrameworkSource, meta frameworkMeta, byCheck map[s
 				continue
 			}
 			a := get(id)
-			if a.title == "" && meta.titles == titlesProwlerName {
-				_, rest, _ := strings.Cut(strings.TrimSpace(r.Name), " ")
-				a.title = strings.TrimSpace(rest)
-			}
 			for _, chk := range r.Checks {
 				refs := byCheck[provider][chk]
 				if len(refs) == 0 {
@@ -199,32 +143,12 @@ func generateOne(b fs.FS, src FrameworkSource, meta frameworkMeta, byCheck map[s
 			}
 		}
 	}
-	if meta.keepCommitted {
-		for id := range committed {
-			get(id)
-		}
-	}
-
-	if meta.titles == titlesNIST {
-		acc = foldUnknownEnhancements(acc, nist)
-	}
+	acc = foldUnknownEnhancements(acc, nist)
 
 	fw := frameworks.Framework{ID: src.ID, Name: meta.name, Version: meta.version, Sources: meta.sources}
 	var untitled []string
 	for id, a := range acc {
-		title := a.title
-		switch meta.titles {
-		case titlesHand:
-			title = committed[id]
-		case titlesNIST:
-			title = nist[id]
-		case titlesProwlerName:
-			// Prowler leaves a few names bare ("164.308(b)(2)"); those
-			// carry a hand-written title in the committed file.
-			if title == "" {
-				title = committed[id]
-			}
-		}
+		title := nist[id]
 		if title == "" {
 			untitled = append(untitled, id)
 			continue
@@ -238,8 +162,8 @@ func generateOne(b fs.FS, src FrameworkSource, meta frameworkMeta, byCheck map[s
 	}
 	if len(untitled) > 0 {
 		sort.Slice(untitled, func(i, j int) bool { return NaturalLess(untitled[i], untitled[j]) })
-		return frameworks.Framework{}, fmt.Errorf("%s: requirements need a title written by hand in %s: %s",
-			src.ID, frameworks.FileName(src.ID), strings.Join(untitled, ", "))
+		return frameworks.Framework{}, fmt.Errorf("%s: requirements the NIST catalog has no title for: %s",
+			src.ID, strings.Join(untitled, ", "))
 	}
 	sort.Slice(fw.Requirements, func(i, j int) bool { return NaturalLess(fw.Requirements[i].ID, fw.Requirements[j].ID) })
 	return fw, nil
@@ -262,18 +186,6 @@ func foldUnknownEnhancements(acc map[string]*reqAcc, nist map[string]string) map
 		}
 		for u := range a.unjoined {
 			out[id].unjoined[u] = true
-		}
-	}
-	return out
-}
-
-func committedTitles(committed []frameworks.Framework, id string) map[string]string {
-	out := map[string]string{}
-	for _, fw := range committed {
-		if fw.ID == id {
-			for _, r := range fw.Requirements {
-				out[r.ID] = r.Title
-			}
 		}
 	}
 	return out

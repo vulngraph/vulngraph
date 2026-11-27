@@ -17,17 +17,13 @@ Vulngraph's CSPM mapped against public cloud benchmarks, control by control. Sta
 | CIS Google Kubernetes Engine (GKE) Benchmark | 2.0.0 | 54 | 44 | 5 | 2 | 0 | 3 | 2026-10-10 (kube-bench cfg/gke-1.9.0, nearest published version 1.9.0) |
 | CIS Kubernetes Benchmark | 2.0.1 | 131 | 119 | 2 | 0 | 0 | 10 | 2026-10-10 (prowler kubernetes/cis_2.0.1_kubernetes.json) |
 
-## Compliance framework requirements
+## Requirement frameworks
 
-Requirement-level mappings in `internal/checks/frameworks` (ADR 093). A requirement counts as mapped when at least one benchmark control it maps has a registry check; whether it passes is decided live from findings and inventory. "Partial source mapping" counts requirements where some source mappings (a Prowler check, an AWS related FSBP control) reach no graph control; those can never pass. "Can pass" counts requirements with no structural gap: every control they map is fully covered by a check and every source mapping reaches one. Every other requirement shows failing or unknown at best, except that a control for a provider you do not connect is out of scope and does not block a pass, however much of it is covered. Requirement IDs and short titles only; ISO, PCI and AICPA titles are paraphrased.
+NIST SP 800-53 Rev. 5 is built in. Add your own frameworks (HIPAA, FedRAMP, an internal standard) with `FRAMEWORKS_DIR`; the format and worked examples are in [`docs/frameworks`](frameworks/README.md). Requirement-level mappings live in `internal/checks/frameworks`. A requirement counts as mapped when at least one benchmark control it maps has a registry check; whether it passes is decided live from findings and inventory. "Partial source mapping" counts requirements where some source mappings (a Prowler check, an AWS related FSBP control) reach no graph control; those can never pass. "Can pass" counts requirements with no structural gap: every control they map is fully covered by a check and every source mapping reaches one. Every other requirement shows failing or unknown at best, except that a control for a provider you do not connect is out of scope and does not block a pass, however much of it is covered. Requirement IDs and short titles only; titles are paraphrased where the standard is copyrighted.
 
 | Framework | Version | Requirements | Can pass | With ≥1 mapped check | Mapped to a control only | No mapping | Partial source mapping |
 |---|---|---:|---:|---:|---:|---:|---:|
-| HIPAA Security Rule | 45 CFR 164 Subpart C | 36 | 2 (5%) | 34 | 0 | 2 | 34 |
-| ISO/IEC 27001 Annex A | 2022 | 93 | 2 (2%) | 38 | 0 | 55 | 36 |
 | NIST SP 800-53 | Rev. 5 | 222 | 138 (62%) | 216 | 0 | 6 | 74 |
-| PCI DSS | 4.0.1 | 120 | 21 (17%) | 115 | 0 | 5 | 97 |
-| SOC 2 Trust Services Criteria | 2017 (rev. 2022) | 43 | 3 (6%) | 27 | 0 | 16 | 25 |
 
 ## Kubernetes namespace exemptions
 

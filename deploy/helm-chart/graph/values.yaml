@@ -333,6 +333,11 @@ config:
   # extraEnv.
   sccOrgId: ""
   sccQuotaProject: ""
+  # Name of an existing ConfigMap holding your own requirement-framework files
+  # (*.yaml; see docs/frameworks/README.md). serve mounts it read-only and sets
+  # FRAMEWORKS_DIR; empty (default) means NIST SP 800-53 only. Create it with
+  #   kubectl create configmap my-frameworks --from-file=acme.yaml
+  frameworksConfigMap: ""
   # Identity-Aware Proxy audience — set this if you're fronting graph with GCP
   # IAP instead of the cluster oauth2-proxy or Okta OIDC. Empty disables IAP
   # token verification. Behind IAP (or oauth2Proxy) password login is off

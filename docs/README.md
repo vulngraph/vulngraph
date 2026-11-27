@@ -53,4 +53,6 @@ To understand the code, start here, in this order:
   contiguous numbers) and what enforces them.
 - [`pipeline-benchmarks.md`](pipeline-benchmarks.md) — generate synthetic inventory
   and measure database work, graph refresh throughput and memory locally or in CI.
+- [`performance-assurance.md`](performance-assurance.md) — prioritised performance
+  worklist, workload coverage target and evidence required to close the gaps.
 

@@ -19,3 +19,13 @@
 - [ ] Regenerated any generated file whose source changed (table in `CONTRIBUTING.md`)
 - [ ] No secrets, internal hostnames, or credentials in code, tests, or
       commit messages
+
+## Performance impact
+
+- Affected workload family IDs from `docs/performance/workloads.json` (or explain
+  why this changes no workload):
+- Registration/service/journey changes reconciled with `go run ./cmd/perf-inventory -check`:
+- For a cost change: matched baseline/candidate source, fixture, hardware and raw
+  evidence; exact correctness and query/read-byte/memory/request/cardinality gates:
+- Evidence invalidated by code/schema/dependency/profile changes, and remaining
+  native/aged/mixed/recovery scenarios (unmeasured is not a pass):

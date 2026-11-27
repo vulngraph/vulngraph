@@ -176,6 +176,25 @@ If you touch what a file is derived from, regenerate it and commit the result:
 (`lefthook install` once, locally); run `go vet`, the integration tests and the
 frontend build yourself.
 
+## Performance evidence
+
+For changed workload behavior, identify the affected stable IDs in
+[`docs/performance/workloads.json`](docs/performance/workloads.json) and reconcile
+registrations/service modules with `go run ./cmd/perf-inventory -check`. The root
+unit suite enforces this scope check in required CI. New operations need explicit
+membership, ownership, risk and scenarios before they can earn coverage.
+
+A performance fix includes matched baseline/candidate evidence and exact result,
+cursor/count, freshness and recovery checks. Gate measured query/read-byte/memory,
+API request or cardinality costs when deterministic; deliberately put the old cost
+back and verify the guard fails. Shared-runner wall-clock timing is informational.
+Record source, fixture, schema/dependencies, hardware/limits and raw artifacts.
+Mark affected prior evidence stale when those inputs materially change. Heavy
+native, aged and mixed-load scenarios belong in scheduled or release validation;
+short PR fixtures never substitute for them. See the
+[performance worklist](docs/performance-assurance.md) and
+[fixed profiles](docs/performance/README.md).
+
 ## Finding something to work on
 
 Look for issues labelled

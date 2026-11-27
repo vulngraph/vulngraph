@@ -57,8 +57,9 @@ jobs:
           go -C internal/graphdb/ladybug test ./... -count=1
       - name: Validate benchmark code
         run: |
-          go vet -tags=integration ./internal/throughput ./internal/jobs ./internal/app/asset ./internal/app/finding ./internal/app/enrich ./internal/app/correlate ./internal/app/connector ./internal/migrate ./migrations/...
+          go vet -tags=integration ./internal/perfassurance ./cmd/perf-inventory ./internal/throughput ./internal/jobs ./internal/app/asset ./internal/app/finding ./internal/app/enrich ./internal/app/correlate ./internal/app/connector ./internal/migrate ./migrations/...
           python3 -m unittest discover -s scripts -p performance_trend_test.py
+          python3 -m unittest discover -s scripts -p run_bounded_test.py
       - name: Measure connector API fixtures
         env:
           PERF_CONNECTORS: "1"
@@ -74,6 +75,15 @@ jobs:
           PERF_CONNECTOR_MAX: ${{ github.event_name == 'workflow_dispatch' && '10000' || '1000' }}
           GOMAXPROCS: "4"
         run: go test ./internal/app/graphstore -run '^TestGitHubVisibilityFixtureReplay$' -count=1 -timeout=10m -v 2>&1 | tee "$GITHUB_VISIBILITY_FIXTURES/graph-replay.log"
+      - name: Reconcile workload inventory
+        run: go run ./cmd/perf-inventory -check
+      - name: Check inventory and dashboard query budgets
+        timeout-minutes: 15
+        env:
+          PERF_CH_MEMORY: 3g
+          PERF_CH_CPUS: "2"
+          GOMAXPROCS: "4"
+        run: scripts/benchmark-queries.sh smoke "$RUNNER_TEMP/query-throughput"
       - name: Run isolated pipeline
         env:
           PERF_PROFILE_INPUT: ${{ inputs.profile }}
@@ -89,6 +99,7 @@ jobs:
         with:
           name: pipeline-throughput-${{ matrix.arch }}
           path: |
+            ${{ runner.temp }}/query-throughput/
             ${{ runner.temp }}/pipeline-throughput/
             ${{ runner.temp }}/connector-throughput/
           retention-days: 14

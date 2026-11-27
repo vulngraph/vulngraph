@@ -1,0 +1,585 @@
+{
+  "version": 1,
+  "revision": "2026-11-27.1",
+  "policy": "Fixed engineering targets before new measurement. Failure remains failure; profile revisions invalidate prior acceptance. No hardware has yet passed these profiles.",
+  "profiles": {
+    "small": {
+      "assets": 10000,
+      "findings": 10000,
+      "stored_package_memberships": 200000,
+      "core_edges": 30000,
+      "retained_history_days": 7,
+      "versions_per_changed_key": 3,
+      "minimum_unmerged_parts": 100,
+      "accounts": 4,
+      "regions_per_account": 3,
+      "clusters": 4,
+      "browser_sessions": 5,
+      "http_requests_per_second": 5,
+      "enrichment_jobs_per_second": 20,
+      "sync_arrivals_per_hour": 8,
+      "topology_change_percent_per_wave": [
+        0,
+        1,
+        20
+      ],
+      "metadata_bytes": {
+        "p50": 1024,
+        "p95": 16384,
+        "p99": 65536,
+        "max": 1048576
+      },
+      "id_distribution": "seeded UUIDs, 10% owners carry 90% resources; 80% shared images/packages",
+      "host": {
+        "native_architectures": [
+          "linux/amd64",
+          "linux/arm64"
+        ],
+        "vcpus": 16,
+        "memory_gib": 32,
+        "storage_gib": 100,
+        "storage_iops": 3000,
+        "storage_mib_per_second": 125,
+        "storage_class": "dedicated SSD; explicitly enforce/report quota, no unspecified cloud default"
+      },
+      "limits": {
+        "application": {
+          "cpus": 4,
+          "memory_gib": 4
+        },
+        "clickhouse": {
+          "cpus": 4,
+          "memory_gib": 8
+        },
+        "postgres": {
+          "cpus": 1,
+          "memory_gib": 2
+        },
+        "scanner": {
+          "cpus": 2,
+          "memory_gib": 4
+        }
+      },
+      "budgets": {
+        "interactive_p95_ms": 500,
+        "interactive_p99_ms": 1500,
+        "admitted_change_freshness_seconds": 900,
+        "full_recovery_seconds": 1800,
+        "queue_wait_p99_seconds": 60,
+        "unexpected_errors": 0,
+        "correctness_mismatches": 0,
+        "lost_or_unexplained_jobs": 0,
+        "minimum_elapsed_soak_hours": 24,
+        "post_warmup_heap_growth_percent_per_hour_max": 1,
+        "disk_growth_max": "input bytes + declared version/retention amplification; no unexplained sustained growth",
+        "memory_max_fraction_of_each_limit": 0.85,
+        "single_query_memory_max_fraction_of_ch_limit": 0.2,
+        "steady_cpu_max_fraction": 0.8,
+        "disk_io_max_fraction_of_quota": 0.8
+      }
+    },
+    "target": {
+      "assets": 100000,
+      "findings": 1000000,
+      "stored_package_memberships": 20000000,
+      "core_edges": 300000,
+      "retained_history_days": 90,
+      "versions_per_changed_key": 20,
+      "minimum_unmerged_parts": 1000,
+      "accounts": 40,
+      "regions_per_account": 10,
+      "clusters": 40,
+      "browser_sessions": 25,
+      "http_requests_per_second": 20,
+      "enrichment_jobs_per_second": 100,
+      "sync_arrivals_per_hour": 80,
+      "topology_change_percent_per_wave": [
+        0,
+        1,
+        20
+      ],
+      "metadata_bytes": {
+        "p50": 1024,
+        "p95": 16384,
+        "p99": 65536,
+        "max": 1048576
+      },
+      "id_distribution": "seeded UUIDs, 10% owners carry 90% resources; 80% shared images/packages",
+      "host": {
+        "native_architectures": [
+          "linux/amd64",
+          "linux/arm64"
+        ],
+        "vcpus": 32,
+        "memory_gib": 64,
+        "storage_gib": 500,
+        "storage_iops": 6000,
+        "storage_mib_per_second": 250,
+        "storage_class": "dedicated SSD; explicitly enforce/report quota, no unspecified cloud default"
+      },
+      "limits": {
+        "application": {
+          "cpus": 8,
+          "memory_gib": 16
+        },
+        "clickhouse": {
+          "cpus": 8,
+          "memory_gib": 24
+        },
+        "postgres": {
+          "cpus": 2,
+          "memory_gib": 4
+        },
+        "scanner": {
+          "cpus": 4,
+          "memory_gib": 8
+        }
+      },
+      "budgets": {
+        "interactive_p95_ms": 1500,
+        "interactive_p99_ms": 3000,
+        "admitted_change_freshness_seconds": 1800,
+        "full_recovery_seconds": 3600,
+        "queue_wait_p99_seconds": 300,
+        "unexpected_errors": 0,
+        "correctness_mismatches": 0,
+        "lost_or_unexplained_jobs": 0,
+        "minimum_elapsed_soak_hours": 24,
+        "post_warmup_heap_growth_percent_per_hour_max": 1,
+        "disk_growth_max": "input bytes + declared version/retention amplification; no unexplained sustained growth",
+        "memory_max_fraction_of_each_limit": 0.85,
+        "single_query_memory_max_fraction_of_ch_limit": 0.2,
+        "steady_cpu_max_fraction": 0.8,
+        "disk_io_max_fraction_of_quota": 0.8
+      }
+    },
+    "stress": {
+      "assets": 1000000,
+      "findings": 5000000,
+      "stored_package_memberships": 100000000,
+      "core_edges": 3000000,
+      "retained_history_days": 365,
+      "versions_per_changed_key": 100,
+      "minimum_unmerged_parts": 1000,
+      "accounts": 200,
+      "regions_per_account": 20,
+      "clusters": 200,
+      "browser_sessions": 100,
+      "http_requests_per_second": 80,
+      "enrichment_jobs_per_second": 400,
+      "sync_arrivals_per_hour": 400,
+      "topology_change_percent_per_wave": [
+        0,
+        1,
+        20
+      ],
+      "metadata_bytes": {
+        "p50": 1024,
+        "p95": 16384,
+        "p99": 65536,
+        "max": 1048576
+      },
+      "id_distribution": "seeded UUIDs, 10% owners carry 90% resources; 80% shared images/packages",
+      "host": {
+        "native_architectures": [
+          "linux/amd64",
+          "linux/arm64"
+        ],
+        "vcpus": 64,
+        "memory_gib": 128,
+        "storage_gib": 2000,
+        "storage_iops": 12000,
+        "storage_mib_per_second": 500,
+        "storage_class": "dedicated SSD; explicitly enforce/report quota, no unspecified cloud default"
+      },
+      "limits": {
+        "application": {
+          "cpus": 16,
+          "memory_gib": 32
+        },
+        "clickhouse": {
+          "cpus": 16,
+          "memory_gib": 48
+        },
+        "postgres": {
+          "cpus": 4,
+          "memory_gib": 8
+        },
+        "scanner": {
+          "cpus": 8,
+          "memory_gib": 16
+        }
+      },
+      "budgets": {
+        "interactive_p95_ms": 5000,
+        "interactive_p99_ms": 10000,
+        "admitted_change_freshness_seconds": 3600,
+        "full_recovery_seconds": 7200,
+        "queue_wait_p99_seconds": 300,
+        "unexpected_errors": 0,
+        "correctness_mismatches": 0,
+        "lost_or_unexplained_jobs": 0,
+        "minimum_elapsed_soak_hours": 24,
+        "post_warmup_heap_growth_percent_per_hour_max": 1,
+        "disk_growth_max": "input bytes + declared version/retention amplification; no unexplained sustained growth",
+        "memory_max_fraction_of_each_limit": 0.85,
+        "single_query_memory_max_fraction_of_ch_limit": 0.2,
+        "steady_cpu_max_fraction": 0.8,
+        "disk_io_max_fraction_of_quota": 0.8
+      }
+    }
+  },
+  "budget_classes": {
+    "interactive": {
+      "required_scenarios": [
+        "fresh_warm",
+        "fresh_cold",
+        "aged_versions_parts",
+        "wide_skewed_payloads",
+        "concurrent_ingest",
+        "duplicate_delete_reappear",
+        "dependency_failure_retry",
+        "burst_saturation_catchup",
+        "independent_replay",
+        "all_filters_and_sorts",
+        "cursor_and_total_parity",
+        "stale_liveness_and_partial_unknown",
+        "isolated_query_plan_and_cost",
+        "concurrent_page_fanout"
+      ],
+      "repeats": 3,
+      "latency_budget": "profile interactive p95/p99 for user reads; freshness/recovery for background work",
+      "correctness": "zero mismatches; complete expected values/counts/cursors, no stale resurrection, unknown stays unknown; independent persisted-output readback",
+      "query_budget": {
+        "queries_per_operation_max": 8,
+        "read_rows_max": "4 * physical rows in declared participating tables per sweep; point/page hydration <= 2 * qualifying index granules",
+        "read_bytes_max": "4 * physical bytes of needed columns per sweep; page metadata hydration only for selected IDs",
+        "concurrent_ch_queries_max": 8
+      },
+      "request_budget": {
+        "attempts_per_request_max": 3,
+        "provider_requests_max": "20 * scopes + 8 * resources + ceil(resources / page_size), before retries; tighter per-family fixture budgets also apply",
+        "duplicate_equivalent_lookups_max": 1
+      },
+      "resource_budget": "profile limits including whole ClickHouse/Postgres/native process memory, disk bytes and IO, not sum of per-query maxima",
+      "throughput_budget": "sustain profile arrivals with bounded queue age; recover full declared backlog after 2x arrivals for 15 minutes",
+      "evidence": "retained plans, raw samples, source/fixture/schema/dependency/hardware identities and independent replay; missing or stale scenario is zero coverage",
+      "inventory_page_budget": {
+        "queries_max": 2,
+        "page_rows_max": 100,
+        "wide_fixture_candidate_to_baseline_read_bytes_max": 0.75,
+        "wide_fixture_candidate_to_baseline_peak_query_memory_max": 0.75,
+        "semantics": "retained FINAL baseline parity for every filter/cursor; no new type-change semantics in a performance rewrite"
+      },
+      "dashboard_budget": {
+        "queries_per_view_max": 8,
+        "candidate_to_baseline_cumulative_read_bytes_max": 1.0,
+        "candidate_to_baseline_peak_query_memory_max": 1.0,
+        "semantics": "exact summary/facets, cluster population/total, identity/posture/drift parity; at least one measured cost reduced for a rewrite"
+      }
+    },
+    "connector": {
+      "required_scenarios": [
+        "fresh_warm",
+        "fresh_cold",
+        "aged_versions_parts",
+        "wide_skewed_payloads",
+        "concurrent_ingest",
+        "duplicate_delete_reappear",
+        "dependency_failure_retry",
+        "burst_saturation_catchup",
+        "independent_replay",
+        "initial_unchanged_1pct_20pct_change",
+        "all_service_scopes",
+        "many_accounts_regions_clusters",
+        "real_sdk_pagination",
+        "slow_429_5xx",
+        "partial_permissions_no_false_deletion",
+        "overlapping_triggers",
+        "synthetic_transport",
+        "live_provider_observe_only"
+      ],
+      "repeats": 3,
+      "latency_budget": "profile interactive p95/p99 for user reads; freshness/recovery for background work",
+      "correctness": "zero mismatches; complete expected values/counts/cursors, no stale resurrection, unknown stays unknown; independent persisted-output readback",
+      "query_budget": {
+        "queries_per_operation_max": 64,
+        "read_rows_max": "4 * physical rows in declared participating tables per sweep; point/page hydration <= 2 * qualifying index granules",
+        "read_bytes_max": "4 * physical bytes of needed columns per sweep; page metadata hydration only for selected IDs",
+        "concurrent_ch_queries_max": 8
+      },
+      "request_budget": {
+        "attempts_per_request_max": 3,
+        "provider_requests_max": "20 * scopes + 8 * resources + ceil(resources / page_size), before retries; tighter per-family fixture budgets also apply",
+        "duplicate_equivalent_lookups_max": 1
+      },
+      "resource_budget": "profile limits including whole ClickHouse/Postgres/native process memory, disk bytes and IO, not sum of per-query maxima",
+      "throughput_budget": "sustain profile arrivals with bounded queue age; recover full declared backlog after 2x arrivals for 15 minutes",
+      "evidence": "retained plans, raw samples, source/fixture/schema/dependency/hardware identities and independent replay; missing or stale scenario is zero coverage"
+    },
+    "pipeline": {
+      "required_scenarios": [
+        "fresh_warm",
+        "fresh_cold",
+        "aged_versions_parts",
+        "wide_skewed_payloads",
+        "concurrent_ingest",
+        "duplicate_delete_reappear",
+        "dependency_failure_retry",
+        "burst_saturation_catchup",
+        "independent_replay",
+        "initial_unchanged_1pct_20pct_change",
+        "shared_inputs_high_fanout",
+        "deferred_backfill_complete",
+        "queue_fairness",
+        "persisted_scores_edges_exact"
+      ],
+      "repeats": 3,
+      "latency_budget": "profile interactive p95/p99 for user reads; freshness/recovery for background work",
+      "correctness": "zero mismatches; complete expected values/counts/cursors, no stale resurrection, unknown stays unknown; independent persisted-output readback",
+      "query_budget": {
+        "queries_per_operation_max": 64,
+        "read_rows_max": "4 * physical rows in declared participating tables per sweep; point/page hydration <= 2 * qualifying index granules",
+        "read_bytes_max": "4 * physical bytes of needed columns per sweep; page metadata hydration only for selected IDs",
+        "concurrent_ch_queries_max": 8
+      },
+      "request_budget": {
+        "attempts_per_request_max": 3,
+        "provider_requests_max": "20 * scopes + 8 * resources + ceil(resources / page_size), before retries; tighter per-family fixture budgets also apply",
+        "duplicate_equivalent_lookups_max": 1
+      },
+      "resource_budget": "profile limits including whole ClickHouse/Postgres/native process memory, disk bytes and IO, not sum of per-query maxima",
+      "throughput_budget": "sustain profile arrivals with bounded queue age; recover full declared backlog after 2x arrivals for 15 minutes",
+      "evidence": "retained plans, raw samples, source/fixture/schema/dependency/hardware identities and independent replay; missing or stale scenario is zero coverage"
+    },
+    "external": {
+      "required_scenarios": [
+        "fresh_warm",
+        "fresh_cold",
+        "aged_versions_parts",
+        "wide_skewed_payloads",
+        "concurrent_ingest",
+        "duplicate_delete_reappear",
+        "dependency_failure_retry",
+        "burst_saturation_catchup",
+        "independent_replay",
+        "full_delta_refresh",
+        "shared_layers_inputs",
+        "cache_hit_miss",
+        "maximum_input",
+        "provider_unavailable",
+        "partial_no_clean_zero",
+        "request_network_token_accounting"
+      ],
+      "repeats": 3,
+      "latency_budget": "profile interactive p95/p99 for user reads; freshness/recovery for background work",
+      "correctness": "zero mismatches; complete expected values/counts/cursors, no stale resurrection, unknown stays unknown; independent persisted-output readback",
+      "query_budget": {
+        "queries_per_operation_max": 64,
+        "read_rows_max": "4 * physical rows in declared participating tables per sweep; point/page hydration <= 2 * qualifying index granules",
+        "read_bytes_max": "4 * physical bytes of needed columns per sweep; page metadata hydration only for selected IDs",
+        "concurrent_ch_queries_max": 8
+      },
+      "request_budget": {
+        "attempts_per_request_max": 3,
+        "provider_requests_max": "20 * scopes + 8 * resources + ceil(resources / page_size), before retries; tighter per-family fixture budgets also apply",
+        "duplicate_equivalent_lookups_max": 1
+      },
+      "resource_budget": "profile limits including whole ClickHouse/Postgres/native process memory, disk bytes and IO, not sum of per-query maxima",
+      "throughput_budget": "sustain profile arrivals with bounded queue age; recover full declared backlog after 2x arrivals for 15 minutes",
+      "evidence": "retained plans, raw samples, source/fixture/schema/dependency/hardware identities and independent replay; missing or stale scenario is zero coverage",
+      "external_budget": {
+        "full_refresh_seconds_max": 3600,
+        "delta_refresh_seconds_max": 600,
+        "input_bytes_max": 2147483648,
+        "network_bytes_per_input_byte_max": 3,
+        "llm_tokens_per_operation_max": 32768,
+        "llm_requests_per_operation_max": 8,
+        "cost_accounting": "report provider/token/network cost separately; no live paid calls authorized by this profile"
+      }
+    },
+    "transport": {
+      "required_scenarios": [
+        "fresh_warm",
+        "fresh_cold",
+        "aged_versions_parts",
+        "wide_skewed_payloads",
+        "concurrent_ingest",
+        "duplicate_delete_reappear",
+        "dependency_failure_retry",
+        "burst_saturation_catchup",
+        "independent_replay",
+        "real_http_or_mcp",
+        "authentication_authorization",
+        "serialize_large_response",
+        "concurrent_sessions",
+        "client_cancellation",
+        "error_and_rate_limit"
+      ],
+      "repeats": 3,
+      "latency_budget": "profile interactive p95/p99 for user reads; freshness/recovery for background work",
+      "correctness": "zero mismatches; complete expected values/counts/cursors, no stale resurrection, unknown stays unknown; independent persisted-output readback",
+      "query_budget": {
+        "queries_per_operation_max": 8,
+        "read_rows_max": "4 * physical rows in declared participating tables per sweep; point/page hydration <= 2 * qualifying index granules",
+        "read_bytes_max": "4 * physical bytes of needed columns per sweep; page metadata hydration only for selected IDs",
+        "concurrent_ch_queries_max": 8
+      },
+      "request_budget": {
+        "attempts_per_request_max": 3,
+        "provider_requests_max": "20 * scopes + 8 * resources + ceil(resources / page_size), before retries; tighter per-family fixture budgets also apply",
+        "duplicate_equivalent_lookups_max": 1
+      },
+      "resource_budget": "profile limits including whole ClickHouse/Postgres/native process memory, disk bytes and IO, not sum of per-query maxima",
+      "throughput_budget": "sustain profile arrivals with bounded queue age; recover full declared backlog after 2x arrivals for 15 minutes",
+      "evidence": "retained plans, raw samples, source/fixture/schema/dependency/hardware identities and independent replay; missing or stale scenario is zero coverage"
+    },
+    "browser": {
+      "required_scenarios": [
+        "fresh_warm",
+        "fresh_cold",
+        "aged_versions_parts",
+        "wide_skewed_payloads",
+        "concurrent_ingest",
+        "duplicate_delete_reappear",
+        "dependency_failure_retry",
+        "burst_saturation_catchup",
+        "independent_replay",
+        "real_browser_authenticated",
+        "dashboard_fanout",
+        "search_filter_page_changes",
+        "graph_render",
+        "simultaneous_sessions",
+        "heap_and_render_samples"
+      ],
+      "repeats": 3,
+      "latency_budget": "profile interactive p95/p99 for user reads; freshness/recovery for background work",
+      "correctness": "zero mismatches; complete expected values/counts/cursors, no stale resurrection, unknown stays unknown; independent persisted-output readback",
+      "query_budget": {
+        "queries_per_operation_max": 64,
+        "read_rows_max": "4 * physical rows in declared participating tables per sweep; point/page hydration <= 2 * qualifying index granules",
+        "read_bytes_max": "4 * physical bytes of needed columns per sweep; page metadata hydration only for selected IDs",
+        "concurrent_ch_queries_max": 8
+      },
+      "request_budget": {
+        "attempts_per_request_max": 3,
+        "provider_requests_max": "20 * scopes + 8 * resources + ceil(resources / page_size), before retries; tighter per-family fixture budgets also apply",
+        "duplicate_equivalent_lookups_max": 1
+      },
+      "resource_budget": "profile limits including whole ClickHouse/Postgres/native process memory, disk bytes and IO, not sum of per-query maxima",
+      "throughput_budget": "sustain profile arrivals with bounded queue age; recover full declared backlog after 2x arrivals for 15 minutes",
+      "evidence": "retained plans, raw samples, source/fixture/schema/dependency/hardware identities and independent replay; missing or stale scenario is zero coverage",
+      "browser_budget": {
+        "interaction_p95_ms": 2000,
+        "interaction_p99_ms": 5000,
+        "retained_heap_mib_per_session_max": 512,
+        "response_bytes_per_journey_max": 10485760
+      }
+    },
+    "recovery": {
+      "required_scenarios": [
+        "fresh_warm",
+        "fresh_cold",
+        "aged_versions_parts",
+        "wide_skewed_payloads",
+        "concurrent_ingest",
+        "duplicate_delete_reappear",
+        "dependency_failure_retry",
+        "burst_saturation_catchup",
+        "independent_replay",
+        "cold_start",
+        "snapshot_on_off_stale",
+        "worker_loss",
+        "datastore_outage",
+        "full_backlog_drain_normal_arrivals",
+        "aged_upgrade_replay",
+        "retention_compaction_vacuum"
+      ],
+      "repeats": 3,
+      "latency_budget": "profile interactive p95/p99 for user reads; freshness/recovery for background work",
+      "correctness": "zero mismatches; complete expected values/counts/cursors, no stale resurrection, unknown stays unknown; independent persisted-output readback",
+      "query_budget": {
+        "queries_per_operation_max": 64,
+        "read_rows_max": "4 * physical rows in declared participating tables per sweep; point/page hydration <= 2 * qualifying index granules",
+        "read_bytes_max": "4 * physical bytes of needed columns per sweep; page metadata hydration only for selected IDs",
+        "concurrent_ch_queries_max": 8
+      },
+      "request_budget": {
+        "attempts_per_request_max": 3,
+        "provider_requests_max": "20 * scopes + 8 * resources + ceil(resources / page_size), before retries; tighter per-family fixture budgets also apply",
+        "duplicate_equivalent_lookups_max": 1
+      },
+      "resource_budget": "profile limits including whole ClickHouse/Postgres/native process memory, disk bytes and IO, not sum of per-query maxima",
+      "throughput_budget": "sustain profile arrivals with bounded queue age; recover full declared backlog after 2x arrivals for 15 minutes",
+      "evidence": "retained plans, raw samples, source/fixture/schema/dependency/hardware identities and independent replay; missing or stale scenario is zero coverage"
+    },
+    "mixed": {
+      "required_scenarios": [
+        "fresh_warm",
+        "fresh_cold",
+        "aged_versions_parts",
+        "wide_skewed_payloads",
+        "concurrent_ingest",
+        "duplicate_delete_reappear",
+        "dependency_failure_retry",
+        "burst_saturation_catchup",
+        "independent_replay",
+        "all_enabled_queues_consumed",
+        "maintenance_and_user_traffic",
+        "arrival_ramp_to_saturation",
+        "24h_elapsed_target_load",
+        "overload_then_full_recovery",
+        "whole_server_memory_disk_io"
+      ],
+      "repeats": 3,
+      "latency_budget": "profile interactive p95/p99 for user reads; freshness/recovery for background work",
+      "correctness": "zero mismatches; complete expected values/counts/cursors, no stale resurrection, unknown stays unknown; independent persisted-output readback",
+      "query_budget": {
+        "queries_per_operation_max": 64,
+        "read_rows_max": "4 * physical rows in declared participating tables per sweep; point/page hydration <= 2 * qualifying index granules",
+        "read_bytes_max": "4 * physical bytes of needed columns per sweep; page metadata hydration only for selected IDs",
+        "concurrent_ch_queries_max": 8
+      },
+      "request_budget": {
+        "attempts_per_request_max": 3,
+        "provider_requests_max": "20 * scopes + 8 * resources + ceil(resources / page_size), before retries; tighter per-family fixture budgets also apply",
+        "duplicate_equivalent_lookups_max": 1
+      },
+      "resource_budget": "profile limits including whole ClickHouse/Postgres/native process memory, disk bytes and IO, not sum of per-query maxima",
+      "throughput_budget": "sustain profile arrivals with bounded queue age; recover full declared backlog after 2x arrivals for 15 minutes",
+      "evidence": "retained plans, raw samples, source/fixture/schema/dependency/hardware identities and independent replay; missing or stale scenario is zero coverage"
+    },
+    "github_apps": {
+      "required_scenarios": [
+        "org_and_app_pagination",
+        "selected_membership_unknown",
+        "denied_truncated_preserves_snapshot",
+        "suspension_revocation_permission_changes",
+        "public_token_to_private_repo",
+        "narrowed_and_default_current_tokens",
+        "cloud_declarations_reusable_calls",
+        "populated_100_1000_10000_workflows",
+        "independent_replay"
+      ],
+      "repeats": 3,
+      "request_budget": "<12*N + declared pagination/app overhead; report attempts/retries separately",
+      "graph_budget": "O(installations + observed memberships + workflows + explicit token targets); broad scopes use grant hub",
+      "evidence": "Peer proposal received 2026-11-27; no new code or measurements accepted yet."
+    },
+    "graph_consistency": {
+      "required_scenarios": [
+        "ingest_progresses_during_rebuild",
+        "reader_availability_during_swap",
+        "bounded_shared_cpu_memory_io",
+        "published_freshness_and_completeness",
+        "partial_scope_not_published_as_complete",
+        "concurrent_writes_between_source_reads",
+        "durable_coalesced_rebuild_replay",
+        "worker_loss_during_build",
+        "independent_scope_version_readback"
+      ],
+      "repeats": 3,
+      "correctness": "Async queues and atomic pointer swap do not establish a single committed ClickHouse source snapshot. Record missing per-scope completion/version boundary as a gap."
+    }
+  }
+}

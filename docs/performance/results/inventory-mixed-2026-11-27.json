@@ -1,0 +1,394 @@
+{
+  "schema_version": 1,
+  "kind": "local_synthetic_mixed_inventory_probe",
+  "baseline_commit": "f9e5fa7fd8c3b2873e1ca181731fb36bc0269793",
+  "host": "macOS arm64; shared workstation; native Go1.26.11; isolated Linux arm64 ClickHouse26.8.47.5",
+  "clickhouse_cpus": 4,
+  "clickhouse_memory_gib": 8,
+  "go_max_procs": 4,
+  "read_arrivals_per_second": 20,
+  "write_batches_per_second": 5,
+  "write_batch_rows": 100,
+  "duration_seconds": 30,
+  "acceptance": "exact correctness passed; no demonstrated overall mixed benefit; candidate remains test-only",
+  "limits": [
+    "repository/service traffic; no HTTP or River queue",
+    "wholeCH resident memory sampled once per second",
+    "shared-host timings descriptive; no CI timing gate",
+    "original collector-style write batching, merges enabled; no elapsed aging or soak"
+  ],
+  "runs": [
+    {
+      "path": "mixed-1-baseline/mixed.json",
+      "sha256": "f2c7262b11f92338a63d92fd6ce2c28aa947fb1c1c3e4ef9610720cae45f3888",
+      "variant": "baseline",
+      "rows": 100000,
+      "duration_seconds": 29.973955869674683,
+      "completed_reads": 600,
+      "completed_write_batches": 150,
+      "reads_per_second": 20.017377839907788,
+      "ingested_rows_per_second": 500.43444599769475,
+      "reads": {
+        "response_ms": {
+          "p50": 31.711,
+          "p95": 42.64,
+          "p99": 49.829,
+          "max": 57.751
+        },
+        "call_ms": {
+          "p50": 30.788,
+          "p95": 41.975,
+          "p99": 48.869,
+          "max": 56.838
+        },
+        "admission_ms": {
+          "p50": 1.03,
+          "p95": 1.056,
+          "p99": 1.076,
+          "max": 1.096
+        }
+      },
+      "writes": {
+        "response_ms": {
+          "p50": 18.59,
+          "p95": 26.13,
+          "p99": 30.588,
+          "max": 31.95
+        },
+        "call_ms": {
+          "p50": 17.817,
+          "p95": 25.083,
+          "p99": 30.293,
+          "max": 31.077
+        },
+        "admission_ms": {
+          "p50": 1.027,
+          "p95": 1.058,
+          "p99": 1.075,
+          "max": 1.077
+        }
+      },
+      "sampled_ch_resident_max_bytes": 3489918976,
+      "sampled_ch_resident_min_bytes": 919068672,
+      "go_peak_rss_bytes": 44204032,
+      "query_count": 1200,
+      "query_peak_memory_bytes": 88235845,
+      "query_cpu_seconds": 28.626976,
+      "read_bytes": 314143258084,
+      "admission_scope": "scheduled arrival to harness worker start; call latency includes unseparated ClickHouse semaphore/pool/transport wait",
+      "source_patch_sha256": "952c001b146fe4154aa72df238e39f831559fe3bb752c05ad157e8745783c63f",
+      "exact_outputs": true,
+      "query_errors": 0
+    },
+    {
+      "path": "mixed-1-candidate/mixed.json",
+      "sha256": "009b172d51af731bacd4be408128d7ab02c1651b1206eee4c82bf635174be4d9",
+      "variant": "candidate",
+      "rows": 100000,
+      "duration_seconds": 29.991726875305176,
+      "completed_reads": 600,
+      "completed_write_batches": 150,
+      "reads_per_second": 20.005516937873715,
+      "ingested_rows_per_second": 500.1379234468429,
+      "reads": {
+        "response_ms": {
+          "p50": 42.579,
+          "p95": 51.532,
+          "p99": 60.897,
+          "max": 65.831
+        },
+        "call_ms": {
+          "p50": 41.698,
+          "p95": 50.807,
+          "p99": 60.17,
+          "max": 65.54
+        },
+        "admission_ms": {
+          "p50": 1.031,
+          "p95": 1.056,
+          "p99": 1.076,
+          "max": 1.198
+        }
+      },
+      "writes": {
+        "response_ms": {
+          "p50": 17.882,
+          "p95": 22.343,
+          "p99": 30.676,
+          "max": 40.307
+        },
+        "call_ms": {
+          "p50": 17.286,
+          "p95": 22.131,
+          "p99": 30.455,
+          "max": 39.327
+        },
+        "admission_ms": {
+          "p50": 1.024,
+          "p95": 1.062,
+          "p99": 1.08,
+          "max": 1.093
+        }
+      },
+      "sampled_ch_resident_max_bytes": 3442077696,
+      "sampled_ch_resident_min_bytes": 855228416,
+      "go_peak_rss_bytes": 44957696,
+      "query_count": 1200,
+      "query_peak_memory_bytes": 47814545,
+      "query_cpu_seconds": 28.228343,
+      "read_bytes": 313991908577,
+      "admission_scope": "scheduled arrival to harness worker start; call latency includes unseparated ClickHouse semaphore/pool/transport wait",
+      "source_patch_sha256": "952c001b146fe4154aa72df238e39f831559fe3bb752c05ad157e8745783c63f",
+      "exact_outputs": true,
+      "query_errors": 0
+    },
+    {
+      "path": "mixed-2-baseline/mixed.json",
+      "sha256": "fad116ba1eb64e54e9fad1c2e213d3a64b3e7a677b33daa39bd9036ed4e870a3",
+      "variant": "baseline",
+      "rows": 100000,
+      "duration_seconds": 29.98479700088501,
+      "completed_reads": 600,
+      "completed_write_batches": 150,
+      "reads_per_second": 20.010140471596017,
+      "ingested_rows_per_second": 500.2535117899004,
+      "reads": {
+        "response_ms": {
+          "p50": 33.334,
+          "p95": 43.011,
+          "p99": 49.546,
+          "max": 55.43
+        },
+        "call_ms": {
+          "p50": 32.342,
+          "p95": 42.211,
+          "p99": 48.761,
+          "max": 54.318
+        },
+        "admission_ms": {
+          "p50": 1.034,
+          "p95": 1.064,
+          "p99": 1.166,
+          "max": 3.717
+        }
+      },
+      "writes": {
+        "response_ms": {
+          "p50": 19.174,
+          "p95": 25.348,
+          "p99": 32.819,
+          "max": 64.277
+        },
+        "call_ms": {
+          "p50": 18.258,
+          "p95": 24.516,
+          "p99": 31.629,
+          "max": 63.387
+        },
+        "admission_ms": {
+          "p50": 1.032,
+          "p95": 1.07,
+          "p99": 1.19,
+          "max": 1.275
+        }
+      },
+      "sampled_ch_resident_max_bytes": 2863816704,
+      "sampled_ch_resident_min_bytes": 992747520,
+      "go_peak_rss_bytes": 44564480,
+      "query_count": 1200,
+      "query_peak_memory_bytes": 90165484,
+      "query_cpu_seconds": 28.648682,
+      "read_bytes": 314095846481,
+      "admission_scope": "scheduled arrival to harness worker start; call latency includes unseparated ClickHouse semaphore/pool/transport wait",
+      "source_patch_sha256": "952c001b146fe4154aa72df238e39f831559fe3bb752c05ad157e8745783c63f",
+      "exact_outputs": true,
+      "query_errors": 0
+    },
+    {
+      "path": "mixed-2-candidate/mixed.json",
+      "sha256": "918bb7a4d8cd93fbb20475f31eff062c8a148e06050ca040c0a91da032d3740b",
+      "variant": "candidate",
+      "rows": 100000,
+      "duration_seconds": 30.001837015151978,
+      "completed_reads": 600,
+      "completed_write_batches": 150,
+      "reads_per_second": 19.99877539821908,
+      "ingested_rows_per_second": 499.96938495547704,
+      "reads": {
+        "response_ms": {
+          "p50": 38.746,
+          "p95": 49.429,
+          "p99": 63.803,
+          "max": 155.834
+        },
+        "call_ms": {
+          "p50": 37.983,
+          "p95": 48.425,
+          "p99": 62.841,
+          "max": 154.802
+        },
+        "admission_ms": {
+          "p50": 1.028,
+          "p95": 1.054,
+          "p99": 1.152,
+          "max": 9.223
+        }
+      },
+      "writes": {
+        "response_ms": {
+          "p50": 17.783,
+          "p95": 26.033,
+          "p99": 32.311,
+          "max": 121.531
+        },
+        "call_ms": {
+          "p50": 16.943,
+          "p95": 25.38,
+          "p99": 31.264,
+          "max": 119.597
+        },
+        "admission_ms": {
+          "p50": 1.023,
+          "p95": 1.058,
+          "p99": 1.071,
+          "max": 1.934
+        }
+      },
+      "sampled_ch_resident_max_bytes": 3170766848,
+      "sampled_ch_resident_min_bytes": 807034880,
+      "go_peak_rss_bytes": 49872896,
+      "query_count": 1200,
+      "query_peak_memory_bytes": 47966113,
+      "query_cpu_seconds": 30.013439,
+      "read_bytes": 314015073152,
+      "admission_scope": "scheduled arrival to harness worker start; call latency includes unseparated ClickHouse semaphore/pool/transport wait",
+      "source_patch_sha256": "952c001b146fe4154aa72df238e39f831559fe3bb752c05ad157e8745783c63f",
+      "exact_outputs": true,
+      "query_errors": 0
+    },
+    {
+      "path": "mixed-3-baseline/mixed.json",
+      "sha256": "056a9a22bc219d4c3e1c2c74462facdd2126e0fca1c36240429cc3150b5838f6",
+      "variant": "baseline",
+      "rows": 100000,
+      "duration_seconds": 29.98114800453186,
+      "completed_reads": 600,
+      "completed_write_batches": 150,
+      "reads_per_second": 20.012575899672214,
+      "ingested_rows_per_second": 500.3143974918053,
+      "reads": {
+        "response_ms": {
+          "p50": 32.804,
+          "p95": 43.625,
+          "p99": 47.814,
+          "max": 53.079
+        },
+        "call_ms": {
+          "p50": 31.886,
+          "p95": 42.779,
+          "p99": 46.77,
+          "max": 52.031
+        },
+        "admission_ms": {
+          "p50": 1.033,
+          "p95": 1.061,
+          "p99": 1.081,
+          "max": 1.126
+        }
+      },
+      "writes": {
+        "response_ms": {
+          "p50": 19.292,
+          "p95": 24.101,
+          "p99": 29.463,
+          "max": 30.198
+        },
+        "call_ms": {
+          "p50": 18.48,
+          "p95": 23.047,
+          "p99": 28.434,
+          "max": 29.16
+        },
+        "admission_ms": {
+          "p50": 1.032,
+          "p95": 1.066,
+          "p99": 1.088,
+          "max": 1.105
+        }
+      },
+      "sampled_ch_resident_max_bytes": 1967665152,
+      "sampled_ch_resident_min_bytes": 861208576,
+      "go_peak_rss_bytes": 44597248,
+      "query_count": 1200,
+      "query_peak_memory_bytes": 90151292,
+      "query_cpu_seconds": 29.24319,
+      "read_bytes": 314166929107,
+      "admission_scope": "scheduled arrival to harness worker start; call latency includes unseparated ClickHouse semaphore/pool/transport wait",
+      "source_patch_sha256": "952c001b146fe4154aa72df238e39f831559fe3bb752c05ad157e8745783c63f",
+      "exact_outputs": true,
+      "query_errors": 0
+    },
+    {
+      "path": "mixed-3-candidate/mixed.json",
+      "sha256": "84a23cd1c98cdc6cda867199756042c4ade4b5703e35f8d57244e717f608173a",
+      "variant": "candidate",
+      "rows": 100000,
+      "duration_seconds": 29.988193035125732,
+      "completed_reads": 600,
+      "completed_write_batches": 150,
+      "reads_per_second": 20.007874409011865,
+      "ingested_rows_per_second": 500.19686022529663,
+      "reads": {
+        "response_ms": {
+          "p50": 41.613,
+          "p95": 52.404,
+          "p99": 62.979,
+          "max": 80.455
+        },
+        "call_ms": {
+          "p50": 40.73,
+          "p95": 51.639,
+          "p99": 61.95,
+          "max": 79.972
+        },
+        "admission_ms": {
+          "p50": 1.03,
+          "p95": 1.058,
+          "p99": 1.111,
+          "max": 1.853
+        }
+      },
+      "writes": {
+        "response_ms": {
+          "p50": 18.213,
+          "p95": 23.543,
+          "p99": 34.486,
+          "max": 39.425
+        },
+        "call_ms": {
+          "p50": 17.209,
+          "p95": 22.875,
+          "p99": 33.391,
+          "max": 38.381
+        },
+        "admission_ms": {
+          "p50": 1.022,
+          "p95": 1.058,
+          "p99": 1.084,
+          "max": 1.095
+        }
+      },
+      "sampled_ch_resident_max_bytes": 2632265728,
+      "sampled_ch_resident_min_bytes": 863391744,
+      "go_peak_rss_bytes": 46088192,
+      "query_count": 1200,
+      "query_peak_memory_bytes": 47225870,
+      "query_cpu_seconds": 29.382799,
+      "read_bytes": 314015051088,
+      "admission_scope": "scheduled arrival to harness worker start; call latency includes unseparated ClickHouse semaphore/pool/transport wait",
+      "source_patch_sha256": "952c001b146fe4154aa72df238e39f831559fe3bb752c05ad157e8745783c63f",
+      "exact_outputs": true,
+      "query_errors": 0
+    }
+  ]
+}

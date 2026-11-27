@@ -237,3 +237,13 @@ publication; do not assume one unbounded transaction across all scopes. Current
 collectors return in-memory results and ClickHouse already batches writes, but
 durable staged inventory generations remain a gap. A local spool proves neither
 S3 latency nor S3 cost and introduces no production storage dependency.
+
+## PERF-04 large-join continuation
+
+[Large current-state join measurements](performance/large-join-measurements.md)
+record a focused full-table findings rewrite, three repeated mixed-load runs,
+matched batching/merge-phase comparisons and the 100-million-membership fixture.
+The rewrite improves the million-finding baseline; catch-up p95 and larger
+cardinality budgets still fail. These are partial repository-level results, not
+HTTP/browser or full deployment-profile coverage. The remaining worklist stays
+open, including native/version cohorts, broader state/update scenarios and recovery.

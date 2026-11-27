@@ -417,3 +417,32 @@ func scanFinding(rows driver.Rows) (Finding, error) {
 	fnd.Unused = unused != 0
 	return fnd, nil
 }
+
+// Full-table dashboard reads stream current replacements without per-ID
+// aggregation state. Source-filtered queries retain the argMax path. The
+// replacement keys are (source, id) for findings and id for enrichment.
+const summaryLatestRows = `SELECT sev,band,owner,env,count() FROM (
+ SELECT legacy.sev AS sev,fe.band AS band,fe.owner AS owner,fe.env AS env
+ FROM (
+  SELECT id,severity AS sev FROM findings FINAL
+  WHERE resolved_at<toDateTime('2000-01-01 00:00:00')
+ ) legacy LEFT JOIN (
+  SELECT id,score_band AS band,if(owner_source='none','unowned',owner_team) AS owner,environment AS env
+  FROM finding_enrichment FINAL
+ ) fe ON legacy.id=fe.id
+) GROUP BY sev,band,owner,env`
+
+const clustersLatestRows = `SELECT check_id,
+ argMax(title,score),argMax(severity,score),any(source),argMax(remediation,score),max(score),
+ argMax(score_band,score),count(),uniq(resource_id),max(known_exploited),max(detected_at),count() OVER ()
+ FROM (
+ SELECT legacy.check_id AS check_id,legacy.source AS source,legacy.resource_id AS resource_id,
+ legacy.title AS title,legacy.severity AS severity,legacy.remediation AS remediation,
+ fe.score AS score,fe.score_band AS score_band,fe.known_exploited AS known_exploited,legacy.detected_at AS detected_at
+ FROM (
+  SELECT id,check_id,source,resource_id,title,severity,remediation,detected_at FROM findings FINAL
+  WHERE resolved_at<toDateTime('2000-01-01 00:00:00')
+ ) legacy LEFT JOIN (
+  SELECT id,score,score_band,known_exploited FROM finding_enrichment FINAL
+ ) fe ON legacy.id=fe.id
+ ) GROUP BY check_id ORDER BY max(score) DESC,count() DESC LIMIT ?`

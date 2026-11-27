@@ -19,7 +19,7 @@ import (
 const enrichSweepLimit = finding.DefaultLimit
 
 // enrichSweepMax caps the total findings enqueued per sweep tick, sized to drain
-// the never-enriched backfill (Phase 1) over about a day and then no-op back to
+// the never-enriched backfill (Phase 1) in bounded batches and then return to
 // drift correction (Phase 2). The enrichQueueMax backpressure guard skips the
 // tick when the queue is already deep, so the burst self-throttles.
 const enrichSweepMax = 2500
@@ -329,7 +329,9 @@ func (w *EnrichWorker) Work(ctx context.Context, job *river.Job[EnrichArgs]) err
 // EnrichSweepArgs is the periodic tick that re-enriches findings, picking up
 // context that has drifted since they were last scored (new blast radius, KEV
 // escalation, team history). The ingest-time enqueue layers on top for freshness.
-type EnrichSweepArgs struct{}
+type EnrichSweepArgs struct {
+	BackfillOnly bool `json:"backfill_only,omitempty"`
+}
 
 func (EnrichSweepArgs) Kind() string { return "enrich_sweep" }
 
@@ -354,8 +356,12 @@ const enrichSweepMaxAttempts = 2
 
 // Unique by state: a periodic tick landing while a sweep is already queued or
 // running is dropped, not stacked behind it.
-func (EnrichSweepArgs) InsertOpts() river.InsertOpts {
-	return periodicSingletonOpts(queueEnrich, enrichSweepMaxAttempts)
+func (args EnrichSweepArgs) InsertOpts() river.InsertOpts {
+	opts := periodicSingletonOpts(queueEnrich, enrichSweepMaxAttempts)
+	// Keep the periodic sweep's existing uniqueness key. The demand-driven
+	// backfill has its own singleton and can wake while a periodic is scheduled.
+	opts.UniqueOpts.ByArgs = args.BackfillOnly
+	return opts
 }
 
 // EnrichSweepWorker lists current findings and enqueues a per-finding enrich job
@@ -395,9 +401,10 @@ func (EnrichSweepWorker) Timeout(_ *river.Job[EnrichSweepArgs]) time.Duration {
 	return 5 * time.Minute
 }
 
-func (w *EnrichSweepWorker) Work(ctx context.Context, _ *river.Job[EnrichSweepArgs]) error {
+func (w *EnrichSweepWorker) Work(ctx context.Context, job *river.Job[EnrichSweepArgs]) error {
+	backfillOnly := job != nil && job.Args.BackfillOnly
 	var total int
-	if w.alerts != nil {
+	if !backfillOnly && w.alerts != nil {
 		if n, err := w.alerts.PruneAlertStates(ctx, time.Now().Add(-alertStateRetention)); err != nil {
 			log.FromContext(ctx).Warn().Err(err).Msg("enrich sweep: alert-state prune failed")
 		} else if n > 0 {
@@ -415,6 +422,10 @@ func (w *EnrichSweepWorker) Work(ctx context.Context, _ *river.Job[EnrichSweepAr
 	// limit across ticks and OOM the worker. So repair gets priority over drift,
 	// but not immunity from backpressure.
 	if !sweepHasCapacity(ctx, backfillQueueCeiling) {
+		if backfillOnly {
+			return river.JobSnooze(enrichBackfillDelay)
+		}
+		enqueueDeferredBackfill(ctx)
 		return nil
 	}
 	for _, sev := range backfillSeverities {
@@ -427,6 +438,16 @@ func (w *EnrichSweepWorker) Work(ctx context.Context, _ *river.Job[EnrichSweepAr
 			return fmt.Errorf("Work: backfill %s: %w", sev, err)
 		}
 		total += n
+	}
+
+	if backfillOnly {
+		if total > 0 {
+			return river.JobSnooze(enrichBackfillDelay)
+		}
+		return nil
+	}
+	if total > 0 {
+		enqueueDeferredBackfill(ctx)
 	}
 
 	// Phase 2 — drift re-enrichment: re-score findings whose graph context (blast
@@ -504,7 +525,7 @@ type FindingLister interface {
 
 // enrichQueueMax caps pending enrich jobs queued from ingest-time paths (sync,
 // scan). When the enrich queue is already this deep, skip ingest-time enqueue
-// and let the periodic sweep backstop pick things up instead — this prevents a
+// and wake durable backfill for the remainder — this prevents a
 // large connector sync wave from piling jobs onto an already-deep queue.
 const enrichQueueMax = 1000
 
@@ -592,13 +613,17 @@ func enqueueEnrichIfCapacity(ctx context.Context, found []finding.Finding) {
 	}
 	depth, depthErr := enrichQueueDepth(ctx, client, enrichQueueMax)
 	if depthErr != nil || depth >= enrichQueueMax {
-		// Queue full or check failed — skip ingest-time enqueue.
-		// The periodic EnrichSweep will pick these up.
+		// Keep one durable backfill awake until deferred work is measured.
+		enqueueDeferredBackfill(ctx)
 		log.FromContext(ctx).Debug().Int("queue_depth", depth).
 			Msg("enrich queue at capacity — skipping ingest-time enqueue")
 		return
 	}
-	enqueueEnrich(ctx, found)
+	admitted := min(len(found), enrichQueueMax-depth)
+	enqueueEnrich(ctx, found[:admitted])
+	if admitted < len(found) {
+		enqueueDeferredBackfill(ctx)
+	}
 }
 
 // enqueueEnrich fans out an enrich job per finding on ingest (sync, scan, KEV).

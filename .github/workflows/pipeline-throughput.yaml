@@ -38,7 +38,7 @@ jobs:
         run: scripts/fetch-ladybug.sh linux-amd64
       - name: Validate benchmark code
         run: |
-          go vet -tags=integration ./internal/throughput ./internal/jobs ./internal/app/asset ./internal/app/finding ./internal/app/enrich ./internal/app/connector ./internal/migrate ./migrations/...
+          go vet -tags=integration ./internal/throughput ./internal/jobs ./internal/app/asset ./internal/app/finding ./internal/app/enrich ./internal/app/correlate ./internal/app/connector ./internal/migrate ./migrations/...
           python3 -m unittest discover -s scripts -p performance_trend_test.py
       - name: Measure connector API fixtures
         env:

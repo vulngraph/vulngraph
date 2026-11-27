@@ -58,7 +58,7 @@ func TestPipelineSoak(t *testing.T) {
 	// Reset only before this run; no backlog is removed during the soak.
 	_, err = pool.Exec(ctx, "DELETE FROM river_job")
 	require.NoError(t, err)
-	r := &soakReport{Version: 1, FixtureVersion: 3, Commit: os.Getenv("PERF_COMMIT"), Platform: runtime.GOOS + "/" + runtime.GOARCH,
+	r := &soakReport{Version: 1, FixtureVersion: 4, Commit: os.Getenv("PERF_COMMIT"), Platform: runtime.GOOS + "/" + runtime.GOARCH,
 		GoVersion: runtime.Version(), GoMaxProcs: runtime.GOMAXPROCS(0), MinimumSeconds: seconds,
 		CHConcurrency: chConcurrency,
 		MaxPending:    map[string]int{}, Deferred: map[string]int{}}
@@ -229,29 +229,15 @@ func TestPipelineSoak(t *testing.T) {
 		_, err = client.Insert(ctx, CorrelateArgs{}, fullCorrelateOpts())
 		require.NoError(t, err)
 		completed := waitSoakQueues(t, ctx, pool, soakQueues, r.MaxPending)
-		// A bounded ingest queue can legitimately defer findings to the sweep.
-		// An empty River queue alone must never masquerade as a drained backlog.
-		lastBacklog := 0
-		for {
-			counts, err := findings.UnenrichedCounts(ctx)
-			require.NoError(t, err)
-			remaining := 0
-			for _, count := range counts {
-				remaining += count.N
-			}
-			if lastBacklog > 0 {
-				require.Less(t, remaining, lastBacklog, "a completed backfill tick made no progress on a stable finding set")
-			}
-			if remaining == 0 {
-				break
-			}
-			lastBacklog = remaining
-			r.BackfillTicks++
-			t.Logf("soak backfill: %d findings still lack enrichment", remaining)
-			_, err = client.Insert(ctx, EnrichSweepArgs{}, nil)
-			require.NoError(t, err)
-			completed = waitSoakQueues(t, ctx, pool, soakQueues, r.MaxPending)
+		// The production admission path must schedule and drain deferred work.
+		// Never inject extra sweeps here: that would hide a slow production
+		// scheduling cadence behind a fast worker-throughput measurement.
+		counts, err := findings.UnenrichedCounts(ctx)
+		require.NoError(t, err)
+		for _, count := range counts {
+			require.Zero(t, count.N, "production backfill left unmeasured findings: %s", count.Severity)
 		}
+
 		wave := soakWave{Revision: revision, Seconds: time.Since(waveStart).Seconds(), CompletedJobs: completed, Restarted: restarting}
 		wave.HeapBytes, wave.PeakRSSBytes = soakMemory()
 		// Query persisted output, never substitute queue completion for enrichment.
@@ -261,6 +247,7 @@ func TestPipelineSoak(t *testing.T) {
 		t.Logf("soak revision=%d elapsed=%.3fs completed=%d enriched=%d heap=%d peak_rss=%d restart=%v", revision, wave.Seconds, completed, wave.EnrichedFindings, wave.HeapBytes, wave.PeakRSSBytes, restarting)
 	}
 	r.Seconds = time.Since(start).Seconds()
+	require.NoError(t, pool.QueryRow(ctx, `SELECT COALESCE(sum(attempt+COALESCE((metadata->>'snoozes')::int,0)),0) FROM river_job WHERE kind='enrich_sweep' AND args->>'backfill_only'='true'`).Scan(&r.BackfillTicks))
 	stopReads()
 	require.NoError(t, readers.Wait())
 	r.BlastFailures = blast.failures.Load()

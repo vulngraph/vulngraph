@@ -2045,7 +2045,7 @@ var mutations = []Mutation{
 	{
 		Guard: "TestEnrichSweepWorker_Phase1CeilingIsHigherNotAbsent", Pkg: "./internal/jobs",
 		File: "internal/jobs/enrich.go",
-		Old:  "\tif !sweepHasCapacity(ctx, backfillQueueCeiling) {\n\t\treturn nil\n\t}\n",
+		Old:  "\tif !sweepHasCapacity(ctx, backfillQueueCeiling) {\n\t\tif backfillOnly {\n\t\t\treturn river.JobSnooze(enrichBackfillDelay)\n\t\t}\n\t\tenqueueDeferredBackfill(ctx)\n\t\treturn nil\n\t}\n",
 		New:  "",
 		Why: "removing the never-enriched backfill's ceiling entirely: enrichSweepMax bounds one tick, not the " +
 			"accumulated queue, so at a 15-minute cadence depth grows without limit — the backlog can OOM the " +

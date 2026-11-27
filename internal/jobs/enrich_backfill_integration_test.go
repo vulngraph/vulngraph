@@ -38,6 +38,7 @@ func TestEnrichBackfillIncludesDeferredInformation(t *testing.T) {
 	pool, err := db.NewPool(ctx, os.Getenv("TEST_DATABASE_URL"), db.MaxConnsWorker)
 	require.NoError(t, err)
 	defer pool.Close()
+	defer trackNewBackfillJobs(t, ctx, pool)()
 	ch, err := db.NewCH(ctx, os.Getenv("TEST_CLICKHOUSE_URL"), 4)
 	require.NoError(t, err)
 	defer ch.Close()
@@ -63,6 +64,9 @@ func TestEnrichBackfillIncludesDeferredInformation(t *testing.T) {
 	}
 	enqueueEnrichPriority(ctx, blockers, enrichSweepPriority)
 	enqueueEnrichIfCapacity(ctx, observed)
+	var automatic int
+	require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM river_job WHERE kind='enrich_sweep' AND args->>'backfill_only'='true' AND state IN ('available','scheduled','running','retryable','pending')").Scan(&automatic))
+	require.Equal(t, 1, automatic, "deferred findings must durably wake backfill without a periodic tick")
 	var queued int
 	require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM river_job WHERE starts_with(args->>'finding_id',$1) AND NOT starts_with(args->>'finding_id',$2)", prefix, prefix+"-block-").Scan(&queued))
 	require.Zero(t, queued, "a full ingest queue must defer all five severities")

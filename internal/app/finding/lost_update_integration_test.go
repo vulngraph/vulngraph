@@ -4,6 +4,7 @@ package finding
 
 import (
 	"context"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -27,8 +28,8 @@ import (
 // producer; neither writer sets it.
 
 // steppingClock is an explicitly-advanced synced_at source. The race being
-// modeled is sub-second, and synced_at has one-second granularity, so the
-// interleaving is only deterministic with an injected clock (see WithClock).
+// modeled has explicit ordering, so an injected clock makes each write version
+// deterministic (see WithClock).
 type steppingClock struct {
 	mu sync.Mutex
 	t  time.Time
@@ -46,21 +47,27 @@ func (c *steppingClock) set(t time.Time) {
 	c.t = t
 }
 
-// raceRepo delegates to the real CHRepo but fires a hook after ByIDs — i.e.
-// exactly inside RecordObserved's (R, W] window, between RecordObserved's ByIDs
-// read and Upsert's write. This is the deterministic stand-in for an enrich
+// raceRepo delegates to CHRepo but fires a hook after the observation-history
+// read, inside RecordObserved's (R, W] window before Upsert. This is the deterministic stand-in for an enrich
 // write-back landing mid-sync.
 type raceRepo struct {
 	*CHRepo
-	afterByIDs func()
+	afterHistoryRead func()
 }
 
-func (r *raceRepo) ByIDs(ctx context.Context, ids []string) ([]Finding, error) {
-	out, err := r.CHRepo.ByIDs(ctx, ids)
-	if r.afterByIDs != nil {
-		r.afterByIDs()
+func (r *raceRepo) FirstObservationsByIDs(ctx context.Context, ids []string) (map[string]time.Time, error) {
+	out, err := r.CHRepo.FirstObservationsByIDs(ctx, ids)
+	if r.afterHistoryRead != nil {
+		r.afterHistoryRead()
 	}
 	return out, err
+}
+
+func raceTestClickHouseURL() string {
+	if dsn := os.Getenv("TEST_CLICKHOUSE_URL"); dsn != "" {
+		return dsn
+	}
+	return "clickhouse://graph:graph@localhost:9000/graph"
 }
 
 // TestRecordObserved_EnrichWriteInWindowSurvives drives an enrich write-back
@@ -70,14 +77,17 @@ func (r *raceRepo) ByIDs(ctx context.Context, ids []string) ([]Finding, error) {
 // read as enriched afterwards.
 func TestRecordObserved_EnrichWriteInWindowSurvives(t *testing.T) {
 	ctx := context.Background()
-	ch, err := db.NewCH(ctx, "clickhouse://graph:graph@localhost:9000/graph", 0)
+	ch, err := db.NewCH(ctx, raceTestClickHouseURL(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ch.Close() })
 
 	suffix := time.Now().Format("150405.000000")
 	res := "race-" + suffix
 	id := "rf1-" + suffix
-	t.Cleanup(func() { _ = ch.Exec(ctx, "ALTER TABLE findings DELETE WHERE resource_id = ?", res) })
+	t.Cleanup(func() {
+		require.NoError(t, ch.Exec(ctx, "DELETE FROM findings WHERE resource_id = ? SETTINGS mutations_sync=1", res))
+		require.NoError(t, ch.Exec(ctx, "DELETE FROM finding_enrichment WHERE id = ? SETTINGS mutations_sync=1", id))
+	})
 
 	clock := &steppingClock{}
 	t0 := time.Now().Truncate(time.Second)
@@ -96,7 +106,7 @@ func TestRecordObserved_EnrichWriteInWindowSurvives(t *testing.T) {
 
 	// Re-observation whose (R, W] window an enrich write-back lands in.
 	enrichedAt := t0.Add(1 * time.Second)
-	raced := &raceRepo{CHRepo: repo, afterByIDs: func() {
+	raced := &raceRepo{CHRepo: repo, afterHistoryRead: func() {
 		// t0+1s: enrich finishes and writes its outputs through
 		// RecordEnrichment, as internal/app/enrich/service.go does.
 		clock.set(enrichedAt)
@@ -134,14 +144,17 @@ func TestRecordObserved_EnrichWriteInWindowSurvives(t *testing.T) {
 // producer's.
 func TestRecordObserved_KEVWriteInWindowKeepsKnownExploited(t *testing.T) {
 	ctx := context.Background()
-	ch, err := db.NewCH(ctx, "clickhouse://graph:graph@localhost:9000/graph", 0)
+	ch, err := db.NewCH(ctx, raceTestClickHouseURL(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ch.Close() })
 
 	suffix := time.Now().Format("150405.000000")
 	res := "race-kev-" + suffix
 	id := "rfkev-" + suffix
-	t.Cleanup(func() { _ = ch.Exec(ctx, "ALTER TABLE findings DELETE WHERE resource_id = ?", res) })
+	t.Cleanup(func() {
+		require.NoError(t, ch.Exec(ctx, "DELETE FROM findings WHERE resource_id = ? SETTINGS mutations_sync=1", res))
+		require.NoError(t, ch.Exec(ctx, "DELETE FROM finding_enrichment WHERE id = ? SETTINGS mutations_sync=1", id))
+	})
 
 	clock := &steppingClock{}
 	t0 := time.Now().Truncate(time.Second)
@@ -161,7 +174,7 @@ func TestRecordObserved_KEVWriteInWindowKeepsKnownExploited(t *testing.T) {
 	// Re-observation whose (R, W] window the KEV flag write lands in, shaped as
 	// KEVWorker.flag writes it: KnownExploited through RecordEnrichment.
 	kevAt := t0.Add(1 * time.Second)
-	raced := &raceRepo{CHRepo: repo, afterByIDs: func() {
+	raced := &raceRepo{CHRepo: repo, afterHistoryRead: func() {
 		clock.set(kevAt)
 		flagged := producer
 		flagged.KnownExploited = true
@@ -196,14 +209,17 @@ func TestRecordObserved_KEVWriteInWindowKeepsKnownExploited(t *testing.T) {
 // finding silently runs on an outdated score/classification.
 func TestRecordObserved_NewerEnrichWinsOverStaleRead(t *testing.T) {
 	ctx := context.Background()
-	ch, err := db.NewCH(ctx, "clickhouse://graph:graph@localhost:9000/graph", 0)
+	ch, err := db.NewCH(ctx, raceTestClickHouseURL(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ch.Close() })
 
 	suffix := time.Now().Format("150405.000000")
 	res := "race2-" + suffix
 	id := "rf2-" + suffix
-	t.Cleanup(func() { _ = ch.Exec(ctx, "ALTER TABLE findings DELETE WHERE resource_id = ?", res) })
+	t.Cleanup(func() {
+		require.NoError(t, ch.Exec(ctx, "DELETE FROM findings WHERE resource_id = ? SETTINGS mutations_sync=1", res))
+		require.NoError(t, ch.Exec(ctx, "DELETE FROM finding_enrichment WHERE id = ? SETTINGS mutations_sync=1", id))
+	})
 
 	clock := &steppingClock{}
 	t0 := time.Now().Truncate(time.Second)
@@ -221,7 +237,7 @@ func TestRecordObserved_NewerEnrichWinsOverStaleRead(t *testing.T) {
 	require.NoError(t, NewService(repo).RecordEnrichment(ctx, []Enrichment{EnrichmentOf(base)}))
 
 	newEnrichedAt := t0.Add(1 * time.Second)
-	raced := &raceRepo{CHRepo: repo, afterByIDs: func() {
+	raced := &raceRepo{CHRepo: repo, afterHistoryRead: func() {
 		clock.set(newEnrichedAt)
 		rescored := base
 		rescored.Score = 85
@@ -259,14 +275,17 @@ func TestRecordObserved_NewerEnrichWinsOverStaleRead(t *testing.T) {
 // min-over-nonzero read is half the mechanism and a fake cannot exercise it.
 func TestRecordObserved_FirstDetectionSurvivesReobservation(t *testing.T) {
 	ctx := context.Background()
-	ch, err := db.NewCH(ctx, "clickhouse://graph:graph@localhost:9000/graph", 0)
+	ch, err := db.NewCH(ctx, raceTestClickHouseURL(), 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ch.Close() })
 
 	suffix := time.Now().Format("150405.000000")
 	res := "age-" + suffix
 	id := "af1-" + suffix
-	t.Cleanup(func() { _ = ch.Exec(ctx, "ALTER TABLE findings DELETE WHERE resource_id = ?", res) })
+	t.Cleanup(func() {
+		require.NoError(t, ch.Exec(ctx, "DELETE FROM findings WHERE resource_id = ? SETTINGS mutations_sync=1", res))
+		require.NoError(t, ch.Exec(ctx, "DELETE FROM finding_enrichment WHERE id = ? SETTINGS mutations_sync=1", id))
+	})
 
 	clock := &steppingClock{}
 	t0 := time.Now().Truncate(time.Second)

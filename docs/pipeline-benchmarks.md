@@ -165,11 +165,13 @@ The optional soak adds actual River consumers at the production queue concurrenc
 for sync, enrichment, correlation and graph rebuilds. It replays the collected
 fixtures through the production workers, four local enrichment sources and 24
 correlation rules. Every wave changes 1% of asset and edge properties. It waits
-for those queues to drain, then checks the database for findings still awaiting
-enrichment and runs the real backfill worker until that backlog is empty.
-Each completed backfill tick must reduce the remaining backlog. A storage
-regression first fills the ingest queue, then verifies deferred findings of
-every severity are recovered and their enrichment is persisted.
+for those queues to drain, then requires the database backlog of findings still
+awaiting enrichment to be empty.
+The production admission path creates one durable backfill job when work is
+deferred. It resumes in bounded batches with queue backpressure; routine drift
+keeps its periodic cadence. The harness never injects extra sweep ticks. A
+storage regression fills the ingest queue and verifies that all severities
+recover, including after the worker is restarted.
 
 At least three waves run. `PERF_SOAK_SECONDS` sets a minimum duration, from 1 to
 600 seconds; draining the final wave can exceed it. One collection fails
@@ -184,8 +186,9 @@ middleware or network benchmarks. Every expected stored asset and edge is read
 back, and completed enrichment jobs must have the exact returned scores, bands
 and factor values persisted, with no final unmeasured sources. Unexpected blast
 query failures fail the run, including failures that the scorer can recover
-from with a fallback. Soak fixture version 3 records these checks and the query
-concurrency. The report
+from with a fallback. Soak fixture version 4 records these checks and uses production backfill
+scheduling. Earlier fixtures drove backfill ticks directly and are not comparable
+end-to-end timing baselines. The query concurrency is recorded as well. The report
 includes queue peaks, retries, backfill ticks, ClickHouse query/read/memory costs,
 the 25 most costly normalized query shapes by cumulative query duration,
 Go heap after GC and cumulative process peak RSS. It also reports graph edges

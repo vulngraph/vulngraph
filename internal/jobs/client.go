@@ -106,7 +106,7 @@ const (
 	// the next one.
 	defaultCorrelateInterval = 30 * time.Minute
 	// defaultEnrichInterval is the backstop sweep cadence. 15m (with
-	// enrichSweepMax per tick) drains the never-enriched backfill quickly and
+	// enrichSweepMax per tick) provides fallback recovery and
 	// propagates KEV/EPSS drift within 15m; once the backlog clears, Phase 1
 	// no-ops and the change-gate makes most drift-pass findings cache-skips, so
 	// the frequent ticks are cheap.

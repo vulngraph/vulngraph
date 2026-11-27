@@ -189,6 +189,10 @@ func seconds(v any) (int, bool) {
 // preserved. clickhouse-go propagates ctx cancellation to abort the query
 // server-side, so this frees the semaphore slot, not just the client wait.
 func (c *CH) Select(ctx context.Context, scan func(driver.Rows) error, query string, args ...any) error {
+	// Derived generations publish their commit marker in the same table as
+	// their rows. Every reference must use that table's one query snapshot;
+	// a DSN, server profile or caller override must not disable this invariant.
+	ctx = c.WithQuerySettings(ctx, map[string]any{"enable_shared_storage_snapshot_in_query": 1})
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, defaultSelectTimeout)

@@ -3,6 +3,7 @@ package correlate
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/rs/zerolog"
 
@@ -17,18 +18,12 @@ type viewLoader interface {
 	LoadByIDs(ctx context.Context, ids []string) ([]asset.Asset, error)
 }
 
-// assetStore persists derived edges and, for a rule that also implements
-// AssetAnnotator, asset metadata annotations (drift signals with no live node
-// to anchor an edge to). ByIDs fetches the FULL current row (every column,
-// unlike the correlation view's minimal projection) so annotation writes merge
-// onto real name/discovered_at/last_seen instead of upserting them blank —
-// writing the partial copy would also zero last_seen, making the row
-// TTL-eligible for immediate purge.
-// asset.Service implements it via IngestEdges/IngestAssets/ByIDs.
+// assetStore persists edges and producer-owned annotations. Its annotation
+// methods cannot write an inventory observation, even after a concurrent sync.
 type assetStore interface {
 	IngestEdges(ctx context.Context, edges []asset.Edge) error
-	IngestAssets(ctx context.Context, assets []asset.Asset) error
-	ByIDs(ctx context.Context, ids []string) ([]asset.Asset, error)
+	BeginDerivedUpdate(context.Context) (time.Time, error)
+	WriteAnnotations(context.Context, time.Time, []asset.Annotation) error
 }
 
 // AssetAnnotator is an optional Rule extension for signals that have no live
@@ -37,7 +32,7 @@ type assetStore interface {
 // implements it in addition to Rule.Correlate when it needs to write back
 // asset metadata rather than (or in addition to) edges.
 type AssetAnnotator interface {
-	CorrelateAssets(g Graph) []asset.Asset
+	CorrelateAssets(g Graph) []asset.Annotation
 }
 
 // DemotionReporter is an optional Rule extension for rules that can withhold
@@ -90,6 +85,10 @@ func (s *Service) observeView(rows int) {
 // dedupes the derived edges, and writes them. Returns the number of edges
 // written. A graph with no assets yet is a clean no-op.
 func (s *Service) Correlate(ctx context.Context) (int, error) {
+	version, versionErr := s.assets.BeginDerivedUpdate(ctx)
+	if versionErr != nil {
+		return 0, fmt.Errorf("Correlate: derive version: %w", versionErr)
+	}
 	logger := log.FromContext(ctx)
 
 	assets, truncated, err := s.repo.LoadView(ctx)
@@ -118,7 +117,7 @@ func (s *Service) Correlate(ctx context.Context) (int, error) {
 	}
 
 	var edges []asset.Edge
-	var annotated []asset.Asset
+	var annotated []asset.Annotation
 	for _, r := range s.rules {
 		if err := ctx.Err(); err != nil {
 			return 0, fmt.Errorf("Correlate: %w", err)
@@ -142,7 +141,7 @@ func (s *Service) Correlate(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("Correlate: %w", err)
 	}
 
-	if err := s.writeAnnotations(ctx, logger, dedupeAssets(annotated)); err != nil {
+	if err := s.assets.WriteAnnotations(ctx, version, annotated); err != nil {
 		return 0, fmt.Errorf("Correlate: %w", err)
 	}
 	return len(edges), nil
@@ -163,67 +162,6 @@ func logDemotions(logger *zerolog.Logger, rule string, demoted []Demotion) {
 		logger.Info().Str("rule", rule).Str("reason", reason).Int("demoted", len(ids)).
 			Strs("sample_asset_ids", sample).Msg("correlation rule demoted exposures on counter-evidence")
 	}
-}
-
-// writeAnnotations hydrates each AssetAnnotator-derived asset (built from the
-// correlation view's partial projection — see assetStore) with its FULL
-// current row before writing, so the upsert-via-re-insert only ever changes
-// the Metadata the rule actually touched, never blanks name/discovered_at/
-// last_seen. A target that vanished between the view load and this write is
-// logged and skipped rather than written partial.
-//
-// Metadata is MERGED key-by-key onto the full row, never assigned wholesale:
-// a.Metadata is only ever a partial projection of the asset's real metadata,
-// never guaranteed complete. A rule signals "delete this key" with an empty
-// value (see withMetadata) rather than by omitting it, since omission means
-// "this code path never touched this key" and must leave the stored value
-// alone.
-func (s *Service) writeAnnotations(ctx context.Context, logger *zerolog.Logger, annotated []asset.Asset) error {
-	if len(annotated) == 0 {
-		return nil
-	}
-	ids := make([]string, len(annotated))
-	for i, a := range annotated {
-		ids[i] = a.ID
-	}
-	full, err := s.assets.ByIDs(ctx, ids)
-	if err != nil {
-		return fmt.Errorf("writeAnnotations: load full assets: %w", err)
-	}
-	byID := make(map[string]asset.Asset, len(full))
-	for _, a := range full {
-		byID[a.ID] = a
-	}
-
-	merged := make([]asset.Asset, 0, len(annotated))
-	for _, a := range annotated {
-		f, ok := byID[a.ID]
-		if !ok {
-			logger.Warn().Str("asset_id", a.ID).Msg("drift annotation target vanished before write — skipping")
-			continue
-		}
-		// Copy rather than mutate f.Metadata in place: f came from a map keyed
-		// by ID, so if the same asset were ever annotated twice in one sweep
-		// (dedupeAssets prevents that today, but nothing here should rely on
-		// it) two iterations must not share a backing map.
-		meta := make(map[string]string, len(f.Metadata)+len(a.Metadata))
-		for k, v := range f.Metadata {
-			meta[k] = v
-		}
-		for k, v := range a.Metadata {
-			if v == "" {
-				delete(meta, k)
-				continue
-			}
-			meta[k] = v
-		}
-		f.Metadata = meta
-		merged = append(merged, f)
-	}
-	if len(merged) == 0 {
-		return nil
-	}
-	return s.assets.IngestAssets(ctx, merged)
 }
 
 // PartialCorrelate runs only the rules relevant to changedIDs, loading only the
@@ -378,22 +316,6 @@ func dedupe(edges []asset.Edge) []asset.Edge {
 		if confidenceRank[e.Properties["confidence"]] > confidenceRank[out[i].Properties["confidence"]] {
 			out[i] = e
 		}
-	}
-	return out
-}
-
-// dedupeAssets collapses asset annotations with the same ID — two rules
-// (or, in principle, the same rule twice) annotating the same asset only
-// need writing once.
-func dedupeAssets(assets []asset.Asset) []asset.Asset {
-	seen := make(map[string]bool, len(assets))
-	out := assets[:0]
-	for _, a := range assets {
-		if seen[a.ID] {
-			continue
-		}
-		seen[a.ID] = true
-		out = append(out, a)
 	}
 	return out
 }

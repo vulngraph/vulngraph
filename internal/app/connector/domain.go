@@ -117,7 +117,8 @@ type Connector struct {
 
 	// SyncFingerprint is the combined content hash of all assets the connector
 	// returned on its last successful sweep. If it matches the freshly
-	// collected assets' fingerprint, the entire write+enrich pipeline is skipped.
+	// collected assets' fingerprint, redundant checks/enrichment can be skipped.
+	// Fresh collected observations and edges are still written for liveness.
 	SyncFingerprint string
 
 	// SyncStreak counts consecutive clean, complete, non-backfill syncs — the

@@ -160,7 +160,8 @@ var livenessExemptAssetQueries = map[string]string{
 	"assetArgMaxSelect":          "the shared id-lookup SELECT prefix; the gate belongs to whichever reader composes it, and its two composers (selectAsset, ByIDs) are exempt below",
 	"selectAsset":                "GetAsset is a by-id detail read. An asset page reached from a link, an alert or a finding must still render for a resource that has stopped being collected — that is exactly when an operator needs to see last_seen. Absence here would be a 404 that looks like the asset never existed.",
 	"selectAssetByName":          "FindByExactName backs ResolveID, the same by-name detail read as selectAsset's by-id case — a finding's blast-radius resolution must still find a role that has stopped being collected, not silently treat it as absent.",
-	"assetSelect":                "the shared row SELECT prefix. Its UI composer (listQuery) applies the gate — asserted directly below — and its sync composer (listAllForSyncQ) applies it too.",
+	"assetSelect":                "the full-table row SELECT prefix; its listAllForSyncQ composer applies the inventory gate.",
+	"selectAssetPage":            "hydrates only the composite keys selected by listQuery, whose liveness and derived-score predicates are asserted below.",
 	"externalAssetIDs":           "the scan target set, not a UI read. Gating it is a plausible improvement (scanning a deleted pod's address wastes work) but it changes what the scanner does, so it is deliberately out of this change.",
 	"assetIDsByType":             "the OSV feed's per-type page — a background pipeline, not a UI read. Packages, its only real caller, are not an ephemeral type, so the gate would be a no-op for it.",
 	"packageCoordsAfter":         "the advisory feeds' keyset package page; type='package' is never ephemeral, so the gate cannot change its result. Packages carry their own liveness gate instead (livePackageIDs, applied once per pass by ScanLivePackages).",
@@ -244,12 +245,15 @@ func TestAssetReadersApplyLiveness(t *testing.T) {
 			"listQuery(%+v) reads inventory without the liveness gate", f)
 		require.Contains(t, q, "declared_cloud_identity",
 			"listQuery(%+v) counts IaC declarations as inventory", f)
-		// Exactly one top-level WHERE, attached to the table. (" WHERE " also occurs
-		// inside the gate's own high-water subquery, so counting the keyword is not
-		// the assertion — the shape is.)
-		require.Contains(t, q, "FROM assets FINAL WHERE ",
+		// The page-key predicate must open with WHERE, including cursor pages.
+		// Hydration and the high-water subquery have separate predicates.
+		keySource := "FROM assets FINAL WHERE "
+		if f.MinScore > 0 {
+			keySource = "FROM asset_current_with_derivations WHERE "
+		}
+		require.Contains(t, q, keySource,
 			"listQuery(%+v) must open its predicate with WHERE: %s", f, q)
-		require.NotContains(t, q, "FINAL AND",
+		require.NotContains(t, q, "asset_current_with_derivations AND",
 			"listQuery(%+v) produced `assets FINAL AND (...)` — invalid SQL: %s", f, q)
 	}
 
@@ -292,7 +296,7 @@ func TestAssetReadersApplyLiveness(t *testing.T) {
 
 // readsAssetsTable matches SQL that reads the assets table, as the FROM table
 // or as a JOIN operand.
-var readsAssetsTable = regexp.MustCompile(`\b(?:FROM|JOIN)\s+assets\b`)
+var readsAssetsTable = regexp.MustCompile(`\b(?:FROM|JOIN)\s+(?:assets|asset_current_with_derivations|asset_versions_with_derivations)\b`)
 
 // namedQueryDecls returns, for one source file in this package, each named
 // declaration whose value contains a raw-string literal, mapped to that

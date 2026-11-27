@@ -17,6 +17,7 @@ import (
 // QuerySample retains server cost alongside end-to-end elapsed time. Telemetry
 // and independent result validation are outside the measured log_comment.
 type QuerySample struct {
+	Error                   string      `json:"error,omitempty"`
 	BudgetError             string      `json:"budget_error,omitempty"`
 	AllocatedBytes          uint64      `json:"allocated_bytes"`
 	HeapBytes               uint64      `json:"heap_bytes_after"`
@@ -41,6 +42,9 @@ type QueryCost struct {
 
 // QueryReport is exploratory evidence, never a complete deployment profile pass.
 type QueryReport struct {
+	BaselineFailures  int                 `json:"baseline_failures,omitempty"`
+	InputRows         map[string]uint64   `json:"input_rows_by_table,omitempty"`
+	Budget            *QueryBudget        `json:"budget,omitempty"`
 	DefaultMaxThreads uint64              `json:"default_max_threads,omitempty"`
 	QueryConcurrency  int                 `json:"query_concurrency"`
 	GoVersion         string              `json:"go_version"`

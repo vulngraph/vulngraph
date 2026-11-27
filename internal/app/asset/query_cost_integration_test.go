@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -14,11 +15,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/stretchr/testify/require"
 	"github.com/vulngraph/vulngraph/internal/db"
 	"github.com/vulngraph/vulngraph/internal/graphschema"
 	"github.com/vulngraph/vulngraph/internal/perfassurance"
+	dbutil "github.com/vulngraph/vulngraph/pkg/db"
 )
 
 const baselineInventorySelect = `SELECT id, name, type, provider, region, account_id, endpoint,
@@ -99,6 +102,15 @@ func readInventoryFixture(ctx context.Context, ch *db.CH, q string, args ...any)
 }
 
 func TestInventoryQueryCosts(t *testing.T) {
+	testInventoryQueryCosts(t, false)
+}
+
+func TestInventoryDerivedQueryCosts(t *testing.T) {
+	testInventoryQueryCosts(t, true)
+}
+
+func testInventoryQueryCosts(t *testing.T, derived bool) {
+	t.Helper()
 	if os.Getenv("PERF_QUERY_ISOLATED") != "1" {
 		t.Skip("run scripts/benchmark-queries.sh")
 	}
@@ -115,6 +127,10 @@ func TestInventoryQueryCosts(t *testing.T) {
  FROM system.query_log WHERE log_comment=? AND type IN ('QueryFinish','ExceptionWhileProcessing','ExceptionBeforeStart') ORDER BY event_time_microseconds, query_id`,
 	}
 	r := perfassurance.QueryReport{Rows: n, Plans: map[string][]string{}}
+	cohort := "inventory"
+	if derived {
+		cohort = "inventory-derived"
+	}
 	versions := 1
 	if v := os.Getenv("PERF_QUERY_VERSIONS"); v != "" {
 		versions, err = strconv.Atoi(v)
@@ -123,9 +139,22 @@ func TestInventoryQueryCosts(t *testing.T) {
 		require.LessOrEqual(t, versions, 20)
 	}
 	budget := perfassurance.QueryBudget{Queries: 1, ReadRows: uint64(n * versions * 5), ReadBytes: uint64(n * versions * 20000), MemoryBytes: 32<<20 + uint64(n)*512}
+	r.InputRows = map[string]uint64{"assets": uint64(n * versions)}
+	if derived {
+		r.InputRows["asset_finding_risk"] = uint64(3*n + 2)
+		r.InputRows["asset_annotations"] = uint64(n)
+		// Keep the same five-times input-row amplification bound for the new
+		// populated fixture; byte and memory ceilings remain identical.
+		budget.ReadRows += 5 * (r.InputRows["asset_finding_risk"] + r.InputRows["asset_annotations"])
+	}
+	r.Budget = &budget
 	defer func() {
 		r.Passed = !t.Failed()
-		require.NoError(t, perfassurance.SaveQueryReport(os.Getenv("PERF_QUERY_DIR"), "inventory", r))
+		name := "inventory"
+		if derived {
+			name += "-derived"
+		}
+		require.NoError(t, perfassurance.SaveQueryReport(os.Getenv("PERF_QUERY_DIR"), name, r))
 	}()
 	require.NoError(t, ch.Select(ctx, func(rows driver.Rows) error {
 		if !rows.Next() {
@@ -133,6 +162,9 @@ func TestInventoryQueryCosts(t *testing.T) {
 		}
 		return rows.Scan(&r.DefaultMaxThreads)
 	}, "SELECT toUInt64(getSetting('max_threads'))"))
+	for _, table := range []string{"assets", "graph_edges", "asset_finding_risk", "asset_annotations"} {
+		require.NoError(t, ch.Exec(ctx, "TRUNCATE TABLE "+table))
+	}
 	require.NoError(t, ch.Exec(ctx, "SYSTEM STOP MERGES assets"))
 	require.NoError(t, ch.Exec(ctx, seedInventoryQueryFixture, n))
 	for v := 1; v < versions; v++ {
@@ -149,6 +181,19 @@ func TestInventoryQueryCosts(t *testing.T) {
 	require.Equal(t, uint64(n), logical)
 	require.NoError(t, ch.Exec(ctx, `INSERT INTO graph_edges (src_id,src_type,dst_id,dst_type,edge_type,properties,synced_at)
  SELECT id,type,'internet','internet','exposed_to_internet','{}',now64(9) FROM assets WHERE risk_score>=75`))
+	if derived {
+		seedInventoryDerivations(t, ctx, ch, n)
+		for _, table := range []string{"asset_finding_risk", "asset_annotations"} {
+			var count uint64
+			require.NoError(t, ch.Select(ctx, func(rows driver.Rows) error {
+				if !rows.Next() {
+					return fmt.Errorf("missing derived fixture count")
+				}
+				return rows.Scan(&count)
+			}, "SELECT count() FROM "+table))
+			require.Equal(t, r.InputRows[table], count)
+		}
+	}
 
 	filters := []struct {
 		name string
@@ -156,23 +201,27 @@ func TestInventoryQueryCosts(t *testing.T) {
 	}{{"all", Filter{}}, {"provider", Filter{Provider: "aws"}}, {"type", Filter{Type: "ec2_instance"}}, {"region", Filter{Region: "west"}}, {"account", Filter{AccountID: "2"}}, {"search", Filter{Search: "host-99"}}, {"exposed", Filter{Exposed: true}}, {"min_score", Filter{MinScore: 90}}}
 	for _, tc := range filters {
 		f := tc.f
-		expected := independentInventoryKeys(n, f)
+		expected := inventoryKeysWithRisk(n, f, derived)
 		for page := 0; page < 2; page++ {
 			q, args, err := baselineInventoryQuery(f)
 			require.NoError(t, err)
-			want, err := readInventoryFixture(ctx, ch, q, args...)
-			require.NoError(t, err)
+			if derived {
+				// Preserve the original joined page shape as the populated baseline.
+				q = strings.Replace(q, baselineInventorySelect, assetSelect, 1)
+			}
 			begin := min(page*100, len(expected))
 			end := min(begin+100, len(expected))
+			want := oracleInventoryPage(t, ctx, ch, expected[begin:end], derived)
 			require.Len(t, want, end-begin)
 			for i, a := range want {
 				key := expected[begin+i]
 				require.Equal(t, key.id, a.ID)
 				require.Equal(t, "host-"+strconv.Itoa(key.n), a.Name)
 				require.Equal(t, strings.Repeat(fmt.Sprintf("%X", sha256.Sum256([]byte(strconv.Itoa(key.n)))), 256), a.Metadata["payload"])
-				require.Equal(t, uint8(key.n%100), a.RiskScore)
+				require.Equal(t, inventoryFixtureRisk(key.n, derived), a.RiskScore)
+				require.NotContains(t, a.Metadata, "drift", "annotations cannot alter unrelated observations")
 			}
-			label := fmt.Sprintf("inventory-%s-page%d", tc.name, page)
+			label := fmt.Sprintf("%s-%s-page%d", cohort, tc.name, page)
 			r.Plans[label], err = perfassurance.Explain(ctx, ch, q, args...)
 			require.NoError(t, err)
 			candidateQ, candidateArgs, err := listQuery(f)
@@ -183,6 +232,8 @@ func TestInventoryQueryCosts(t *testing.T) {
 			r.Plans[label+"-candidate"], err = perfassurance.Explain(ctx, ch, candidateQ, candidateArgs...)
 			require.NoError(t, err)
 			for repeat := 0; repeat < 3; repeat++ {
+				var baselineReadRows uint64
+				baselineFailed := false
 				for _, candidate := range []bool{false, true} {
 					mode := "baseline"
 					if candidate {
@@ -218,8 +269,32 @@ func TestInventoryQueryCosts(t *testing.T) {
 					if budgetErr := budget.Check(sample); budgetErr != nil {
 						sample.BudgetError = budgetErr.Error()
 					}
+					if err != nil {
+						sample.Error = err.Error()
+					}
 					r.Samples = append(r.Samples, sample)
-					require.NoError(t, err)
+					if candidate || err == nil {
+						require.NoError(t, err)
+					} else {
+						var exception *clickhouse.Exception
+						require.True(t, errors.As(err, &exception) && exception.Code == 241,
+							"only a retained baseline memory-limit failure may continue: %v", err)
+						baselineFailed = true
+						r.BaselineFailures++
+					}
+					var readRows uint64
+					for _, query := range sample.Queries {
+						readRows += query.ReadRows
+					}
+					if !candidate {
+						baselineReadRows = readRows
+					} else if derived && tc.name == "all" && !baselineFailed {
+						// No derived predicate needs a second scan of risk/annotation
+						// state while selecting broad page keys. Selective predicates
+						// can change join pruning, so retain their absolute cost gates.
+						// Allow one extra asset-key pass for the broad page.
+						require.LessOrEqual(t, readRows, baselineReadRows+uint64(n*versions), "page selection must not rescan derived state without a derived predicate")
+					}
 					if candidate {
 						require.NoError(t, budget.Check(sample))
 						if os.Getenv("PERF_QUERY_EXPERIMENT") == "buffers" {
@@ -260,7 +335,7 @@ func TestInventoryQueryCosts(t *testing.T) {
 	r.Plans["inventory-summary"], err = perfassurance.Explain(ctx, ch, assetSummary)
 	require.NoError(t, err)
 	for repeat := 0; repeat < 3; repeat++ {
-		sample, err := perfassurance.Measure(ctx, ch, queryLog, fmt.Sprintf("inventory-summary-%d", repeat), func(ctx context.Context) error {
+		sample, err := perfassurance.Measure(ctx, ch, queryLog, fmt.Sprintf("%s-summary-%d", cohort, repeat), func(ctx context.Context) error {
 			got, err := NewCHRepo(ch).Summary(ctx)
 			if err != nil {
 				return err
@@ -276,7 +351,7 @@ func TestInventoryQueryCosts(t *testing.T) {
 	}
 
 	if n == 1000 && versions == 1 {
-		mutant, err := perfassurance.Measure(ctx, ch, queryLog, "inventory-wide-state-mutation", func(ctx context.Context) error {
+		mutant, err := perfassurance.Measure(ctx, ch, queryLog, cohort+"-wide-state-mutation", func(ctx context.Context) error {
 			return ch.Select(ctx, func(rows driver.Rows) error {
 				for rows.Next() {
 					var n uint64
@@ -318,7 +393,65 @@ type inventoryFixtureKey struct {
 	n  int
 }
 
+// Expected page membership comes from the Go fixture, independently of both SQL
+// shapes. Fetch only those raw observations; compute effective risk in Go. This
+// remains usable when the historical joined baseline exhausts the server limit.
+func oracleInventoryPage(t *testing.T, ctx context.Context, ch *db.CH, keys []inventoryFixtureKey, derived bool) []Asset {
+	t.Helper()
+	if len(keys) == 0 {
+		return nil
+	}
+	ids := make([]string, len(keys))
+	for i, key := range keys {
+		ids[i] = key.id
+	}
+	ph, args := dbutil.CHIn(ids)
+	want, err := readInventoryFixture(ctx, ch, baselineInventorySelect+" WHERE id IN ("+ph+") ORDER BY last_seen DESC,id DESC", args...)
+	require.NoError(t, err)
+	require.Len(t, want, len(keys))
+	for i := range want {
+		require.Equal(t, keys[i].id, want[i].ID)
+		require.Equal(t, uint8(keys[i].n%100), want[i].RiskScore)
+		want[i].RiskScore = inventoryFixtureRisk(keys[i].n, derived)
+	}
+	return want
+}
+
 func independentInventoryKeys(n int, f Filter) []inventoryFixtureKey {
+	return inventoryKeysWithRisk(n, f, false)
+}
+
+func inventoryFixtureRisk(i int, derived bool) uint8 {
+	score := uint8(i % 100)
+	if derived && i%4 == 0 {
+		score = max(score, 95)
+	}
+	return score
+}
+
+func seedInventoryDerivations(t *testing.T, ctx context.Context, ch *db.CH, n int) {
+	t.Helper()
+	// Two complete generations and a newer incomplete one distinguish committed
+	// scores from stale and staged contributions, with a populated annotation join.
+	for generation := 0; generation < 3; generation++ {
+		require.NoError(t, ch.Exec(ctx, `INSERT INTO asset_finding_risk
+ (generation,digest,id,risk_score,pinned)
+ SELECT toDateTime64('2026-01-01 00:00:00',9)+toIntervalSecond(?),repeat('a',64),
+ concat('query-',hex(MD5(toString(number)))),
+ toUInt8(if(?=1,if(number%4=0,95,0),99)),toUInt8(1) FROM numbers(?)`, generation, generation, n))
+		if generation < 2 {
+			require.NoError(t, ch.Exec(ctx, `INSERT INTO asset_finding_risk
+ (generation,digest,id,risk_score,pinned)
+ SELECT toDateTime64('2026-01-01 00:00:00',9)+toIntervalSecond(?),repeat('a',64),'',toUInt8(0),toUInt8(1)`, generation))
+		}
+	}
+	require.NoError(t, ch.Exec(ctx, `INSERT INTO asset_annotations
+ (source,id,observed_at,input_key,patch)
+ SELECT 'k8s_manifest_drift',concat('query-',hex(MD5(toString(number)))),now64(9),
+ 'unrelated-declaration',toJSONString(map('drift','missing')) FROM numbers(?)`, n))
+}
+
+func inventoryKeysWithRisk(n int, f Filter, derived bool) []inventoryFixtureKey {
 	var keys []inventoryFixtureKey
 	for i := 0; i < n; i++ {
 		typ := "ec2_instance"
@@ -337,7 +470,7 @@ func independentInventoryKeys(n int, f Filter) []inventoryFixtureKey {
 			region = "west"
 		}
 		id := fmt.Sprintf("query-%X", md5.Sum([]byte(strconv.Itoa(i))))
-		if f.Provider != "" && f.Provider != provider || f.Type != "" && f.Type != typ || f.Region != "" && f.Region != region || f.AccountID != "" && f.AccountID != strconv.Itoa(i%10) || f.Exposed && i%100 < 75 || i%100 < int(f.MinScore) {
+		if f.Provider != "" && f.Provider != provider || f.Type != "" && f.Type != typ || f.Region != "" && f.Region != region || f.AccountID != "" && f.AccountID != strconv.Itoa(i%10) || f.Exposed && i%100 < 75 || int(inventoryFixtureRisk(i, derived)) < f.MinScore {
 			continue
 		}
 		if f.Search != "" && !strings.Contains("host-"+strconv.Itoa(i), f.Search) && !strings.Contains(id, f.Search) {

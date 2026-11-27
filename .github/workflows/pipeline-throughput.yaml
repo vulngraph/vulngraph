@@ -95,6 +95,15 @@ jobs:
         run: |
           scripts/benchmark-large-joins.sh smoke "$RUNNER_TEMP/large-join-throughput/smoke"
           scripts/benchmark-large-joins.sh target "$RUNNER_TEMP/large-join-throughput/target"
+      - name: Check derived-state publication and lifecycle
+        timeout-minutes: 15
+        env:
+          PERF_ENVELOPE_TEST: '^TestEnvelopeDerived(State|AtomicPublication|Retention|SnapshotBarrier|UpgradeAndReappearance)$'
+          GOMAXPROCS: "4"
+        run: |
+          PERF_LINUX_GO_CACHE="$(go env GOCACHE)"
+          export PERF_LINUX_GO_CACHE
+          bash scripts/benchmark-connector-envelope.sh smoke "$RUNNER_TEMP/derived-throughput"
       - name: Run isolated pipeline
         env:
           PERF_PROFILE_INPUT: ${{ inputs.profile }}
@@ -114,4 +123,6 @@ jobs:
             ${{ runner.temp }}/large-join-throughput/
             ${{ runner.temp }}/pipeline-throughput/
             ${{ runner.temp }}/connector-throughput/
+            ${{ runner.temp }}/derived-throughput/
+            !${{ runner.temp }}/derived-throughput/envelope.test
           retention-days: 14

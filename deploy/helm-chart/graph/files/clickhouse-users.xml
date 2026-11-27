@@ -52,6 +52,8 @@
                 <!-- Connector account purge (internal/app/asset/purge.go). -->
                 <query>GRANT ALTER DELETE ON graph.assets</query>
                 <query>GRANT ALTER DELETE ON graph.graph_edges</query>
+                <query>GRANT ALTER DELETE ON graph.asset_finding_risk</query>
+                <query>GRANT ALTER DELETE ON graph.asset_risk_publications</query>
                 <!-- Part compaction (asset.OptimizableTables) and the part
                      sizes its guard reads. -->
                 <query>GRANT OPTIMIZE ON graph.graph_edges</query>

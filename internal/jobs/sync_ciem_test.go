@@ -43,6 +43,14 @@ func TestAnalyzeIAM_TierReachesChecks(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, partial)
 	require.NotEmpty(t, res.Tiers)
+	require.NotEmpty(t, res.ScoredAssets)
+	for _, scored := range res.ScoredAssets {
+		for _, observed := range swept {
+			if observed.ID == scored.ID {
+				assert.Equal(t, scored.RiskScore, observed.RiskScore, "score must reach the original observation write")
+			}
+		}
+	}
 
 	assert.Equal(t, "high", swept[0].Metadata["privilege_tier"])
 	assert.Equal(t, "ciem:gcp-privesc-01", swept[0].Metadata["privilege_tier_source"])
@@ -57,6 +65,34 @@ func TestAnalyzeIAM_TierReachesChecks(t *testing.T) {
 	assert.NotContains(t, byResource["writer"], "gcp-sa-admin-dormant")
 	assert.Contains(t, byResource["writer"], "gcp-sa-unused", "ordinary dormancy remains visible without unsupported admin proof")
 	assert.NotContains(t, byResource["unread"], "gcp-sa-admin-dormant", "an unknown tier never proves privilege")
+}
+
+func TestAnalyzeIAM_FingerprintIncludesCurrentScoreWithoutRestampNoise(t *testing.T) {
+	observation := func(at time.Time) []asset.Asset {
+		return []asset.Asset{{ID: "fingerprint-principal", Type: "gcp_service_account", Provider: asset.ProviderGCP, AccountID: "project",
+			DiscoveredAt: at, LastSeen: at, Metadata: map[string]string{
+				"roles": "projects/project/roles/custom", "roles_complete": "true", "permissions_complete": "true",
+				"permissions": "resourcemanager.projects.setIamPolicy", "disabled": "false",
+			}}}
+	}
+	first := observation(time.Now().Add(-time.Minute))
+	_, result, partial, err := analyzeIAM(t.Context(), nil, first)
+	require.NoError(t, err)
+	require.False(t, partial)
+	require.NotEmpty(t, result.ScoredAssets)
+	require.Positive(t, first[0].RiskScore)
+	// Isolate score from the already-stamped tier and all other fields: the
+	// old post-fingerprint score write missed exactly this input to the diff.
+	withoutScore := append([]asset.Asset(nil), first...)
+	withoutScore[0].RiskScore = 0
+	require.NotEqual(t, asset.ConnectorFingerprint(withoutScore), asset.ConnectorFingerprint(first))
+	require.NotEqual(t, asset.ContentHash(withoutScore[0]), asset.ContentHash(first[0]))
+	repeat := observation(time.Now())
+	_, _, partial, err = analyzeIAM(t.Context(), nil, repeat)
+	require.NoError(t, err)
+	require.False(t, partial)
+	require.Equal(t, asset.ConnectorFingerprint(first), asset.ConnectorFingerprint(repeat))
+	require.Equal(t, asset.ContentHash(first[0]), asset.ContentHash(repeat[0]))
 }
 
 // scpStore serves aws_scp_set assets and stored principals, failing either read

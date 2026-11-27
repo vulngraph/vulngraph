@@ -184,8 +184,8 @@ func (w *SyncWorker) Work(ctx context.Context, job *river.Job[SyncConnectorArgs]
 		// Phase 1: connector-level short-circuit. Compute a combined
 		// fingerprint over all collected assets. If it matches what we stored
 		// after the last successful ingest AND the check registry is unchanged,
-		// nothing to do — skip entirely. This is the dominant win: most
-		// sweeps change nothing. A pending check backfill must NOT short-circuit:
+		// skip redundant checks/enrichment, but still write fresh observations.
+		// A pending check backfill must NOT short-circuit:
 		// the skip path bypasses the check run, which is exactly how new checks
 		// stayed dark on stable connectors.
 		newFP := asset.ConnectorFingerprint(res.Assets)
@@ -199,7 +199,8 @@ func (w *SyncWorker) Work(ctx context.Context, job *river.Job[SyncConnectorArgs]
 			// (graphschema.EdgeFreshnessCond) and every asset liveness gate
 			// filters on last_seen (asset.EphemeralLivenessCond) —
 			// skipping either write evicts a stable connector's live rows from
-			// the graph. RMT dedups on merge; the write volume is trivial.
+			// the graph. These full observation writes and background merges
+			// remain part of the cost of an otherwise unchanged sync.
 			//
 			// The write is deliberately NOT gated on the content diff. See
 			// restampLastSeen for why "wrote nothing because nothing changed"
@@ -253,18 +254,13 @@ func (w *SyncWorker) Work(ctx context.Context, job *river.Job[SyncConnectorArgs]
 	}
 
 	// Persist the CIEM analysis (run above, before the fingerprint).
-	// ScoredAssets: re-ingest with bumped RiskScore so BFS propagates outward.
+	// Scores were applied to the current observation before its fingerprint and
+	// write. Never re-insert the pre-restamp analysis rows over inventory.
 	// Paths: emit can_escalate_to edges into ClickHouse so the graph shows the
 	// full CIEM attack chain, not only the CanAssume edges from trust policies.
 	// Runs on skipped sweeps too: the can_escalate_to edges must be re-stamped
-	// each sweep (freshness eviction, see above) — only the ScoredAssets
-	// re-ingest is skipped, since asset content is unchanged by definition.
+	// each sweep (freshness eviction, see above).
 	if runErr == nil {
-		if !skipped && len(ciemResult.ScoredAssets) > 0 {
-			if err := w.assets.Ingest(ctx, ciemResult.ScoredAssets, nil); err != nil {
-				log.FromContext(ctx).Warn().Err(err).Msg("ciem: score ingest failed")
-			}
-		}
 		ciemEdges, dangling := ciemEscalationEdges(ciemInput, ciemResult.Paths)
 		if dangling > 0 {
 			log.FromContext(ctx).Debug().Int("dangling", dangling).

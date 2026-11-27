@@ -212,6 +212,13 @@ var mutations = []Mutation{
 	{
 		Guard: "TestAssetReadersApplyLiveness", Pkg: "./internal/app/asset",
 		File: "internal/app/asset/repo.go",
+		Old:  "\tconds := []string{inventoryReadCond}",
+		New:  "\tconds := []string{\"1\"}",
+		Why:  "the derived-state view must still apply inventory liveness before listing, filtering and pagination",
+	},
+	{
+		Guard: "TestAssetReadersApplyLiveness", Pkg: "./internal/app/asset",
+		File: "internal/app/asset/repo.go",
 		Old:  "\tWHERE ` + inventoryReadCond + `\n\tGROUP BY GROUPING SETS",
 		New:  "\tGROUP BY GROUPING SETS",
 		Why: "a UI-facing asset read without the liveness gate reports the cemetery as inventory — asset rows are " +
@@ -715,17 +722,17 @@ var mutations = []Mutation{
 		File: "internal/app/correlate/repo.go",
 		Old: "\targMax(name, synced_at), argMax(type, synced_at), argMax(account_id, synced_at),\n" +
 			"\targMax(public_ip, synced_at), argMax(private_ip, synced_at), argMax(domain, synced_at), argMax(tags, synced_at),\n" +
-			"\t` + projectMetadataExpr + `\n\tFROM assets\n\tWHERE type IN (%s)",
+			"\t` + projectMetadataExpr + `\n\tFROM asset_versions_with_derivations\n\tWHERE type IN (%s)",
 		New: "\targMax(type, synced_at), argMax(name, synced_at), argMax(account_id, synced_at),\n" +
 			"\targMax(public_ip, synced_at), argMax(private_ip, synced_at), argMax(domain, synced_at), argMax(tags, synced_at),\n" +
-			"\t` + projectMetadataExpr + `\n\tFROM assets\n\tWHERE type IN (%s)",
+			"\t` + projectMetadataExpr + `\n\tFROM asset_versions_with_derivations\n\tWHERE type IN (%s)",
 		Why: "Scan is positional: transposing two same-typed columns compiles and leaves every asset's Name holding its Type",
 	},
 	{
 		Guard: "TestCorrelateQueriesShareTheSameColumnList", Pkg: "./internal/app/correlate",
 		File: "internal/app/correlate/repo.go",
-		Old:  "\t` + projectMetadataExpr + `\n\tFROM assets\n\tWHERE id IN (%s)\n\tGROUP BY id`",
-		New:  "\t` + projectMetadataExpr + `, argMax(region, synced_at)\n\tFROM assets\n\tWHERE id IN (%s)\n\tGROUP BY id`",
+		Old:  "\t` + projectMetadataExpr + `\n\tFROM asset_versions_with_derivations\n\tWHERE id IN (%s)\n\tGROUP BY id`",
+		New:  "\t` + projectMetadataExpr + `, argMax(region, synced_at)\n\tFROM asset_versions_with_derivations\n\tWHERE id IN (%s)\n\tGROUP BY id`",
 		Why:  "a column added to one of the two queries that share scanAssets is a runtime scan mismatch, not a compile error",
 	},
 

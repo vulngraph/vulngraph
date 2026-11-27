@@ -90,5 +90,5 @@ stage capture-query-settings
 bounded 10 docker exec "$ch" clickhouse-client --user bench --password "$password" --query 'SELECT version()' > "$output/clickhouse-version.txt"
 bounded 10 docker exec "$ch" clickhouse-client --user bench --password "$password" --query "SELECT name,value FROM system.settings WHERE name IN ('max_threads','max_block_size','query_plan_optimize_lazy_materialization','max_memory_usage') FORMAT JSON" > "$output/query-settings.json"
 stage measured-queries
-bounded 1800 go test -p 1 -tags=integration ./internal/app/asset ./internal/app/finding -run "${PERF_QUERY_TESTS:-^(TestInventoryQueryCosts|TestDashboardQueryCosts)$}" -count=1 -timeout=20m -v 2>&1 | tee "$output/run.log"
+bounded 1800 go test -p 1 -tags=integration ./internal/app/asset ./internal/app/finding -run "${PERF_QUERY_TESTS:-^(TestInventoryQueryCosts|TestInventoryDerivedQueryCosts|TestDashboardQueryCosts)$}" -count=1 -timeout=20m -v 2>&1 | tee "$output/run.log"
 stage completed

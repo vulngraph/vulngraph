@@ -247,3 +247,9 @@ The rewrite improves the million-finding baseline; catch-up p95 and larger
 cardinality budgets still fail. These are partial repository-level results, not
 HTTP/browser or full deployment-profile coverage. The remaining worklist stays
 open, including native/version cohorts, broader state/update scenarios and recovery.
+
+PERF-03 also tracks [derived-state inventory page costs](specs/asset-derived-state.md#inventory-page-costs).
+Version-key hydration passes the measured 100,000-asset query budgets, but an
+empty selective page still reads 5,002 rows versus its 2,002-row joined baseline.
+Retain that scan tradeoff and the empty-derived-state latency overhead in further
+mixed-load work; the focused fix earns no full-profile coverage credit.

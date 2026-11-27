@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/stretchr/testify/require"
 	"github.com/vulngraph/vulngraph/internal/app/asset"
@@ -39,11 +40,11 @@ func TestEnvelopeDerivedSnapshotBarrier(t *testing.T) {
 		{ID: ids[1], Type: "ec2_instance", Name: "second", AccountID: "snapshot-account", RiskScore: 5, LastSeen: time.Now()},
 	}, nil))
 	for _, tc := range []struct {
-		name, view string
-		read       func(context.Context) ([]asset.Asset, error)
+		name string
+		read func(context.Context) ([]asset.Asset, error)
 	}{
-		{"by_ids", "asset_versions_with_derivations", func(c context.Context) ([]asset.Asset, error) { return svc.ByIDs(c, ids) }},
-		{"current", "asset_current_with_derivations", func(c context.Context) ([]asset.Asset, error) {
+		{"by_ids", func(c context.Context) ([]asset.Asset, error) { return svc.ByIDs(c, ids) }},
+		{"current", func(c context.Context) ([]asset.Asset, error) {
 			return svc.List(c, asset.Filter{Limit: 25, AccountID: "snapshot-account"})
 		}},
 	} {
@@ -64,6 +65,8 @@ func TestEnvelopeDerivedSnapshotBarrier(t *testing.T) {
 				return rows.Scan(&shared)
 			}, "SELECT toUInt64(getSetting('enable_shared_storage_snapshot_in_query'))"))
 			require.Equal(t, uint64(1), shared, "application reads must override a disabled caller setting")
+			queryID := fmt.Sprintf("snapshot-%s-%d", tc.name, time.Now().UnixNano())
+			readCtx = clickhouse.Context(readCtx, clickhouse.WithQueryID(queryID))
 			finished := make(chan result, 1)
 			go func() {
 				defer func() {
@@ -74,39 +77,28 @@ func TestEnvelopeDerivedSnapshotBarrier(t *testing.T) {
 				rows, err := tc.read(readCtx)
 				finished <- result{rows, err}
 			}()
-			var queryID string
 			var riskStarted, riskFinished, markerStarted, markerFinished uint64
 			markerTable := "asset_risk_publications"
 			var markerOrdinal uint64
 			deadline := time.Now().Add(8 * time.Second)
 			for time.Now().Before(deadline) {
-				if queryID == "" {
-					require.NoError(t, admin.Select(ctx, func(rows driver.Rows) error {
-						if rows.Next() {
-							return rows.Scan(&queryID)
-						}
-						return rows.Err()
-					}, "SELECT query_id FROM system.processes WHERE user='graph' AND position(query,?)>0 LIMIT 1", tc.view))
+				require.NoError(t, admin.Exec(ctx, "SYSTEM FLUSH LOGS text_log"))
+				require.NoError(t, admin.Select(ctx, func(rows driver.Rows) error {
+					require.True(t, rows.Next())
+					return rows.Scan(&riskStarted, &riskFinished, &markerStarted, &markerFinished)
+				}, `SELECT
+countIf(position(logger_name,'asset_finding_risk')>0 AND startsWith(message,'Injecting')),
+countIf(position(logger_name,'asset_finding_risk')>0 AND startsWith(message,'Finished')),
+countIf(position(logger_name,'asset_risk_publications')>0 AND startsWith(message,'Injecting')),
+countIf(position(logger_name,'asset_risk_publications')>0 AND startsWith(message,'Finished'))
+FROM system.text_log WHERE query_id=?`, queryID))
+				if riskFinished > 0 && markerStarted > markerFinished {
+					markerOrdinal = markerStarted
+					break
 				}
-				if queryID != "" {
-					require.NoError(t, admin.Exec(ctx, "SYSTEM FLUSH LOGS text_log"))
-					require.NoError(t, admin.Select(ctx, func(rows driver.Rows) error {
-						require.True(t, rows.Next())
-						return rows.Scan(&riskStarted, &riskFinished, &markerStarted, &markerFinished)
-					}, `SELECT
- countIf(position(logger_name,'asset_finding_risk')>0 AND startsWith(message,'Injecting')),
- countIf(position(logger_name,'asset_finding_risk')>0 AND startsWith(message,'Finished')),
- countIf(position(logger_name,'asset_risk_publications')>0 AND startsWith(message,'Injecting')),
- countIf(position(logger_name,'asset_risk_publications')>0 AND startsWith(message,'Finished'))
- FROM system.text_log WHERE query_id=?`, queryID))
-					if riskFinished > 0 && markerStarted > markerFinished {
-						markerOrdinal = markerStarted
-						break
-					}
-					if riskFinished > 0 && riskStarted > riskFinished {
-						markerTable, markerOrdinal = "asset_finding_risk", riskStarted
-						break
-					}
+				if riskFinished > 0 && riskStarted > riskFinished {
+					markerTable, markerOrdinal = "asset_finding_risk", riskStarted
+					break
 				}
 				time.Sleep(25 * time.Millisecond)
 			}

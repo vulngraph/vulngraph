@@ -72,6 +72,48 @@ Its worker regression test starts with a legacy whole-row score, confirms the
 fingerprint and quiet-sync streak, and requires the next successful observation
 to replace that base score. A failed collection cannot supply that replacement.
 
+## Inventory page costs
+
+Joining derivations before limiting a wide inventory page exceeded the existing
+query-memory guard. List now selects `(type,id,synced_at)` page keys, then
+hydrates only those observation versions and attaches current finding risk.
+Derived score filters still precede the page limit. The whole statement uses
+the enforced shared storage snapshots. Inventory excludes declaration types,
+which are the only types eligible for the annotation metadata overlay.
+
+Matched local runs used ClickHouse 26.8.47.5, two CPUs, a 3 GiB container, 16 KiB
+metadata values and three retained observation versions. Populated fixtures also
+contain two complete risk generations, one newer unpublished generation and an
+annotation row per asset. Each filter/page has three measured repetitions.
+
+| Assets | Joined first page, median / peak query memory | Version-key page, median / peak query memory |
+| --- | --- | --- |
+| 10,000 | 96.9 ms / 585.5 MB | 41.4 ms / 27.3 MB |
+| 100,000 | 1,509.7 ms / 2,532.5 MB | 102.0 ms / 69.9 MB |
+
+All 48 candidate reads per populated run preserved exact independently expected
+pages, fields and scores. Five baseline reads in the 100,000-asset run exhausted
+the server memory limit; their errors are retained, not treated as successful
+timings. Candidate reads remained within the original byte and memory ceilings.
+The empty-derived-state control is a tradeoff: at 10,000 assets its first page
+changed from 36.4 ms / 24.8 MB to 42.1 ms / 26.2 MB. This is not a universal
+latency improvement or a whole-system capacity result.
+
+Selective reads retain a scan tradeoff: the empty second account-filtered page
+at 1,000 assets reads 5,002 rows versus 2,002 for the joined baseline, while its
+median latency changes from 12.6 to 7.0 ms and peak memory from 37.5 to 1.47 MB.
+That extra derived-state scan remains PERF-03 work; the broad-page regression
+guard does not cover it. Its absolute byte and memory budgets still apply.
+
+The original empty-fixture budgets remain unchanged. The populated fixture
+separately reports physical rows in all input tables and permits at most five
+times that input population to be read. It is not a pass of the old asset-only
+row ceiling. An additional matched guard rejects broad, unfiltered page selection
+that reads more than its baseline plus one asset-key pass. The same fixed byte
+and memory budgets apply to both fixtures. The Go oracle determines membership
+and risk independently; a bounded raw-observation read checks the remaining
+fields even when the historical joined query cannot complete.
+
 ## Local measured envelope
 
 The fixture uses one worker process, 500 synthetic AWS-shaped connector scopes
@@ -90,6 +132,10 @@ cgroup totals include caches and the benchmark observer, not just resident heaps
 | --- | --- | --- | --- |
 | Same-table publication, early broad-work start | 6 waves, 712 reads, no errors | 309 / 615 ms | 3.585 GB, graph active |
 | Broad work after a quarter of scopes, with active enrichment | 6 waves, 740 reads, no errors | 299 / 480 ms | 4.127 GB, graph active |
+
+These 100,000-asset envelope runs precede the inventory-page rewrite above.
+A fresh 5,000-asset six-wave replay passes with the revised reader; the older
+whole-system peaks are not measurements of that rewrite.
 
 Each wave independently verifies asset values, persisted enrichment scores,
 deletion/reappearance and native graph counts. The second replay also checks

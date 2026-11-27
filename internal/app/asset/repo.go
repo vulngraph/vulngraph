@@ -771,6 +771,22 @@ const defaultExternalLimit = 1000
 // full page comes back.
 const assetPageLimit = 100
 
+// Inventory excludes declared resources, the only rows with derived metadata.
+// Carry the selected version into hydration so old wide observations are not
+// read again. Grouping retains FINAL's (type,id) identity for duplicate writes.
+const selectAssetPage = `SELECT a.id, a.current.1, a.type, a.current.2, a.current.3,
+ a.current.4, a.current.5, a.current.6, a.current.7, a.current.8, a.current.9, a.current.10,
+ greatest(a.current.11,r.risk_score), a.current.12, a.current.13, a.current.14 AS last_seen
+ FROM (SELECT id,type,argMax(tuple(name,provider,region,account_id,endpoint,public_ip,private_ip,domain,
+ tags,metadata,risk_score,discovered_at,first_discovered_at,last_seen),synced_at) AS current
+ FROM assets WHERE (type,id,synced_at) IN (%s) GROUP BY type,id) AS a
+ LEFT JOIN (
+  SELECT id,max(risk_score) AS risk_score FROM asset_finding_risk
+  WHERE id!='' AND (generation,digest)=(SELECT max((generation,digest)) FROM asset_finding_risk WHERE id='' AND pinned=1)
+  GROUP BY id
+ ) AS r ON a.id=r.id
+ ORDER BY last_seen DESC,a.id DESC`
+
 // listQuery builds the inventory page SQL and its args. It is separate from List
 // so the query text is assertable without a database: listQuery is what
 // TestAssetReadersApplyLiveness inspects across every filter combination,
@@ -817,7 +833,11 @@ func listQuery(f Filter) (string, []any, error) {
 
 	// conds is never empty (inventoryReadCond is always in it), so the WHERE is
 	// unconditional — and so is the cursor's AND below.
-	query := assetSelect + " WHERE " + strings.Join(conds, " AND ")
+	keys := "SELECT type, id, synced_at FROM assets FINAL"
+	if f.MinScore > 0 {
+		keys = "SELECT type, id, synced_at FROM asset_current_with_derivations"
+	}
+	query := keys + " WHERE " + strings.Join(conds, " AND ")
 
 	// Keyset cursor: (last_seen DESC, id DESC) — same order as ORDER BY below.
 	if f.Cursor != "" {
@@ -835,7 +855,9 @@ func listQuery(f Filter) (string, []any, error) {
 	}
 	query += " ORDER BY last_seen DESC, id DESC LIMIT ?"
 	args = append(args, limit)
-	return query, args, nil
+	// Select page keys before hydrating wide metadata. Derived scores still
+	// participate in filtering before LIMIT; both reads share a storage snapshot.
+	return fmt.Sprintf(selectAssetPage, query), args, nil
 }
 
 // List returns assets matching the filter, newest first (last_seen, id), with

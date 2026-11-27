@@ -84,6 +84,17 @@ jobs:
           PERF_CH_CPUS: "2"
           GOMAXPROCS: "4"
         run: scripts/benchmark-queries.sh smoke "$RUNNER_TEMP/query-throughput"
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+        with:
+          version: v3.19.0
+      - name: Check latest-row joins and lifecycle parity
+        timeout-minutes: 15
+        env:
+          PERF_JOIN_EXPERIMENT: latest_rows
+          GOMAXPROCS: "4"
+        run: |
+          scripts/benchmark-large-joins.sh smoke "$RUNNER_TEMP/large-join-throughput/smoke"
+          scripts/benchmark-large-joins.sh target "$RUNNER_TEMP/large-join-throughput/target"
       - name: Run isolated pipeline
         env:
           PERF_PROFILE_INPUT: ${{ inputs.profile }}
@@ -100,6 +111,7 @@ jobs:
           name: pipeline-throughput-${{ matrix.arch }}
           path: |
             ${{ runner.temp }}/query-throughput/
+            ${{ runner.temp }}/large-join-throughput/
             ${{ runner.temp }}/pipeline-throughput/
             ${{ runner.temp }}/connector-throughput/
           retention-days: 14

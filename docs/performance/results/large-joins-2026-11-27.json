@@ -1,0 +1,2285 @@
+{
+  "date": "2026-11-27",
+  "coverage_credit": false,
+  "units": {
+    "memory": "bytes",
+    "latency": "milliseconds"
+  },
+  "query_runs": [
+    {
+      "artifact": "joins-deployed-target-v2",
+      "report_sha256": "40797b7d417b6d376f49c116fe0c28b8e21dc3c304b2d9e739d0c128d59a6d8f",
+      "source_patch_sha256": "ded911ae58acea7bdaf80db1173089d50053ce6e534e061caf3c46eb5111b536",
+      "source_base": "47f89d660de6f9f662ce6672b5c656b6dc1ae8e2",
+      "fixture_version": 2,
+      "passed": true,
+      "logical_findings": 100000,
+      "logical_enrichment": 500000,
+      "inventory_counts": {
+        "logical_assets": 37000,
+        "logical_edges": 2065000,
+        "physical_asset_rows": 39000,
+        "physical_edge_rows": 2485617
+      },
+      "resource_cohort": "deployed",
+      "operations": {
+        "findings-summary-": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 82.48474999999999,
+          "successful_max_query_memory": 104501984,
+          "successful_max_read_bytes": 64374994
+        },
+        "findings-clusters-": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 104.15495800000001,
+          "successful_max_query_memory": 163066618,
+          "successful_max_read_bytes": 67652938
+        },
+        "findings-summary-sample": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 17.838290999999998,
+          "successful_max_query_memory": 6453523,
+          "successful_max_read_bytes": 55135682
+        },
+        "findings-clusters-sample": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 18.095375,
+          "successful_max_query_memory": 6449592,
+          "successful_max_read_bytes": 41793918
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 30.395833,
+          "successful_max_query_memory": 5879322,
+          "successful_max_read_bytes": 125542578
+        }
+      }
+    },
+    {
+      "artifact": "joins-deployed-large-v3",
+      "report_sha256": "a1e0274fa172e97fdaef8e49834e0cf3ae8d01481fa74567e24d44bf6ff76d18",
+      "source_patch_sha256": "3cfc9bf13fe59369bfba359c94bbdcb473303e2952642f6bd60d994f5d68d1a8",
+      "source_base": "47f89d660de6f9f662ce6672b5c656b6dc1ae8e2",
+      "fixture_version": 3,
+      "passed": false,
+      "logical_findings": 1000000,
+      "logical_enrichment": 5000000,
+      "inventory_counts": {
+        "logical_assets": 860000,
+        "logical_edges": 21950000,
+        "physical_asset_rows": 870000,
+        "physical_edge_rows": 26162611
+      },
+      "resource_cohort": "deployed",
+      "operations": {
+        "findings-summary-": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 855.975667,
+          "successful_max_query_memory": 949270943,
+          "successful_max_read_bytes": 663942343
+        },
+        "findings-clusters-": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 923.128833,
+          "successful_max_query_memory": 1398439566,
+          "successful_max_read_bytes": 700004879
+        },
+        "findings-summary-sample": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 104.732541,
+          "successful_max_query_memory": 18291324,
+          "successful_max_read_bytes": 339230372
+        },
+        "findings-clusters-sample": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 81.135834,
+          "successful_max_query_memory": 31318827,
+          "successful_max_read_bytes": 313531684
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 288.790791,
+          "successful_max_query_memory": 36985333,
+          "successful_max_read_bytes": 1310127072
+        }
+      }
+    },
+    {
+      "artifact": "joins-keyset-large",
+      "report_sha256": "1a06f56ff09f989eca1b63eb22562aed8dbcbfd1c6050175a276ab734ac3148f",
+      "source_patch_sha256": "8fac9c1c7f4861ec83ef59ec42595a9095349b33d5ac3a4537f05a34d712f10e",
+      "source_base": "47f89d660de6f9f662ce6672b5c656b6dc1ae8e2",
+      "fixture_version": 4,
+      "passed": false,
+      "logical_findings": 1000000,
+      "logical_enrichment": 5000000,
+      "inventory_counts": {
+        "logical_assets": 860000,
+        "logical_edges": 21950000,
+        "physical_asset_rows": 870000,
+        "physical_edge_rows": 26162611
+      },
+      "resource_cohort": "deployed",
+      "operations": {
+        "findings-summary--baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 752.517333,
+          "successful_max_query_memory": 947188817,
+          "successful_max_read_bytes": 663942343
+        },
+        "findings-summary--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 835.141542,
+          "successful_max_query_memory": 1033871275,
+          "successful_max_read_bytes": 478071680
+        },
+        "findings-clusters--baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 874.810959,
+          "successful_max_query_memory": 1401231066,
+          "successful_max_read_bytes": 700004879
+        },
+        "findings-clusters--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 970.676792,
+          "successful_max_query_memory": 1555584701,
+          "successful_max_read_bytes": 624028822
+        },
+        "findings-summary-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 88.23725,
+          "successful_max_query_memory": 18290844,
+          "successful_max_read_bytes": 339230372
+        },
+        "findings-summary-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 98.2185,
+          "successful_max_query_memory": 21409336,
+          "successful_max_read_bytes": 322901456
+        },
+        "findings-clusters-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 86.102208,
+          "successful_max_query_memory": 30512700,
+          "successful_max_read_bytes": 313531684
+        },
+        "findings-clusters-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 89.704042,
+          "successful_max_query_memory": 33336472,
+          "successful_max_read_bytes": 296958373
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 288.296875,
+          "successful_max_query_memory": 38281206,
+          "successful_max_read_bytes": 1310127072
+        }
+      }
+    },
+    {
+      "artifact": "joins-ordered-large",
+      "report_sha256": "7df7f284a593598d3a0a04427b4ded83343e5e7dfd5536985902d0ff5f7249a8",
+      "source_patch_sha256": "c7a0112933b6c85a9526e71e939fd8396b4d60b00a08d78b2a29bca68181a414",
+      "source_base": "47f89d660de6f9f662ce6672b5c656b6dc1ae8e2",
+      "fixture_version": 4,
+      "passed": false,
+      "logical_findings": 1000000,
+      "logical_enrichment": 5000000,
+      "inventory_counts": {
+        "logical_assets": 860000,
+        "logical_edges": 21950000,
+        "physical_asset_rows": 870000,
+        "physical_edge_rows": 26162611
+      },
+      "resource_cohort": "deployed",
+      "operations": {
+        "findings-summary--baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 735.832916,
+          "successful_max_query_memory": 947025497,
+          "successful_max_read_bytes": 663942343
+        },
+        "findings-summary--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 1241.68875,
+          "successful_max_query_memory": 1889785716,
+          "successful_max_read_bytes": 663942343
+        },
+        "findings-clusters--baseline": {
+          "attempts": 3,
+          "successful": 1,
+          "budget_failures": 3,
+          "successful_median_ms": 821.728167,
+          "successful_max_query_memory": 1397828260,
+          "successful_max_read_bytes": 700004879
+        },
+        "findings-clusters--candidate": {
+          "attempts": 3,
+          "successful": 2,
+          "budget_failures": 3,
+          "successful_median_ms": 1777.9889585,
+          "successful_max_query_memory": 1512464995,
+          "successful_max_read_bytes": 700004879
+        },
+        "findings-summary-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 80.297083,
+          "successful_max_query_memory": 18319507,
+          "successful_max_read_bytes": 339230372
+        },
+        "findings-summary-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 86.435,
+          "successful_max_query_memory": 32975261,
+          "successful_max_read_bytes": 339208592
+        },
+        "findings-clusters-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 75.050208,
+          "successful_max_query_memory": 30515516,
+          "successful_max_read_bytes": 313531684
+        },
+        "findings-clusters-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 81.909667,
+          "successful_max_query_memory": 58622607,
+          "successful_max_read_bytes": 313477746
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 251.56725000000003,
+          "successful_max_query_memory": 37196313,
+          "successful_max_read_bytes": 1310127072
+        }
+      }
+    },
+    {
+      "artifact": "joins-ordered-blocks-large",
+      "report_sha256": "26c8d08b8688b141b6fa6d370465b53ba2192a521edbf807a3685eda03621cc4",
+      "source_patch_sha256": "90a2139b880e34575b11b0e65931dc270b0c24dba84d92fa1bb2a0418c5b8028",
+      "source_base": "47f89d660de6f9f662ce6672b5c656b6dc1ae8e2",
+      "fixture_version": 5,
+      "passed": true,
+      "logical_findings": 1000000,
+      "logical_enrichment": 5000000,
+      "inventory_counts": {
+        "logical_assets": 860000,
+        "logical_edges": 21950000,
+        "physical_asset_rows": 870000,
+        "physical_edge_rows": 26162611
+      },
+      "resource_cohort": "deployed",
+      "operations": {
+        "findings-summary--baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 686.969542,
+          "successful_max_query_memory": 947793119,
+          "successful_max_read_bytes": 663942343
+        },
+        "findings-summary--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 1187.750125,
+          "successful_max_query_memory": 338847182,
+          "successful_max_read_bytes": 663881469
+        },
+        "findings-clusters--baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 799.198125,
+          "successful_max_query_memory": 1399246887,
+          "successful_max_read_bytes": 700004879
+        },
+        "findings-clusters--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 1496.490292,
+          "successful_max_query_memory": 360471705,
+          "successful_max_read_bytes": 697055940
+        },
+        "findings-summary-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 81.069625,
+          "successful_max_query_memory": 18286743,
+          "successful_max_read_bytes": 339230372
+        },
+        "findings-summary-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 84.994084,
+          "successful_max_query_memory": 36761039,
+          "successful_max_read_bytes": 339413609
+        },
+        "findings-clusters-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 75.896584,
+          "successful_max_query_memory": 30516066,
+          "successful_max_read_bytes": 313531684
+        },
+        "findings-clusters-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 84.80716600000001,
+          "successful_max_query_memory": 41350384,
+          "successful_max_read_bytes": 313477746
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 253.155792,
+          "successful_max_query_memory": 36886997,
+          "successful_max_read_bytes": 1310127072
+        }
+      }
+    },
+    {
+      "artifact": "joins-stress-deployed-v2",
+      "report_sha256": "3eee0982d9beceb6dcf3813c8949432f7c38fe071c4d4892b3c5e32cc291ad6f",
+      "source_patch_sha256": "58361f8106c9608d87785a1b7dba0680d1f4e4412ccefdde4a123fef39224bdf",
+      "source_base": "763859a5f5609dac30499088f7a30d9412bd128f",
+      "fixture_version": 5,
+      "passed": false,
+      "logical_findings": 5000000,
+      "logical_enrichment": 25000000,
+      "inventory_counts": {
+        "logical_assets": 1000000,
+        "logical_edges": 102275000,
+        "physical_asset_rows": 1011000,
+        "physical_edge_rows": 123266003
+      },
+      "resource_cohort": "deployed",
+      "operations": {
+        "findings-summary--baseline": {
+          "attempts": 3,
+          "successful": 0,
+          "budget_failures": 3,
+          "successful_median_ms": null,
+          "successful_max_query_memory": null,
+          "successful_max_read_bytes": null
+        },
+        "findings-summary--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 9653.695875000001,
+          "successful_max_query_memory": 1630422053,
+          "successful_max_read_bytes": 3380117183
+        },
+        "findings-clusters--baseline": {
+          "attempts": 3,
+          "successful": 0,
+          "budget_failures": 3,
+          "successful_median_ms": null,
+          "successful_max_query_memory": null,
+          "successful_max_read_bytes": null
+        },
+        "findings-clusters--candidate": {
+          "attempts": 3,
+          "successful": 0,
+          "budget_failures": 3,
+          "successful_median_ms": null,
+          "successful_max_query_memory": null,
+          "successful_max_read_bytes": null
+        },
+        "findings-summary-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 449.333875,
+          "successful_max_query_memory": 74056268,
+          "successful_max_read_bytes": 1905247384
+        },
+        "findings-summary-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 446.21054100000003,
+          "successful_max_query_memory": 165557539,
+          "successful_max_read_bytes": 1930889276
+        },
+        "findings-clusters-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 384.232208,
+          "successful_max_query_memory": 97650695,
+          "successful_max_read_bytes": 1697074118
+        },
+        "findings-clusters-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 433.58075,
+          "successful_max_query_memory": 203542679,
+          "successful_max_read_bytes": 1711386043
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 1137.987916,
+          "successful_max_query_memory": 50320345,
+          "successful_max_read_bytes": 6543532786
+        }
+      }
+    },
+    {
+      "artifact": "joins-stress-local16g-v2",
+      "report_sha256": "4f3fd713b1fa5e7e8640d919533346521d6d8ba439f0af975fd31115d5ec4fe9",
+      "source_patch_sha256": "58361f8106c9608d87785a1b7dba0680d1f4e4412ccefdde4a123fef39224bdf",
+      "source_base": "763859a5f5609dac30499088f7a30d9412bd128f",
+      "fixture_version": 5,
+      "passed": false,
+      "logical_findings": 5000000,
+      "logical_enrichment": 25000000,
+      "inventory_counts": {
+        "logical_assets": 1000000,
+        "logical_edges": 102275000,
+        "physical_asset_rows": 1011000,
+        "physical_edge_rows": 123266003
+      },
+      "resource_cohort": "local16g",
+      "operations": {
+        "findings-summary--baseline": {
+          "attempts": 3,
+          "successful": 0,
+          "budget_failures": 3,
+          "successful_median_ms": null,
+          "successful_max_query_memory": null,
+          "successful_max_read_bytes": null
+        },
+        "findings-summary--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 6177.897,
+          "successful_max_query_memory": 1762007729,
+          "successful_max_read_bytes": 3391094275
+        },
+        "findings-clusters--baseline": {
+          "attempts": 3,
+          "successful": 0,
+          "budget_failures": 3,
+          "successful_median_ms": null,
+          "successful_max_query_memory": null,
+          "successful_max_read_bytes": null
+        },
+        "findings-clusters--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 7790.718792,
+          "successful_max_query_memory": 1976340890,
+          "successful_max_read_bytes": 3556808723
+        },
+        "findings-summary-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 412.90162499999997,
+          "successful_max_query_memory": 74055973,
+          "successful_max_read_bytes": 1905247384
+        },
+        "findings-summary-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 429.71799999999996,
+          "successful_max_query_memory": 166290434,
+          "successful_max_read_bytes": 1930889276
+        },
+        "findings-clusters-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 390.16762500000004,
+          "successful_max_query_memory": 96581117,
+          "successful_max_read_bytes": 1697074118
+        },
+        "findings-clusters-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 430.869291,
+          "successful_max_query_memory": 203541063,
+          "successful_max_read_bytes": 1711386043
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 1111.774209,
+          "successful_max_query_memory": 51342643,
+          "successful_max_read_bytes": 6543532786
+        }
+      }
+    },
+    {
+      "artifact": "joins-latest-rows-smoke",
+      "report_sha256": "d5f69a6f2348f7de8d85602fd28228c0b810c0aede25d90b86ccc1d2678219a8",
+      "source_patch_sha256": "e59eb690c9078330680483efb4b65650d77c72195483650890797a01a3a880ee",
+      "source_base": "763859a5f5609dac30499088f7a30d9412bd128f",
+      "fixture_version": 5,
+      "passed": true,
+      "logical_findings": 1000,
+      "logical_enrichment": 5000,
+      "inventory_counts": {
+        "logical_assets": 2350,
+        "logical_edges": 23250,
+        "physical_asset_rows": 2550,
+        "physical_edge_rows": 27274
+      },
+      "resource_cohort": "deployed",
+      "operations": {
+        "findings-summary--baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 4.734249999999999,
+          "successful_max_query_memory": 3491499,
+          "successful_max_read_bytes": 605079
+        },
+        "findings-summary--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 5.127917,
+          "successful_max_query_memory": 1869411,
+          "successful_max_read_bytes": 605079
+        },
+        "findings-clusters--baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 5.293375,
+          "successful_max_query_memory": 6404770,
+          "successful_max_read_bytes": 622868
+        },
+        "findings-clusters--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 4.055167,
+          "successful_max_query_memory": 2105243,
+          "successful_max_read_bytes": 622868
+        },
+        "findings-summary-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 3.4631250000000002,
+          "successful_max_query_memory": 980068,
+          "successful_max_read_bytes": 605079
+        },
+        "findings-summary-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 3.481875,
+          "successful_max_query_memory": 976180,
+          "successful_max_read_bytes": 605079
+        },
+        "findings-clusters-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 5.608333,
+          "successful_max_query_memory": 1302354,
+          "successful_max_read_bytes": 622868
+        },
+        "findings-clusters-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 5.331167000000001,
+          "successful_max_query_memory": 1302562,
+          "successful_max_read_bytes": 622868
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 6.270375,
+          "successful_max_query_memory": 1276188,
+          "successful_max_read_bytes": 1251044
+        }
+      }
+    },
+    {
+      "artifact": "joins-latest-rows-large",
+      "report_sha256": "445858f2eecb04d13b409ee6437eaa56182b0a21769c3f7e4c7ea8aaf7ca7fe2",
+      "source_patch_sha256": "e59eb690c9078330680483efb4b65650d77c72195483650890797a01a3a880ee",
+      "source_base": "763859a5f5609dac30499088f7a30d9412bd128f",
+      "fixture_version": 5,
+      "passed": true,
+      "logical_findings": 1000000,
+      "logical_enrichment": 5000000,
+      "inventory_counts": {
+        "logical_assets": 860000,
+        "logical_edges": 21950000,
+        "physical_asset_rows": 870000,
+        "physical_edge_rows": 26162611
+      },
+      "resource_cohort": "deployed",
+      "operations": {
+        "findings-summary--baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 695.4973749999999,
+          "successful_max_query_memory": 947548323,
+          "successful_max_read_bytes": 663942343
+        },
+        "findings-summary--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 511.046334,
+          "successful_max_query_memory": 290660020,
+          "successful_max_read_bytes": 667901926
+        },
+        "findings-clusters--baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 789.563667,
+          "successful_max_query_memory": 1400788384,
+          "successful_max_read_bytes": 700004879
+        },
+        "findings-clusters--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 494.628958,
+          "successful_max_query_memory": 358524360,
+          "successful_max_read_bytes": 706260491
+        },
+        "findings-summary-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 79.114417,
+          "successful_max_query_memory": 18290924,
+          "successful_max_read_bytes": 339230372
+        },
+        "findings-summary-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 79.347459,
+          "successful_max_query_memory": 18145676,
+          "successful_max_read_bytes": 339208592
+        },
+        "findings-clusters-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 74.95837499999999,
+          "successful_max_query_memory": 30515966,
+          "successful_max_read_bytes": 313531684
+        },
+        "findings-clusters-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 74.090958,
+          "successful_max_query_memory": 26218014,
+          "successful_max_read_bytes": 313477746
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 247.659459,
+          "successful_max_query_memory": 37025815,
+          "successful_max_read_bytes": 1310127072
+        }
+      }
+    },
+    {
+      "artifact": "joins-latest-rows-stress-deployed",
+      "report_sha256": "8072e9056647440edb5eaeff67e9597576308c75a2101a7ef036cce64ec08648",
+      "source_patch_sha256": "a937e526eb094e144df50f5e51d38893a84014a097f7d99c6a35c6a5b676136b",
+      "source_base": "763859a5f5609dac30499088f7a30d9412bd128f",
+      "fixture_version": 5,
+      "passed": false,
+      "logical_findings": 5000000,
+      "logical_enrichment": 25000000,
+      "inventory_counts": {
+        "logical_assets": 1000000,
+        "logical_edges": 102275000,
+        "physical_asset_rows": 1011000,
+        "physical_edge_rows": 123266003
+      },
+      "resource_cohort": "deployed",
+      "operations": {
+        "findings-summary--baseline": {
+          "attempts": 3,
+          "successful": 0,
+          "budget_failures": 3,
+          "successful_median_ms": null,
+          "successful_max_query_memory": null,
+          "successful_max_read_bytes": null
+        },
+        "findings-summary--candidate": {
+          "attempts": 3,
+          "successful": 2,
+          "budget_failures": 3,
+          "successful_median_ms": 3808.8860835,
+          "successful_max_query_memory": 880661632,
+          "successful_max_read_bytes": 3398753732
+        },
+        "findings-clusters--baseline": {
+          "attempts": 3,
+          "successful": 0,
+          "budget_failures": 2,
+          "successful_median_ms": null,
+          "successful_max_query_memory": null,
+          "successful_max_read_bytes": null
+        },
+        "findings-clusters--candidate": {
+          "attempts": 3,
+          "successful": 2,
+          "budget_failures": 3,
+          "successful_median_ms": 4135.479271,
+          "successful_max_query_memory": 1098384868,
+          "successful_max_read_bytes": 3568207849
+        },
+        "findings-summary-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 456.040292,
+          "successful_max_query_memory": 69853452,
+          "successful_max_read_bytes": 1905247384
+        },
+        "findings-summary-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 420.997041,
+          "successful_max_query_memory": 65557323,
+          "successful_max_read_bytes": 1905138396
+        },
+        "findings-clusters-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 388.901584,
+          "successful_max_query_memory": 93323409,
+          "successful_max_read_bytes": 1697074118
+        },
+        "findings-clusters-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 390.261166,
+          "successful_max_query_memory": 93033578,
+          "successful_max_read_bytes": 1696804377
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 1191.9410830000002,
+          "successful_max_query_memory": 50324541,
+          "successful_max_read_bytes": 6543532786
+        }
+      }
+    },
+    {
+      "artifact": "joins-production-latest-smoke",
+      "report_sha256": "bb8c151a997dc1eba67aaf08bc0e977aa27aaeae0267bda2545b7b9707ca9332",
+      "source_patch_sha256": "5393c1da6b487bc58ad09dd510c60d282db0f7f43c43da95da7f1a9c5cba581c",
+      "source_base": "763859a5f5609dac30499088f7a30d9412bd128f",
+      "fixture_version": 5,
+      "passed": true,
+      "logical_findings": 1000,
+      "logical_enrichment": 5000,
+      "inventory_counts": {
+        "logical_assets": 2350,
+        "logical_edges": 23250,
+        "physical_asset_rows": 2550,
+        "physical_edge_rows": 27274
+      },
+      "resource_cohort": "deployed",
+      "operations": {
+        "findings-summary--baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 4.263167,
+          "successful_max_query_memory": 6415936,
+          "successful_max_read_bytes": 605079
+        },
+        "findings-summary--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 3.595333,
+          "successful_max_query_memory": 1895622,
+          "successful_max_read_bytes": 605079
+        },
+        "findings-clusters--baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 5.59375,
+          "successful_max_query_memory": 6405346,
+          "successful_max_read_bytes": 622868
+        },
+        "findings-clusters--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 4.609209000000001,
+          "successful_max_query_memory": 2105979,
+          "successful_max_read_bytes": 622868
+        },
+        "findings-summary-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 4.0682920000000005,
+          "successful_max_query_memory": 1064772,
+          "successful_max_read_bytes": 605079
+        },
+        "findings-summary-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 3.7273330000000002,
+          "successful_max_query_memory": 1308054,
+          "successful_max_read_bytes": 605079
+        },
+        "findings-clusters-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 4.841208,
+          "successful_max_query_memory": 1425511,
+          "successful_max_read_bytes": 622868
+        },
+        "findings-clusters-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 4.738916000000001,
+          "successful_max_query_memory": 1302402,
+          "successful_max_read_bytes": 622868
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 6.384125,
+          "successful_max_query_memory": 1164731,
+          "successful_max_read_bytes": 1251044
+        }
+      }
+    },
+    {
+      "artifact": "joins-final-guard-target",
+      "report_sha256": "710c7eb4a73ca7d5ac725dc1894fb72c837591a838db77d4a0131d06d6354a10",
+      "source_patch_sha256": "bff1c29af5173a534844c8fc647e14a54e216464a29b73362b7ea013c4d36f95",
+      "source_base": "763859a5f5609dac30499088f7a30d9412bd128f",
+      "fixture_version": 5,
+      "passed": true,
+      "logical_findings": 100000,
+      "logical_enrichment": 500000,
+      "inventory_counts": {
+        "logical_assets": 37000,
+        "logical_edges": 2065000,
+        "physical_asset_rows": 39000,
+        "physical_edge_rows": 2485617
+      },
+      "resource_cohort": "deployed",
+      "operations": {
+        "findings-summary--baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 74.03975,
+          "successful_max_query_memory": 117220549,
+          "successful_max_read_bytes": 64374994
+        },
+        "findings-summary--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 40.77875,
+          "successful_max_query_memory": 44275717,
+          "successful_max_read_bytes": 66028805
+        },
+        "findings-clusters--baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 84.639583,
+          "successful_max_query_memory": 164405618,
+          "successful_max_read_bytes": 67652938
+        },
+        "findings-clusters--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 44.309582999999996,
+          "successful_max_query_memory": 45444991,
+          "successful_max_read_bytes": 70876470
+        },
+        "findings-summary-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 16.109875,
+          "successful_max_query_memory": 6453025,
+          "successful_max_read_bytes": 55135682
+        },
+        "findings-summary-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 15.314167,
+          "successful_max_query_memory": 4565474,
+          "successful_max_read_bytes": 55133526
+        },
+        "findings-clusters-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 13.263583,
+          "successful_max_query_memory": 7710803,
+          "successful_max_read_bytes": 41793918
+        },
+        "findings-clusters-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 13.344999999999999,
+          "successful_max_query_memory": 3634786,
+          "successful_max_read_bytes": 41788539
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 26.693417,
+          "successful_max_query_memory": 5702227,
+          "successful_max_read_bytes": 125542578
+        }
+      }
+    },
+    {
+      "artifact": "joins-production-latest-large",
+      "report_sha256": "cc326d1dc0a66681c2460f373cd40b4079c65d0c700371669ce371ddc3cd1157",
+      "source_patch_sha256": "507e2bbce2149f68f6509b7c2133c53ccff01497468cef28c314ee522cb8e8e0",
+      "source_base": "763859a5f5609dac30499088f7a30d9412bd128f",
+      "fixture_version": 5,
+      "passed": true,
+      "logical_findings": 1000000,
+      "logical_enrichment": 5000000,
+      "inventory_counts": {
+        "logical_assets": 860000,
+        "logical_edges": 21950000,
+        "physical_asset_rows": 870000,
+        "physical_edge_rows": 26162611
+      },
+      "resource_cohort": "deployed",
+      "operations": {
+        "findings-summary--baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 662.3171249999999,
+          "successful_max_query_memory": 947632844,
+          "successful_max_read_bytes": 663942343
+        },
+        "findings-summary--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 505.34241599999996,
+          "successful_max_query_memory": 299770816,
+          "successful_max_read_bytes": 667901926
+        },
+        "findings-clusters--baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 3,
+          "successful_median_ms": 804.4365839999999,
+          "successful_max_query_memory": 1400966586,
+          "successful_max_read_bytes": 700004879
+        },
+        "findings-clusters--candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 502.533042,
+          "successful_max_query_memory": 360707672,
+          "successful_max_read_bytes": 706260491
+        },
+        "findings-summary-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 83.69675,
+          "successful_max_query_memory": 18145516,
+          "successful_max_read_bytes": 339230372
+        },
+        "findings-summary-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 81.525333,
+          "successful_max_query_memory": 18145516,
+          "successful_max_read_bytes": 339208592
+        },
+        "findings-clusters-sample-baseline": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 74.76325,
+          "successful_max_query_memory": 30518315,
+          "successful_max_read_bytes": 313531684
+        },
+        "findings-clusters-sample-candidate": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 73.313,
+          "successful_max_query_memory": 26218474,
+          "successful_max_read_bytes": 313477746
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "successful": 3,
+          "budget_failures": 0,
+          "successful_median_ms": 252.79212499999997,
+          "successful_max_query_memory": 37198192,
+          "successful_max_read_bytes": 1310127072
+        }
+      }
+    }
+  ],
+  "mixed_runs": [
+    {
+      "artifact": "joins-batch-v4-catchup-r1-c100",
+      "report_sha256": "679c5ae64773c1cbda6ff6cf1a3661df8e80e1d2b79a87a6a61cf64ff8ef5e72",
+      "source_patch_sha256": "084d22f292d31bdd78a3d5f3042a5f28d88745b5345423014e5aa28f39fe8e2a",
+      "passed": false,
+      "merge_phase": "catchup",
+      "variant": "baseline",
+      "repository_chunk_rows": 100,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244271854
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155316710
+        }
+      },
+      "parts_at_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244271854
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155316710
+        }
+      },
+      "read_p95_ms_including_failures": 10001.267,
+      "read_p99_ms_including_failures": 10001.285,
+      "query_records": 168,
+      "query_exceptions": 20,
+      "max_query_memory": 1359204167,
+      "operations": {
+        "summary": {
+          "offered": 15,
+          "verified": 7
+        },
+        "clusters": {
+          "offered": 15,
+          "verified": 5
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 5
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 4
+        }
+      }
+    },
+    {
+      "artifact": "joins-batch-v4-catchup-r1-c1000",
+      "report_sha256": "5257b547f5499ff83c548424b561b283953e001765e4a92c5f4633694c3c4ae3",
+      "source_patch_sha256": "084d22f292d31bdd78a3d5f3042a5f28d88745b5345423014e5aa28f39fe8e2a",
+      "passed": false,
+      "merge_phase": "catchup",
+      "variant": "baseline",
+      "repository_chunk_rows": 1000,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244288474
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155329798
+        }
+      },
+      "parts_at_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244288474
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155329798
+        }
+      },
+      "read_p95_ms_including_failures": 10001.367,
+      "read_p99_ms_including_failures": 10002.278,
+      "query_records": 61,
+      "query_exceptions": 22,
+      "max_query_memory": 1359200259,
+      "operations": {
+        "summary": {
+          "offered": 15,
+          "verified": 7
+        },
+        "clusters": {
+          "offered": 15,
+          "verified": 3
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 5
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 4
+        }
+      }
+    },
+    {
+      "artifact": "joins-batch-v4-catchup-r2-c100",
+      "report_sha256": "1d4b0d1ef9d7063ee3b3a687f1b455b7ad4c0627836566d3f746c452936c45ea",
+      "source_patch_sha256": "084d22f292d31bdd78a3d5f3042a5f28d88745b5345423014e5aa28f39fe8e2a",
+      "passed": false,
+      "merge_phase": "catchup",
+      "variant": "baseline",
+      "repository_chunk_rows": 100,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244292596
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155321782
+        }
+      },
+      "parts_at_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244292596
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155321782
+        }
+      },
+      "read_p95_ms_including_failures": 11001.629,
+      "read_p99_ms_including_failures": 11001.654,
+      "query_records": 125,
+      "query_exceptions": 22,
+      "max_query_memory": 1359200491,
+      "operations": {
+        "summary": {
+          "offered": 15,
+          "verified": 5
+        },
+        "clusters": {
+          "offered": 15,
+          "verified": 2
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 4
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 4
+        }
+      }
+    },
+    {
+      "artifact": "joins-batch-v4-catchup-r2-c1000",
+      "report_sha256": "f9d8a48b94002531bc7d8424f17a66f9452306ddca63047c980094aa6366e020",
+      "source_patch_sha256": "084d22f292d31bdd78a3d5f3042a5f28d88745b5345423014e5aa28f39fe8e2a",
+      "passed": false,
+      "merge_phase": "catchup",
+      "variant": "baseline",
+      "repository_chunk_rows": 1000,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244293076
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155344195
+        }
+      },
+      "parts_at_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244293076
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155344195
+        }
+      },
+      "read_p95_ms_including_failures": 10001.117,
+      "read_p99_ms_including_failures": 10001.203,
+      "query_records": 66,
+      "query_exceptions": 19,
+      "max_query_memory": 1222011053,
+      "operations": {
+        "summary": {
+          "offered": 15,
+          "verified": 4
+        },
+        "clusters": {
+          "offered": 15,
+          "verified": 8
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 6
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 5
+        }
+      }
+    },
+    {
+      "artifact": "joins-batch-v4-catchup-r3-c100",
+      "report_sha256": "6b8bbec8c67c55badce03891f3ec1a92c4b929afa7498fc7d038fee688e4e70a",
+      "source_patch_sha256": "084d22f292d31bdd78a3d5f3042a5f28d88745b5345423014e5aa28f39fe8e2a",
+      "passed": false,
+      "merge_phase": "catchup",
+      "variant": "baseline",
+      "repository_chunk_rows": 100,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244257646
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155338307
+        }
+      },
+      "parts_at_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244257646
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155338307
+        }
+      },
+      "read_p95_ms_including_failures": 11001.339,
+      "read_p99_ms_including_failures": 12000.664,
+      "query_records": 168,
+      "query_exceptions": 24,
+      "max_query_memory": 948532874,
+      "operations": {
+        "summary": {
+          "offered": 15,
+          "verified": 5
+        },
+        "clusters": {
+          "offered": 15,
+          "verified": 2
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 6
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 5
+        }
+      }
+    },
+    {
+      "artifact": "joins-batch-v4-catchup-r3-c1000",
+      "report_sha256": "d26d1cd8ecae6e9292967fc568445ab9d9751f3060f2a01f4117fce8b5731595",
+      "source_patch_sha256": "084d22f292d31bdd78a3d5f3042a5f28d88745b5345423014e5aa28f39fe8e2a",
+      "passed": false,
+      "merge_phase": "catchup",
+      "variant": "baseline",
+      "repository_chunk_rows": 1000,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244290388
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155359848
+        }
+      },
+      "parts_at_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244290388
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155359848
+        }
+      },
+      "read_p95_ms_including_failures": 6260.718,
+      "read_p99_ms_including_failures": 9264.916,
+      "query_records": 65,
+      "query_exceptions": 11,
+      "max_query_memory": 1222008509,
+      "operations": {
+        "summary": {
+          "offered": 15,
+          "verified": 12
+        },
+        "clusters": {
+          "offered": 15,
+          "verified": 9
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 5
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 5
+        }
+      }
+    },
+    {
+      "artifact": "joins-batch-v4-settled-r1-c100",
+      "report_sha256": "a029964cdda8dae3f1427e759c5b805a1b107660a0b3f49ff51032ba370ee2fa",
+      "source_patch_sha256": "084d22f292d31bdd78a3d5f3042a5f28d88745b5345423014e5aa28f39fe8e2a",
+      "passed": false,
+      "merge_phase": "settled",
+      "variant": "baseline",
+      "repository_chunk_rows": 100,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244275100
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155337093
+        }
+      },
+      "parts_at_start": {
+        "assets": {
+          "parts": 2,
+          "physical_rows": 860000,
+          "bytes_on_disk": 8043214
+        },
+        "finding_enrichment": {
+          "parts": 2,
+          "physical_rows": 6111953,
+          "bytes_on_disk": 44310950
+        },
+        "findings": {
+          "parts": 2,
+          "physical_rows": 1014912,
+          "bytes_on_disk": 83418772
+        },
+        "graph_edges": {
+          "parts": 3,
+          "physical_rows": 22573066,
+          "bytes_on_disk": 62878627
+        }
+      },
+      "read_p95_ms_including_failures": 901.012,
+      "read_p99_ms_including_failures": 956.422,
+      "query_records": 168,
+      "query_exceptions": 0,
+      "max_query_memory": 809850754,
+      "operations": {
+        "summary": {
+          "offered": 15,
+          "verified": 15
+        },
+        "clusters": {
+          "offered": 15,
+          "verified": 15
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 6
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 6
+        }
+      }
+    },
+    {
+      "artifact": "joins-batch-v4-settled-r1-c1000",
+      "report_sha256": "9b45b975dbf48f8b01c5e54bc7341aa2d074925140419c2b007578c4b8dde8c8",
+      "source_patch_sha256": "084d22f292d31bdd78a3d5f3042a5f28d88745b5345423014e5aa28f39fe8e2a",
+      "passed": false,
+      "merge_phase": "settled",
+      "variant": "baseline",
+      "repository_chunk_rows": 1000,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244286596
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155322313
+        }
+      },
+      "parts_at_start": {
+        "assets": {
+          "parts": 2,
+          "physical_rows": 860000,
+          "bytes_on_disk": 8043214
+        },
+        "finding_enrichment": {
+          "parts": 2,
+          "physical_rows": 6111953,
+          "bytes_on_disk": 44310950
+        },
+        "findings": {
+          "parts": 2,
+          "physical_rows": 1014912,
+          "bytes_on_disk": 83422882
+        },
+        "graph_edges": {
+          "parts": 3,
+          "physical_rows": 22573066,
+          "bytes_on_disk": 62878627
+        }
+      },
+      "read_p95_ms_including_failures": 847.27,
+      "read_p99_ms_including_failures": 986.912,
+      "query_records": 66,
+      "query_exceptions": 0,
+      "max_query_memory": 807464888,
+      "operations": {
+        "summary": {
+          "offered": 15,
+          "verified": 15
+        },
+        "clusters": {
+          "offered": 15,
+          "verified": 15
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 6
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 6
+        }
+      }
+    },
+    {
+      "artifact": "joins-batch-v4-settled-r2-c100",
+      "report_sha256": "7b4ea267e423e615c0d4914d7e71bd4e9df9d6a3962f396a1b22cc420407119f",
+      "source_patch_sha256": "084d22f292d31bdd78a3d5f3042a5f28d88745b5345423014e5aa28f39fe8e2a",
+      "passed": false,
+      "merge_phase": "settled",
+      "variant": "baseline",
+      "repository_chunk_rows": 100,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244292758
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155280114
+        }
+      },
+      "parts_at_start": {
+        "assets": {
+          "parts": 2,
+          "physical_rows": 860000,
+          "bytes_on_disk": 8043214
+        },
+        "finding_enrichment": {
+          "parts": 2,
+          "physical_rows": 6111953,
+          "bytes_on_disk": 44310950
+        },
+        "findings": {
+          "parts": 2,
+          "physical_rows": 1014912,
+          "bytes_on_disk": 83433842
+        },
+        "graph_edges": {
+          "parts": 3,
+          "physical_rows": 22573066,
+          "bytes_on_disk": 62799588
+        }
+      },
+      "read_p95_ms_including_failures": 914.618,
+      "read_p99_ms_including_failures": 952.112,
+      "query_records": 168,
+      "query_exceptions": 0,
+      "max_query_memory": 813769459,
+      "operations": {
+        "summary": {
+          "offered": 15,
+          "verified": 15
+        },
+        "clusters": {
+          "offered": 15,
+          "verified": 15
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 6
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 6
+        }
+      }
+    },
+    {
+      "artifact": "joins-batch-v4-settled-r2-c1000",
+      "report_sha256": "08650667fe2dfbd608f807f0fbcaf2a3cb7e82f445b3ef49b3b3caff8d81cf8b",
+      "source_patch_sha256": "084d22f292d31bdd78a3d5f3042a5f28d88745b5345423014e5aa28f39fe8e2a",
+      "passed": false,
+      "merge_phase": "settled",
+      "variant": "baseline",
+      "repository_chunk_rows": 1000,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244269664
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155357928
+        }
+      },
+      "parts_at_start": {
+        "assets": {
+          "parts": 2,
+          "physical_rows": 860000,
+          "bytes_on_disk": 8043212
+        },
+        "finding_enrichment": {
+          "parts": 2,
+          "physical_rows": 6111953,
+          "bytes_on_disk": 44310950
+        },
+        "findings": {
+          "parts": 2,
+          "physical_rows": 1014912,
+          "bytes_on_disk": 83422652
+        },
+        "graph_edges": {
+          "parts": 3,
+          "physical_rows": 22573066,
+          "bytes_on_disk": 62877060
+        }
+      },
+      "read_p95_ms_including_failures": 820.287,
+      "read_p99_ms_including_failures": 947.533,
+      "query_records": 66,
+      "query_exceptions": 0,
+      "max_query_memory": 811662053,
+      "operations": {
+        "summary": {
+          "offered": 15,
+          "verified": 15
+        },
+        "clusters": {
+          "offered": 15,
+          "verified": 15
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 6
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 6
+        }
+      }
+    },
+    {
+      "artifact": "joins-batch-v4-settled-r3-c100",
+      "report_sha256": "c4ae2bee4998f2aa3330557a14d5f66c7e0eef46f6a8589408804e2e780f6f23",
+      "source_patch_sha256": "084d22f292d31bdd78a3d5f3042a5f28d88745b5345423014e5aa28f39fe8e2a",
+      "passed": false,
+      "merge_phase": "settled",
+      "variant": "baseline",
+      "repository_chunk_rows": 100,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244278430
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155358849
+        }
+      },
+      "parts_at_start": {
+        "assets": {
+          "parts": 2,
+          "physical_rows": 860000,
+          "bytes_on_disk": 8043212
+        },
+        "finding_enrichment": {
+          "parts": 2,
+          "physical_rows": 6111953,
+          "bytes_on_disk": 44310950
+        },
+        "findings": {
+          "parts": 2,
+          "physical_rows": 1014912,
+          "bytes_on_disk": 83422488
+        },
+        "graph_edges": {
+          "parts": 3,
+          "physical_rows": 22573066,
+          "bytes_on_disk": 62876786
+        }
+      },
+      "read_p95_ms_including_failures": 864.177,
+      "read_p99_ms_including_failures": 888.02,
+      "query_records": 168,
+      "query_exceptions": 0,
+      "max_query_memory": 810133102,
+      "operations": {
+        "summary": {
+          "offered": 15,
+          "verified": 15
+        },
+        "clusters": {
+          "offered": 15,
+          "verified": 15
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 6
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 6
+        }
+      }
+    },
+    {
+      "artifact": "joins-batch-v4-settled-r3-c1000",
+      "report_sha256": "a8a654b428dd1da976d391cceb350dc95873fb9c94282c22ae5a5f41e5e95845",
+      "source_patch_sha256": "084d22f292d31bdd78a3d5f3042a5f28d88745b5345423014e5aa28f39fe8e2a",
+      "passed": false,
+      "merge_phase": "settled",
+      "variant": "baseline",
+      "repository_chunk_rows": 1000,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244273090
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155334968
+        }
+      },
+      "parts_at_start": {
+        "assets": {
+          "parts": 2,
+          "physical_rows": 860000,
+          "bytes_on_disk": 8043212
+        },
+        "finding_enrichment": {
+          "parts": 2,
+          "physical_rows": 6111953,
+          "bytes_on_disk": 44310950
+        },
+        "findings": {
+          "parts": 2,
+          "physical_rows": 1014912,
+          "bytes_on_disk": 83425378
+        },
+        "graph_edges": {
+          "parts": 3,
+          "physical_rows": 22573066,
+          "bytes_on_disk": 62860263
+        }
+      },
+      "read_p95_ms_including_failures": 777.614,
+      "read_p99_ms_including_failures": 939.145,
+      "query_records": 66,
+      "query_exceptions": 0,
+      "max_query_memory": 813743569,
+      "operations": {
+        "summary": {
+          "offered": 15,
+          "verified": 15
+        },
+        "clusters": {
+          "offered": 15,
+          "verified": 15
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 6
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 6
+        }
+      }
+    },
+    {
+      "artifact": "joins-latest-mixed-catchup-r1-candidate",
+      "report_sha256": "d31c8d6a4caf9f92402f680e65c3231a16631a1927f06c18d25262c627e280ec",
+      "source_patch_sha256": "a937e526eb094e144df50f5e51d38893a84014a097f7d99c6a35c6a5b676136b",
+      "passed": false,
+      "merge_phase": "catchup",
+      "variant": "candidate",
+      "repository_chunk_rows": 1000,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244282918
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155339971
+        }
+      },
+      "parts_at_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244282918
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155339971
+        }
+      },
+      "read_p95_ms_including_failures": 2744.748,
+      "read_p99_ms_including_failures": 2746.874,
+      "query_records": 66,
+      "query_exceptions": 0,
+      "max_query_memory": 359974791,
+      "operations": {
+        "summary": {
+          "offered": 15,
+          "verified": 15
+        },
+        "clusters": {
+          "offered": 15,
+          "verified": 15
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 6
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 6
+        }
+      }
+    },
+    {
+      "artifact": "joins-latest-mixed-catchup-r2-candidate",
+      "report_sha256": "cb348a763b712c85e3e6eddc1648351324c063b09aac9f9f83d357ba43f7f558",
+      "source_patch_sha256": "a937e526eb094e144df50f5e51d38893a84014a097f7d99c6a35c6a5b676136b",
+      "passed": false,
+      "merge_phase": "catchup",
+      "variant": "candidate",
+      "repository_chunk_rows": 1000,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244267444
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155323446
+        }
+      },
+      "parts_at_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244267444
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155323446
+        }
+      },
+      "read_p95_ms_including_failures": 2578.563,
+      "read_p99_ms_including_failures": 2579.571,
+      "query_records": 66,
+      "query_exceptions": 0,
+      "max_query_memory": 360676700,
+      "operations": {
+        "summary": {
+          "offered": 15,
+          "verified": 15
+        },
+        "clusters": {
+          "offered": 15,
+          "verified": 15
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 6
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 6
+        }
+      }
+    },
+    {
+      "artifact": "joins-latest-mixed-catchup-r3-candidate",
+      "report_sha256": "e47cec9ecd381007599f93d5c2b7d1fb7732523c804605ca46c16d5eee5bd8e6",
+      "source_patch_sha256": "a937e526eb094e144df50f5e51d38893a84014a097f7d99c6a35c6a5b676136b",
+      "passed": false,
+      "merge_phase": "catchup",
+      "variant": "candidate",
+      "repository_chunk_rows": 1000,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244267048
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155485464
+        }
+      },
+      "parts_at_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 870000,
+          "bytes_on_disk": 8202194
+        },
+        "finding_enrichment": {
+          "parts": 15,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 89151644
+        },
+        "findings": {
+          "parts": 9,
+          "physical_rows": 3000000,
+          "bytes_on_disk": 244267048
+        },
+        "graph_edges": {
+          "parts": 25,
+          "physical_rows": 26162611,
+          "bytes_on_disk": 155485464
+        }
+      },
+      "read_p95_ms_including_failures": 2539.953,
+      "read_p99_ms_including_failures": 2638.626,
+      "query_records": 66,
+      "query_exceptions": 0,
+      "max_query_memory": 359774979,
+      "operations": {
+        "summary": {
+          "offered": 15,
+          "verified": 15
+        },
+        "clusters": {
+          "offered": 15,
+          "verified": 15
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 6
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 6
+        }
+      }
+    }
+  ],
+  "guard_mutations": [
+    {
+      "artifact": "joins-memory-regression",
+      "report_sha256": "a0a3f6c5e57ad9a7ad3e5cb35d01fa971e00fc830a4a127f14bc51ad8b7e7ec3",
+      "expected_failure": true,
+      "claim": "restoring historical broad queries rejected by target memory guard"
+    },
+    {
+      "artifact": "joins-latest-state-regression",
+      "report_sha256": "65d8a288e927e3e7efb7f7b7dc260d56b2b975ac98de5620412a42e3bb0d01cf",
+      "expected_failure": true,
+      "claim": "removing enrichment dedup rejected by independent lifecycle oracle"
+    }
+  ]
+}

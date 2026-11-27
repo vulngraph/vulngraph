@@ -89,8 +89,9 @@ At 100k findings and 1m enrichment rows, all 27 dashboard samples pass budgets,
 baseline parity and independently calculated summary/risk expectations. Risk,
 unfiltered summary and clusters have median 32.14/36.17/40.42 ms and peak query
 memory 58,397,981/64,862,031/106,008,054 bytes. Filtered summary/clusters peak below
-4.8 MB. Larger joins with versions, skew, fan-out and concurrent writes remain
-unmeasured; these figures do not compare ClickHouse with Postgres.
+4.8 MB. Larger joins with versions, skew, fan-out and concurrent writes were unmeasured
+at this milestone; the [large-join continuation](large-join-measurements.md) records
+subsequent evidence. These figures do not compare ClickHouse with Postgres.
 
 ## Reproduction, retention and limitations
 

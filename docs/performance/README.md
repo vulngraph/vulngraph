@@ -102,7 +102,8 @@ only the query dataset, not every dimension in the full deployment profile.
 history, not elapsed aging. `PERF_QUERY_EXPERIMENT=keys` replays the rejected
 key-selection/argMax experiment; `buffers` replays the rejected default-cap
 experiment. Production SQL/settings are unchanged. Failed runs remain in their output directories.
-See [initial query evidence and decisions](query-measurements.md).
+See [initial query evidence and decisions](query-measurements.md) and
+[large current-state join measurements](large-join-measurements.md).
 
 ## Evidence ledger — 2026-11-27
 

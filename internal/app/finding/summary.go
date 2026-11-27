@@ -70,13 +70,12 @@ func (r *CHRepo) Summary(ctx context.Context, f Filter) (Summary, error) {
 	qCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	innerWhere := ""
+	query := summaryLatestRows
 	var args []any
 	if f.Source != "" {
-		innerWhere = "WHERE source = ?"
+		query = fmt.Sprintf(summaryOpenFindings, "WHERE source = ?")
 		args = append(args, f.Source)
 	}
-	query := fmt.Sprintf(summaryOpenFindings, innerWhere)
 
 	s := newSummary()
 	err := r.ch.Select(qCtx, func(rows driver.Rows) error {

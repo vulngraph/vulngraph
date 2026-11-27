@@ -107,13 +107,12 @@ func (r *CHRepo) Clusters(ctx context.Context, f Filter) ([]Cluster, int, error)
 	qCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	innerWhere := ""
+	query := clustersLatestRows
 	var args []any
 	if f.Source != "" {
-		innerWhere = "WHERE source = ?"
+		query = fmt.Sprintf(clustersByCheck, "WHERE source = ?")
 		args = append(args, f.Source)
 	}
-	query := fmt.Sprintf(clustersByCheck, innerWhere)
 	args = append(args, clusterLimit)
 
 	var out []Cluster
@@ -142,7 +141,7 @@ func (r *CHRepo) Clusters(ctx context.Context, f Filter) ([]Cluster, int, error)
 			c.KnownExploited = kev != 0
 			out = append(out, c)
 		}
-		return nil
+		return rows.Err()
 	}, query, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("Clusters: %w", err)

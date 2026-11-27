@@ -312,6 +312,13 @@ func (s *Service) Enrich(ctx context.Context, f finding.Finding) (Score, error) 
 		return s.Enrich(ctx, f)
 	}
 
+	// Writers extend their budget to finish valid computed rows. A cancelled
+	// source/assessment is not a valid partial measurement to publish under that
+	// fresh budget; leave the previous result intact so the job can retry.
+	if err := ctx.Err(); err != nil {
+		return Score{}, fmt.Errorf("Enrich: evaluation interrupted: %w", err)
+	}
+
 	// The three writes below touch three independent tables (finding_enrichment,
 	// signals, beliefs) and none reads back what another just wrote, so they run
 	// concurrently. RecordEnrichment/WriteFactors errors abort Enrich; a belief

@@ -114,29 +114,25 @@ func (ExposureType) Evaluate(_ context.Context, f finding.Finding) (Factor, bool
 
 // ── blast radius ────────────────────────────────────────────────────────────
 
-// BlastRadiusProvider sizes a finding's reach. asset.Service implements it.
-// The returned asset.BlastRadius already carries the full reachable-asset
-// list (AccountID and Type per asset) — breakdownFromAssets below turns that
-// into the per-account shape blastPoints needs, with no change to this
-// interface or its implementation required. When a breakdown is built at all,
-// it is built from THIS call's own asset list, and its own count becomes the
-// score's `n` too — see countWithBreakdown for why a breakdown is never
-// stitched onto a count from a different walk.
+// BlastRadiusProvider sizes a finding's reach. asset.Service also provides the
+// narrower account summary below. Both paths use the same ClickHouse traversal;
+// a breakdown is always paired with its own count, never another walk's count.
 type BlastRadiusProvider interface {
 	BlastRadius(ctx context.Context, seedID string, maxDepth int) (asset.BlastRadius, error)
 }
 
-// BlastRadiusCounter is the Ladybug reachable-count used for shadow comparison.
+type blastAccountProvider interface {
+	BlastRadiusAccounts(context.Context, string, int) (asset.BlastAccountCounts, error)
+}
+
+// BlastRadiusCounter is the native graph's bounded reachable count.
 // graphstore.Service implements it. Counts distinct reachable Asset+IamRole nodes,
 // excluding the seed — versus the ClickHouse provider's len(Assets), which walks all
-// edge types and includes the seed. See Shadow below.
+// edge types and includes the seed.
 //
 // BlastRadiusCounter deliberately stays a plain count, not a breakdown: Ladybug's
-// Cypher variable-length traversal is the fast path specifically because it
-// does the walk in one query without materialising every node in Go, and a
-// GROUP BY dimension would give that up for every finding just to serve the
-// minority that need it. See countWithBreakdown for how the two providers are
-// combined instead.
+// immutable adjacency supplies a bounded count without reading ClickHouse.
+// See countWithBreakdown for how the providers' different load sets are combined.
 type BlastRadiusCounter interface {
 	BlastRadiusCount(ctx context.Context, seedID string, depth int) (int, error)
 }
@@ -144,9 +140,8 @@ type BlastRadiusCounter interface {
 // BlastRadius scores how many assets a finding's resource can reach — a wider
 // blast radius is riskier.
 //
-// Counter (Ladybug) is the primary when set: a single variable-length Cypher
-// traversal replaces the sequential ClickHouse BFS (hundreds of queries →
-// one query per finding). Provider (ClickHouse) is the fallback when Ladybug is
+// Counter (Ladybug) is the primary when set. Provider (ClickHouse) confirms the
+// account distribution for larger counts and is the fallback when Ladybug is
 // unavailable or returns an error. Set Counter = graphstore.Service in
 // production; leave nil for tests or when Ladybug is disabled.
 type BlastRadius struct {
@@ -240,8 +235,8 @@ func breakdownFromAssets(seedID string, assets []asset.Asset) BlastBreakdown {
 }
 
 // countWithBreakdown returns the reachable-asset count and, when available,
-// its per-account breakdown. Ladybug (single Cypher query, the hot path across
-// 16 enrich workers) drives the count when set; ClickHouse's BFS is the
+// its per-account breakdown. Ladybug's immutable adjacency drives the count
+// when set; ClickHouse's BFS is the
 // fallback when Ladybug is unavailable or errors.
 //
 // The breakdown itself always comes from ClickHouse — Ladybug's
@@ -273,11 +268,15 @@ func (b BlastRadius) countWithBreakdown(ctx context.Context, resourceID string) 
 	if b.Provider == nil {
 		return 0, nil, nil
 	}
-	br, err := b.Provider.BlastRadius(ctx, resourceID, blastDepth)
+	bd, truncated, err := b.accountBreakdown(ctx, resourceID)
 	if err != nil {
 		return 0, nil, err
 	}
-	bd := breakdownFromAssets(resourceID, br.Assets)
+	if truncated {
+		// The visited assets are a lower bound, not an account distribution
+		// for the whole walk. A partial sample must never establish a discount.
+		return bd.Total, nil, nil
+	}
 	return bd.Total, &bd, nil
 }
 
@@ -288,19 +287,37 @@ func (b BlastRadius) countWithBreakdown(ctx context.Context, resourceID string) 
 // skipping there can never diverge from the un-skipped answer. Errors are
 // swallowed to a nil breakdown: the Ladybug count already stands as the score,
 // and a failed confirmation must not block or degrade it (see
-// countWithBreakdown doc).
+// countWithBreakdown doc). A truncated walk is also insufficient evidence for
+// discounting: its account sample may omit independent targets.
 func (b BlastRadius) confirmBreakdown(ctx context.Context, resourceID string, n int) *BlastBreakdown {
 	if n <= blastAccountCap || b.Provider == nil {
 		return nil
 	}
-	br, err := b.Provider.BlastRadius(ctx, resourceID, blastDepth)
+	bd, truncated, err := b.accountBreakdown(ctx, resourceID)
 	if err != nil {
 		log.FromContext(ctx).Warn().Err(err).Str("resource_id", resourceID).
 			Msg("blast_radius: account breakdown fetch failed, scoring without same-account dedupe")
 		return nil
 	}
-	bd := breakdownFromAssets(resourceID, br.Assets)
+	if truncated {
+		return nil // retain the native count; an incomplete sample cannot discount it
+	}
 	return &bd
+}
+
+func (b BlastRadius) accountBreakdown(ctx context.Context, resourceID string) (BlastBreakdown, bool, error) {
+	if provider, ok := b.Provider.(blastAccountProvider); ok {
+		counts, err := provider.BlastRadiusAccounts(ctx, resourceID, blastDepth)
+		if err != nil {
+			return BlastBreakdown{}, false, fmt.Errorf("blast account counts: %w", err)
+		}
+		return BlastBreakdown{Total: counts.Total, ByAccount: counts.ByAccount}, counts.Truncated, nil
+	}
+	br, err := b.Provider.BlastRadius(ctx, resourceID, blastDepth)
+	if err != nil {
+		return BlastBreakdown{}, false, fmt.Errorf("blast radius: %w", err)
+	}
+	return breakdownFromAssets(resourceID, br.Assets), br.Truncated, nil
 }
 
 // blastPoints weights the reachable-asset count into a score contribution and

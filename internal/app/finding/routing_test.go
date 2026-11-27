@@ -54,7 +54,7 @@ func TestListKeysQuery_RoutingFiltersPruneInsideEnrichment(t *testing.T) {
 
 	plain, _, err := listKeysQuery(Filter{})
 	require.NoError(t, err)
-	require.Contains(t, plain, "LEFT JOIN (", "no routing filter keeps never-enriched findings listable")
+	require.NotContains(t, plain, "JOIN (", "ordinary pages keep never-enriched findings listable without a join")
 }
 
 func TestListHandler_RoutingFilters(t *testing.T) {

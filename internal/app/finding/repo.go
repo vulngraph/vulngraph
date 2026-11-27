@@ -117,9 +117,9 @@ const (
 	// scoping by it makes fe's nested subquery build a huge id list that is
 	// SLOWER than leaving fe unscoped — a filter too coarse to prune gains
 	// nothing from scoping and pays for building the IN-list anyway. A
-	// source-only or no-filter call leaves fe unscoped, which is this query's
-	// own known-expensive shape regardless (List's HAVING-based
-	// filters can't prune before GROUP BY either way).
+	// source-only or unscoped call leaves fe unscoped when an enrichment filter
+	// or sort needs it. Otherwise page selection uses selectFindingBaseKeys
+	// and omits the join; ByIDs hydrates the selected rows' enrichment.
 	//
 	// findingKeysEnrichmentCols (not the shared 10-column
 	// findingEnrichmentJoinCols ByIDs/ByResourceIDs/Get use) carries ONLY
@@ -159,6 +159,14 @@ const (
 			GROUP BY id%s
 		) fe ON fe.id = f.id`
 )
+
+// Ordinary pages filter and order only finding columns. Their enrichment is
+// hydrated by ByIDs after selecting the page, so no corpus-wide join is needed.
+const selectFindingBaseKeys = `SELECT f.id,
+ argMax(f.severity, f.synced_at) AS severity,
+ argMax(f.detected_at, f.synced_at) AS detected_at,
+ argMax(f.resolved_at, f.synced_at) AS resolved_at
+ FROM findings f`
 
 // findingKeysEnrichmentCols is selectFindingKeysArgMax's fe subquery column
 // list — see that const's comment for why it's narrower than
@@ -494,12 +502,19 @@ func listKeysQuery(f Filter) (string, []any, error) {
 		}
 	}
 
-	inner := fmt.Sprintf(selectFindingKeysArgMax, joinKind, feScope, feHaving)
-	args := append(append(append([]any{}, feScopeArgs...), feHavingArgs...), whereArgs...)
+	inner, groupBy := selectFindingBaseKeys, "f.id"
+	args := append([]any{}, whereArgs...)
+	needsEnrichment := f.MinScore > 0 || f.SortByScore || f.SafeOnly || f.MustFixOnly ||
+		f.Unenriched || f.StaleFirst || feHaving != ""
+	if needsEnrichment {
+		inner = fmt.Sprintf(selectFindingKeysArgMax, joinKind, feScope, feHaving)
+		groupBy = findingKeysGroupBy
+		args = append(append(append([]any{}, feScopeArgs...), feHavingArgs...), whereArgs...)
+	}
 	if len(whereConds) > 0 {
 		inner += " WHERE " + strings.Join(whereConds, " AND ")
 	}
-	inner += " GROUP BY " + findingKeysGroupBy
+	inner += " GROUP BY " + groupBy
 	if len(havingConds) > 0 {
 		inner += " HAVING " + strings.Join(havingConds, " AND ")
 		args = append(args, havingArgs...)

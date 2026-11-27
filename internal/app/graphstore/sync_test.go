@@ -342,40 +342,23 @@ func TestNamedQueries_ReturnGraph(t *testing.T) {
 	require.GreaterOrEqual(t, count, 1, "BlastRadiusCount should reach role-1")
 }
 
-// TestBlastRadiusCountCache verifies that blastRadiusCache is populated on first
-// call and cleared on SyncFromSources. Uses nodes with an ExposedToInternet edge
-// which is in the sync allowlist and the Ladybug schema, guaranteeing insertion.
-func TestBlastRadiusCountCache(t *testing.T) {
-	ctx := context.Background()
+// A topology replacement must change counts without retaining a prior generation.
+func TestBlastRadiusCountTracksTopology(t *testing.T) {
+	ctx := t.Context()
 	svc, err := Open("", 64, 0, 0, "")
 	require.NoError(t, err)
 	defer svc.Close()
-
-	assets := []asset.Asset{
-		{ID: "a1", Name: "web", Type: "load_balancer", Provider: "aws", RiskScore: 80},
-		{ID: "internet", Name: "internet", Type: "internet", Provider: "internet", RiskScore: 0},
-	}
-	// ExposedToInternet is definitely in edgeTypeToRel and the schema.
-	edges := []asset.Edge{{SrcID: "a1", DstID: "internet", EdgeType: "ExposedToInternet"}}
-	err = svc.SyncFromSources(ctx, 0, stubAssets{assets}, stubEdges{edges}, nil)
+	assets, edges := blastFixture()
+	require.NoError(t, svc.SyncFromSources(ctx, 0, stubAssets{assets}, stubEdges{edges}, nil))
+	before, err := svc.BlastRadiusCount(ctx, "lb-a", 2)
 	require.NoError(t, err)
-
-	// First call — result stored in cache regardless of value.
-	count1, err := svc.BlastRadiusCount(ctx, "a1", 2)
+	require.Equal(t, 4, before)
+	edges[0].SrcID = "lb-c"
+	require.NoError(t, svc.SyncFromSources(ctx, 0, stubAssets{assets}, stubEdges{edges}, nil))
+	after, err := svc.BlastRadiusCount(ctx, "lb-a", 2)
 	require.NoError(t, err)
-
-	// Cache entry must exist after first call.
-	_, cached := svc.blastRadiusCache.Load("a1:2")
-	require.True(t, cached, "blastRadiusCache should be populated after first call")
-
-	// Second call — must return same value (cache hit, no Ladybug query).
-	count2, err := svc.BlastRadiusCount(ctx, "a1", 2)
-	require.NoError(t, err)
-	require.Equal(t, count1, count2, "cache hit must return identical value")
-
-	// After sync the cache must be cleared.
-	err = svc.SyncFromSources(ctx, 0, stubAssets{assets}, stubEdges{edges}, nil)
-	require.NoError(t, err)
-	_, cached = svc.blastRadiusCache.Load("a1:2")
-	require.False(t, cached, "blastRadiusCache must be cleared after SyncFromSources")
+	require.Equal(t, 2, after)
+	svc.Close()
+	_, err = svc.BlastRadiusCount(ctx, "lb-a", 2)
+	require.ErrorIs(t, err, ErrLadybugUnavailable)
 }

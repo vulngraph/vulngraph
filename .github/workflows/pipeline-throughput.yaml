@@ -25,7 +25,7 @@ jobs:
   pipeline:
     name: Real pipeline contracts and costs
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -37,7 +37,9 @@ jobs:
       - name: Fetch pinned LadybugDB
         run: scripts/fetch-ladybug.sh linux-amd64
       - name: Validate benchmark code
-        run: go vet -tags=integration ./internal/throughput ./internal/jobs ./internal/app/asset ./internal/app/finding ./internal/app/connector ./internal/migrate ./migrations/...
+        run: |
+          go vet -tags=integration ./internal/throughput ./internal/jobs ./internal/app/asset ./internal/app/finding ./internal/app/enrich ./internal/app/correlate ./internal/app/connector ./internal/migrate ./migrations/...
+          python3 -m unittest discover -s scripts -p performance_trend_test.py
       - name: Measure connector API fixtures
         env:
           PERF_CONNECTORS: "1"
@@ -52,6 +54,7 @@ jobs:
           PERF_PROFILE_INPUT: ${{ inputs.profile }}
           PERF_CH_MEMORY: 3g
           PERF_CH_CPUS: "2"
+          PERF_SOAK_SECONDS: "60"
           PERF_CONNECTOR_MAX: ${{ github.event_name == 'workflow_dispatch' && '10000' || '1000' }}
           PERF_CONNECTOR_DIR: ${{ runner.temp }}/connector-throughput
         run: scripts/benchmark-pipeline.sh "$PERF_PROFILE_INPUT" "$RUNNER_TEMP/pipeline-throughput"

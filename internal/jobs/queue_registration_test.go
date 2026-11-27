@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/riverqueue/river"
 	"github.com/stretchr/testify/assert"
@@ -579,6 +580,20 @@ func TestEveryQueueDeclaresItsConcurrency(t *testing.T) {
 		require.Truef(t, ok,
 			"queue %q (carrying %q) is not in queueWorkerCounts, so it silently gets one worker — "+
 				"state the number, even when it is 1", queue, kind)
+	}
+}
+
+func TestQueueFetchCadencePreservesWorkerLimits(t *testing.T) {
+	for queue, config := range consumedQueues(nil) {
+		require.Equal(t, queueWorkerCounts[queue], config.MaxWorkers, queue)
+		if queue == queueEnrich {
+			require.Positive(t, config.FetchCooldown)
+			require.GreaterOrEqual(t, config.MaxWorkers*int(time.Second/config.FetchCooldown), 400,
+				"the fetch cadence must allow at least 400 short jobs/s without adding workers")
+		} else {
+			require.Zero(t, config.FetchCooldown, queue)
+		}
+		require.Zero(t, config.FetchPollInterval, "idle queues must retain River's polling default")
 	}
 }
 

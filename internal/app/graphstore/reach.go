@@ -308,7 +308,6 @@ func (s *Service) prewarmSignalCache(sigByResource map[string]NodeSignals) {
 		notReached = ReachUnknown
 	}
 	s.nodeSignalsCache.Range(func(k, _ any) bool { s.nodeSignalsCache.Delete(k); return true })
-	s.blastRadiusCache.Range(func(k, _ any) bool { s.blastRadiusCache.Delete(k); return true })
 	for id, sig := range sigByResource {
 		// Exposed, ToxicCombo and InternetHops are topology-derived — no
 		// SignalSource populates them, so the rollup carries zero values (which for

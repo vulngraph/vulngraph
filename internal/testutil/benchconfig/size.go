@@ -20,3 +20,18 @@ func MaxSize(t *testing.T) int {
 		return 0
 	}
 }
+
+// SoakCHConcurrency keeps the conservative four-slot cohort distinct from the
+// eight-slot production default. Storage-only benchmark phases remain at four.
+func SoakCHConcurrency(t *testing.T) int {
+	t.Helper()
+	switch os.Getenv("PERF_SOAK_CH_CONCURRENCY") {
+	case "", "4":
+		return 4
+	case "8":
+		return 8
+	default:
+		t.Fatal("PERF_SOAK_CH_CONCURRENCY must be 4 or 8")
+		return 0
+	}
+}

@@ -65,6 +65,14 @@ func (GCPImpersonation) Correlate(g Graph) []asset.Edge {
 		byProject[sa.AccountID] = append(byProject[sa.AccountID], sa)
 	}
 
+	// Sort each oversized project once. Sorting and copying its entire account
+	// set for every privileged source defeats the otherwise bounded fan-out.
+	for _, project := range byProject {
+		if len(project) > maxImpersonationTargetsPerSA+1 {
+			slices.SortFunc(project, func(a, b asset.Asset) int { return strings.Compare(a.ID, b.ID) })
+		}
+	}
+
 	var edges []asset.Edge
 	for _, src := range sas {
 		if src.AccountID == "" || !canImpersonate(src.Metadata["permissions"]) {
@@ -72,19 +80,15 @@ func (GCPImpersonation) Correlate(g Graph) []asset.Edge {
 		}
 		technique := impersonationTechnique(src.Metadata["permissions"])
 
-		// Real targets only (exclude self), then deterministic truncation so the
-		// cap counts actual edges, not a self-entry that would be skipped.
-		targets := make([]asset.Asset, 0, len(byProject[src.AccountID]))
+		count := 0
 		for _, dst := range byProject[src.AccountID] {
-			if dst.ID != src.ID {
-				targets = append(targets, dst)
+			if dst.ID == src.ID {
+				continue
 			}
-		}
-		if len(targets) > maxImpersonationTargetsPerSA {
-			slices.SortFunc(targets, func(a, b asset.Asset) int { return strings.Compare(a.ID, b.ID) })
-			targets = targets[:maxImpersonationTargetsPerSA]
-		}
-		for _, dst := range targets {
+			if count >= maxImpersonationTargetsPerSA {
+				break
+			}
+			count++
 			edges = append(edges, asset.Edge{
 				SrcID: src.ID, SrcType: "gcp_service_account",
 				DstID: dst.ID, DstType: "gcp_service_account",

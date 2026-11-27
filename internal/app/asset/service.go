@@ -22,6 +22,7 @@ type Repo interface {
 	FindPackageVersions(ctx context.Context, name string, limit int) ([]Asset, error)
 	EdgesFrom(ctx context.Context, srcIDs []string) ([]Edge, error)
 	EdgesTo(ctx context.Context, dstIDs []string) ([]Edge, error)
+	EdgesForAttack(ctx context.Context, ids []string) ([]Edge, error)
 	EdgesInto(ctx context.Context, dstID, edgeType string) ([]Edge, error)
 	EdgesIntoTypes(ctx context.Context, dstID string, edgeTypes []string) ([]Edge, error)
 	EdgesOut(ctx context.Context, srcID, edgeType string) ([]Edge, error)
@@ -34,6 +35,7 @@ type Repo interface {
 	PackageRunners(ctx context.Context, packageIDs []string) ([]PackageRunner, error)
 	CountPackages(ctx context.Context) (int64, error)
 	ByIDs(ctx context.Context, ids []string) ([]Asset, error)
+	AccountsByIDs(ctx context.Context, ids []string) (map[string]string, error)
 	ExistingIDs(ctx context.Context, ids []string) ([]string, error)
 	LiveIDs(ctx context.Context, ids []string) ([]string, error)
 	VerifyExpiredEphemeral(ctx context.Context, ids []string) (map[string]bool, error)
@@ -93,6 +95,9 @@ func (s *Service) ChangeLog(ctx context.Context, assetID string, limit int) ([]F
 // Ingest stores a batch of assets and their edges.
 func (s *Service) Ingest(ctx context.Context, assets []Asset, edges []Edge) error {
 	s.pinFirstDiscoveredAt(ctx, assets)
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("Ingest: observation interrupted: %w", err)
+	}
 	if err := s.repo.UpsertAssets(ctx, assets); err != nil {
 		return fmt.Errorf("Ingest: %w", err)
 	}
@@ -114,13 +119,16 @@ func (s *Service) IngestEdges(ctx context.Context, edges []Edge) error {
 // annotating an existing asset's metadata rather than emitting an edge).
 func (s *Service) IngestAssets(ctx context.Context, assets []Asset) error {
 	s.pinFirstDiscoveredAt(ctx, assets)
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("IngestAssets: observation interrupted: %w", err)
+	}
 	if err := s.repo.UpsertAssets(ctx, assets); err != nil {
 		return fmt.Errorf("IngestAssets: %w", err)
 	}
 	return nil
 }
 
-// pinFirstDiscoveredAtChunkSize bounds each ByIDs lookup pinFirstDiscoveredAt
+// pinFirstDiscoveredAtChunkSize bounds each history lookup pinFirstDiscoveredAt
 // issues. ClickHouse's IN clause is query-string-interpolated by the driver,
 // so a full connector-sync Ingest call must chunk its ids rather than pass an
 // unbounded batch into one IN list and risk max_query_size.
@@ -133,7 +141,7 @@ const pinFirstDiscoveredAtChunkSize = 500
 // mean "last collected" for every re-observed asset. Mutates assets in
 // place.
 //
-// A ByIDs failure on one chunk is LOGGED, not silent, and that chunk's assets
+// A history-read failure on one chunk is LOGGED, not silent, and that chunk's assets
 // fall through to the repo's firstDiscoveredAt() floor (DiscoveredAt) —
 // best-effort, but visibly so: a silent skip here would reintroduce the
 // "last collected, not first discovered" bug this column exists to fix,
@@ -143,6 +151,9 @@ func (s *Service) pinFirstDiscoveredAt(ctx context.Context, assets []Asset) {
 		return
 	}
 	for start := 0; start < len(assets); start += pinFirstDiscoveredAtChunkSize {
+		if ctx.Err() != nil {
+			return // callers reject interrupted observations before durable writes
+		}
 		end := min(start+pinFirstDiscoveredAtChunkSize, len(assets))
 		chunk := assets[start:end]
 
@@ -150,22 +161,18 @@ func (s *Service) pinFirstDiscoveredAt(ctx context.Context, assets []Asset) {
 		for i, a := range chunk {
 			ids[i] = a.ID
 		}
-		existing, err := s.repo.ByIDs(ctx, ids)
+		byID, err := s.firstObservationTimes(ctx, ids)
 		if err != nil {
 			log.FromContext(ctx).Warn().Err(err).Int("chunk_size", len(chunk)).
 				Msg("asset: FirstDiscoveredAt carry-forward lookup failed — assets fall back to DiscoveredAt")
 			continue
-		}
-		byID := make(map[string]Asset, len(existing))
-		for _, a := range existing {
-			byID[a.ID] = a
 		}
 		for i, a := range chunk {
 			prev, ok := byID[a.ID]
 			if !ok {
 				continue
 			}
-			chunk[i].FirstDiscoveredAt = earliest(prev.FirstDiscoveredAt, prev.DiscoveredAt, a.FirstDiscoveredAt, a.DiscoveredAt)
+			chunk[i].FirstDiscoveredAt = earliest(prev, a.FirstDiscoveredAt, a.DiscoveredAt)
 		}
 	}
 }
@@ -541,119 +548,25 @@ func (s *Service) BlastRadius(ctx context.Context, seedID string, maxDepth int) 
 	return s.BlastRadiusDir(ctx, seedID, maxDepth, DirAttack)
 }
 
-// BlastRadiusDir performs a bounded BFS from seedID in the requested direction:
-// outgoing ("can reach"), incoming ("reached by"), or both. The far endpoint of
-// each hop becomes the next frontier.
-func (s *Service) BlastRadiusDir(ctx context.Context, seedID string, maxDepth int, dir Direction) (BlastRadius, error) {
-	if maxDepth <= 0 {
-		maxDepth = defaultMaxDepth
-	}
-	seed, err := s.repo.GetAsset(ctx, seedID)
-	if err != nil {
-		return BlastRadius{}, fmt.Errorf("BlastRadius: seed: %w", err)
-	}
-	result := BlastRadius{
-		SeedID:   seedID,
-		Assets:   []Asset{seed},
-		Edges:    nil,
-		MaxDepth: maxDepth,
-	}
-	seen := map[string]bool{seedID: true}
-	// A walk that follows edges both ways meets a two-way edge twice: out from
-	// one end on this hop, in from the other end on the next.
-	seenEdge := map[string]bool{}
-	frontier := []string{seedID}
-
-	for depth := 0; depth < maxDepth && len(frontier) > 0; depth++ {
-		hopEdges, err := s.hopEdges(ctx, frontier, dir)
-		if err != nil {
-			return result, fmt.Errorf("BlastRadius: depth %d: %w", depth, err)
-		}
-		for _, e := range hopEdges {
-			key := e.SrcID + "\x00" + e.DstID + "\x00" + e.EdgeType
-			if !seenEdge[key] {
-				seenEdge[key] = true
-				result.Edges = append(result.Edges, e)
-			}
-		}
-
-		// Collect unseen far endpoints for this hop, respecting the node budget.
-		var hopEndpoints []endpoint
-		for _, e := range hopEdges {
-			for _, to := range farEndpoints(e, frontier, dir, seen) {
-				if len(seen) >= maxNodeBudget {
-					result.Truncated = true
-					return result, nil
-				}
-				seen[to.id] = true
-				hopEndpoints = append(hopEndpoints, to)
-			}
-		}
-		if len(hopEndpoints) == 0 {
-			break
-		}
-
-		// Batch-fetch all new nodes in one query instead of one GetAsset per node.
-		ids := make([]string, len(hopEndpoints))
-		for i, ep := range hopEndpoints {
-			ids[i] = ep.id
-		}
-		// A hydration failure is NOT a degradation this walk may absorb. Falling
-		// back to stubs (Asset{ID, Type} — no Provider, no RiskScore, no LastSeen)
-		// kept the count right and made every derived fact wrong, with a nil error:
-		// summarizeBlast's ByType and topReachable render stubs as measurements to
-		// the LLM reasoner, and BlastRadius.Truncated stays false so the reason-cache
-		// fingerprint does not even change. Since the caller that matters
-		// (respond.blastRadiusFor) reports an errored walk as unmeasured, and
-		// the approver sees unmeasured rather than a small number, propagating is the
-		// fail-closed direction.
-		fetched, err := s.repo.ByIDs(ctx, ids)
-		if err != nil {
-			return result, fmt.Errorf("BlastRadius: depth %d: hydrate %d nodes: %w", depth, len(ids), err)
-		}
-		assetByID := make(map[string]Asset, len(fetched))
-		for _, a := range fetched {
-			assetByID[a.ID] = a
-		}
-
-		var next []string
-		for _, ep := range hopEndpoints {
-			a, ok := assetByID[ep.id]
-			if !ok {
-				a = Asset{ID: ep.id, Type: ep.typ}
-			}
-			result.Assets = append(result.Assets, a)
-			next = append(next, ep.id)
-		}
-		frontier = next
-	}
-	return result, nil
-}
-
 // hopEdges fetches one frontier hop's edges in the requested direction(s).
 func (s *Service) hopEdges(ctx context.Context, frontier []string, dir Direction) ([]Edge, error) {
+	if dir == DirAttack {
+		return s.repo.EdgesForAttack(ctx, frontier)
+	}
 	var edges []Edge
-	if dir == DirOut || dir == DirBoth || dir == DirAttack {
+	if dir == DirOut || dir == DirBoth {
 		out, err := s.repo.EdgesFrom(ctx, frontier)
 		if err != nil {
 			return nil, err
 		}
-		for _, e := range out {
-			if dir != DirAttack || attackFollowsOut(e.EdgeType) {
-				edges = append(edges, e)
-			}
-		}
+		edges = append(edges, out...)
 	}
-	if dir == DirIn || dir == DirBoth || dir == DirAttack {
+	if dir == DirIn || dir == DirBoth {
 		in, err := s.repo.EdgesTo(ctx, frontier)
 		if err != nil {
 			return nil, err
 		}
-		for _, e := range in {
-			if dir != DirAttack || attackFollowsIn(e.EdgeType) {
-				edges = append(edges, e)
-			}
-		}
+		edges = append(edges, in...)
 	}
 	return edges, nil
 }

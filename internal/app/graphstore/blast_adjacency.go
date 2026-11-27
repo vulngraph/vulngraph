@@ -13,6 +13,8 @@ package graphstore
 // would couple two traversals with different semantics for no real gain.
 
 import (
+	"context"
+
 	"github.com/vulngraph/vulngraph/internal/app/asset"
 	"github.com/vulngraph/vulngraph/internal/graphschema"
 )
@@ -65,17 +67,17 @@ type blastAdjacency struct {
 // (post-filterLadybugAssets) asset slice and the full edge slice a topology build
 // already holds in memory.
 func buildBlastAdjacency(assets []asset.Asset, edges []asset.Edge) *blastAdjacency {
-	nodeIDs := make(map[string]bool, len(assets))
+	nodeLabels := make(map[string]string, len(assets))
 	meta := make(map[string]blastNodeMeta, len(assets))
 	for i := range assets {
 		a := &assets[i]
-		if nodeIDs[a.ID] || !csvSafeID(a.ID) {
+		if nodeLabels[a.ID] != "" || !csvSafeID(a.ID) {
 			continue
 		}
 		if _, loaded := nodeUnwindQ[NodeLabelFor(a.Type)]; !loaded {
 			continue
 		}
-		nodeIDs[a.ID] = true
+		nodeLabels[a.ID] = NodeLabelFor(a.Type)
 		meta[a.ID] = blastNodeMeta{
 			name:      a.Name,
 			typ:       a.Type,
@@ -87,10 +89,11 @@ func buildBlastAdjacency(assets []asset.Asset, edges []asset.Edge) *blastAdjacen
 
 	out := make(map[string][]blastNeighbor)
 	for _, e := range edges {
-		if relTableForEdge(e) == "" {
+		rel := relTableForEdge(e)
+		if rel == "" {
 			continue // not loaded into Ladybug — never a real BlastRadius hop today
 		}
-		if !nodeIDs[e.SrcID] || !nodeIDs[e.DstID] {
+		if classifyRelEndpoints(ladybugRelSpec[rel], e.SrcID, e.DstID, nil, nodeLabels) != relRowLoads {
 			continue // one endpoint pruned by filterLadybugAssets — COPY would drop this edge too
 		}
 		dir := blastWalkDir(e.EdgeType)
@@ -166,4 +169,36 @@ func (s *Service) TryBlastNeighbors(ids []string) (edges []asset.Edge, nodes []a
 		}
 	}
 	return edges, nodes, true
+}
+
+// count uses a single immutable adjacency for every hop, so a graph swap cannot
+// mix generations. Allocation is bounded by the same node cap as the native walk.
+func (a *blastAdjacency) count(ctx context.Context, seed string, depth int) (int, error) {
+	if depth <= 0 || depth > 5 {
+		depth = 2
+	}
+	seen := map[string]bool{seed: true}
+	frontier := []string{seed}
+	for hop := 0; hop < depth && len(frontier) > 0; hop++ {
+		var next []string
+		for _, id := range frontier {
+			for i, neighbor := range a.out[id] {
+				if i%1024 == 0 {
+					if err := ctx.Err(); err != nil {
+						return 0, err
+					}
+				}
+				if seen[neighbor.id] {
+					continue
+				}
+				seen[neighbor.id] = true
+				if len(seen)-1 >= blastRadiusCountCap {
+					return blastRadiusCountCap, nil
+				}
+				next = append(next, neighbor.id)
+			}
+		}
+		frontier = next
+	}
+	return len(seen) - 1, ctx.Err()
 }

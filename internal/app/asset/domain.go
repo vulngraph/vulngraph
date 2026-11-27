@@ -353,6 +353,15 @@ type BlastRadius struct {
 	Truncated bool // hit the node budget before exhausting the frontier
 }
 
+// BlastAccountCounts summarizes the same attacker-direction walk as BlastRadius.
+// The seed is excluded. Accountless or missing assets each count independently.
+// A truncated walk cannot establish the account distribution of the full graph.
+type BlastAccountCounts struct {
+	Total     int
+	ByAccount map[string]int
+	Truncated bool
+}
+
 // Filter narrows a List query. Zero values mean "no filter". Provider/Type/
 // Region/AccountID are exact matches; Search is a case-insensitive substring on
 // name or id. Cursor is the opaque keyset token from a prior page.

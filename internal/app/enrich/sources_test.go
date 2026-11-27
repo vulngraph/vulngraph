@@ -50,8 +50,9 @@ func TestKEV(t *testing.T) {
 }
 
 type fakeBlast struct {
-	count int
-	err   error
+	count     int
+	err       error
+	truncated bool
 	// accountIDs, when set, overrides count: one asset per entry, each
 	// stamped with the given AccountID. Lets tests build a specific
 	// same-account or cross-account shape.
@@ -67,9 +68,23 @@ func (f fakeBlast) BlastRadius(_ context.Context, _ string, _ int) (asset.BlastR
 		for i, acct := range f.accountIDs {
 			assets[i] = asset.Asset{ID: fmt.Sprintf("a-%d", i), AccountID: acct}
 		}
-		return asset.BlastRadius{Assets: assets}, nil
+		return asset.BlastRadius{Assets: assets, Truncated: f.truncated}, nil
 	}
-	return asset.BlastRadius{Assets: make([]asset.Asset, f.count)}, nil
+	return asset.BlastRadius{Assets: make([]asset.Asset, f.count), Truncated: f.truncated}, nil
+}
+
+func TestBlastRadiusTruncatedAccountSampleCannotDiscount(t *testing.T) {
+	accounts := make([]string, 499)
+	for i := range accounts {
+		accounts[i] = "one-account"
+	}
+	for _, counter := range []BlastRadiusCounter{nil, fakeCounter{count: 500}} {
+		src := BlastRadius{Counter: counter, Provider: fakeBlast{accountIDs: accounts, truncated: true}}
+		f, applied, err := src.Evaluate(t.Context(), finding.Finding{ResourceID: "seed"})
+		require.NoError(t, err)
+		require.True(t, applied)
+		require.Equal(t, 20, f.Points, "a partial same-account sample cannot establish a blast discount")
+	}
 }
 
 func TestBlastRadius_Buckets(t *testing.T) {

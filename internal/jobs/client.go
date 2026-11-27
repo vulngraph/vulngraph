@@ -106,7 +106,7 @@ const (
 	// the next one.
 	defaultCorrelateInterval = 30 * time.Minute
 	// defaultEnrichInterval is the backstop sweep cadence. 15m (with
-	// enrichSweepMax per tick) drains the never-enriched backfill quickly and
+	// enrichSweepMax per tick) provides fallback recovery and
 	// propagates KEV/EPSS drift within 15m; once the backlog clears, Phase 1
 	// no-ops and the change-gate makes most drift-pass findings cache-skips, so
 	// the frequent ticks are cheap.
@@ -412,7 +412,7 @@ func registerRealWorkers(workers *river.Workers, pool *pgxpool.Pool, deps Deps) 
 	river.AddWorker(workers, &EnqueueWorker{connectors: deps.Connectors, baseSyncInterval: baseSyncInterval})
 	river.AddWorker(workers, &DiscoverAWSOrgsWorker{orgs: deps.Connectors})
 	river.AddWorker(workers, &EnrichWorker{
-		enrich: deps.Enrich, findings: deps.Findings, suppress: deps.Suppress,
+		enrich: deps.Enrich, findings: newEnrichFindingFetcher(deps.Findings), suppress: deps.Suppress,
 		cache: deps.EnrichCache, maxAge: deps.EnrichMaxAge,
 		graph: deps.GraphContext, now: time.Now, notify: noticeDeliverer(deps.Notify),
 		carriers: deps.AlertCarriers,

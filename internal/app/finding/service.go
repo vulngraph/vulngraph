@@ -146,20 +146,16 @@ func (s *Service) pinFirstDetectedAt(ctx context.Context, found []Finding) error
 	for i, f := range found {
 		ids[i] = f.ID
 	}
-	existing, err := s.repo.ByIDs(ctx, ids)
+	byID, err := s.firstObservationTimes(ctx, ids)
 	if err != nil {
 		return fmt.Errorf("pinFirstDetectedAt: %w", err)
-	}
-	byID := make(map[string]Finding, len(existing))
-	for _, f := range existing {
-		byID[f.ID] = f
 	}
 	for i, f := range found {
 		prev, ok := byID[f.ID]
 		if !ok {
 			continue
 		}
-		found[i].FirstDetectedAt = earliest(prev.FirstDetectedAt, prev.DetectedAt, f.FirstDetectedAt, f.DetectedAt)
+		found[i].FirstDetectedAt = earliest(prev, f.FirstDetectedAt, f.DetectedAt)
 	}
 	return nil
 }

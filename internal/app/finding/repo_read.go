@@ -250,6 +250,9 @@ func (r *CHRepo) byIDsBatch(ctx context.Context, ids []string) ([]Finding, error
 	}
 	qCtx, cancel := context.WithTimeout(ctx, batchReadTimeout)
 	defer cancel()
+	if len(ids) <= 10 {
+		qCtx = r.ch.WithQuerySettings(qCtx, map[string]any{"max_threads": 1})
+	}
 
 	placeholders, idArgs := dbutil.CHIn(ids)
 	args := append(append([]any{}, idArgs...), idArgs...)
@@ -361,6 +364,7 @@ func (r *CHRepo) byResourceIDsBatch(ctx context.Context, ids []string) ([]Findin
 func (r *CHRepo) Get(ctx context.Context, id string) (Finding, error) {
 	qCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	qCtx = r.ch.WithQuerySettings(qCtx, map[string]any{"max_threads": 1})
 
 	var (
 		fnd   Finding

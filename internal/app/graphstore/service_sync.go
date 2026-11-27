@@ -222,7 +222,6 @@ func (s *Service) SyncFromSources(ctx context.Context, topoVersion uint64, asset
 		logger.Warn().Err(digErr).Msg("graphstore: load digest failed — falling through to full rebuild")
 	} else if prev := s.lastDigest.Load(); prev != nil && s.synced.Load() && prev.Topo == dig.Topo {
 		if prev.Signals == dig.Signals && prev.Scores == dig.Scores {
-			s.blastRadiusCache.Range(func(k, _ any) bool { s.blastRadiusCache.Delete(k); return true })
 			// Nothing to do. lastBuiltAt IS stamped: a correctly-skipped sweep means
 			// the graph is current, and the freshness gauge must not read as stale.
 			s.lastBuiltAt.Store(time.Now().UnixNano())

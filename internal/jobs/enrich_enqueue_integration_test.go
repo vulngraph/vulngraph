@@ -26,6 +26,7 @@ func TestEnrichBatchQueuePreservesPriorityUniquenessAndCapacity(t *testing.T) {
 	pool, err := db.NewPool(ctx, dsn, db.MaxConnsWorker)
 	require.NoError(t, err)
 	defer pool.Close()
+	defer trackNewBackfillJobs(t, ctx, pool)()
 	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
 	require.NoError(t, err)
 	ctx = rivertest.WorkContext(ctx, client)

@@ -179,7 +179,7 @@ export function Home() {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <MetricCard
           value={compliance.data ? `${fmt(compliance.data.passing)} of ${fmt(compliance.data.total)}` : "—"}
-          label="compliance controls passing"
+          label="benchmark controls passing"
           sub={
             firstRun ? "connect a source to evaluate controls"
               : compliance.data ? (failCount > 0 ? `${fmt(failCount)} failing` : "all controls passing") : undefined

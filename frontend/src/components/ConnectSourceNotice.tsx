@@ -39,7 +39,7 @@ export function ConnectSourceNotice({ variant }: { variant: "panel" | "banner" }
     <div className="glass rounded-xl border border-teal/30 px-5 py-4">
       <h2 className="font-display text-lg font-semibold text-text">Connect your first source</h2>
       <p className="mt-1 mb-3 max-w-2xl text-[13px] text-text-2">
-        Nothing is connected yet, so there is no inventory to assess and no compliance control
+        Nothing is connected yet, so there is no inventory to assess and no benchmark control
         has been evaluated. Add a cloud account, repository or other connector and the first
         sync populates this page.
       </p>

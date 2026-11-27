@@ -51,7 +51,7 @@ test("renders the posture snapshot with key metrics", async () => {
   renderApp("/");
 
   // Tiles carry one number + one plain-language label each.
-  expect(await screen.findByText("compliance controls passing")).toBeInTheDocument();
+  expect(await screen.findByText("benchmark controls passing")).toBeInTheDocument();
   expect(await screen.findByText("10 of 28")).toBeInTheDocument();
   expect(await screen.findByText("findings scored below the pipeline threshold")).toBeInTheDocument();
   expect(await screen.findByText("connectors synced")).toBeInTheDocument();

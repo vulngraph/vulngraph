@@ -53,7 +53,7 @@ What you should see, and when:
 
 | Time after the sync | What appears |
 |---|---|
-| Within a minute | Assets, the posture findings, the compliance rollup, the Drift page |
+| Within a minute | Assets, the posture findings, the benchmark control rollup, the Drift page |
 | About 5 minutes after the worker starts | The graph: attack paths, blast radius, the Graph page queries |
 | About 12 to 16 minutes after the worker starts | Known-exploited and package vulnerability findings, which need internet access to OSV and the CISA KEV feed |
 

@@ -234,8 +234,8 @@ export function Compliance() {
     <div>
       <div className="flex items-start justify-between gap-4">
         <PageHeader
-          title="Compliance"
-          subtitle="Control coverage — click a control to see the findings driving it and what to do."
+          title="Posture"
+          subtitle="Benchmark control coverage — click a control to see the findings driving it and what to do."
         />
         <button
           onClick={() => setShowLegend((v) => !v)}
@@ -265,7 +265,7 @@ export function Compliance() {
                 <span className="font-display text-3xl tabular-nums text-text">
                   {overallPct}%
                 </span>
-                <span className="text-xs text-text-3">overall compliance</span>
+                <span className="text-xs text-text-3">controls passing overall</span>
               </div>
               <div className="h-4 w-px bg-border-subtle" />
               <div className="flex items-baseline gap-2">
@@ -635,7 +635,7 @@ function ControlRow({
           </div>
           <p className="text-[11px] leading-snug text-text-2">
             No open finding, but only some of its checks could evaluate a live asset; the rest graded
-            nothing, so they are not evidence of compliance:{" "}
+            nothing, so they are not evidence the control passes:{" "}
             <span className="font-mono text-text-3">{c.control.check_ids.join(", ")}</span>.
           </p>
         </div>

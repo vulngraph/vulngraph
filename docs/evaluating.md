@@ -14,7 +14,7 @@ claim in the code.
 | Coverage | About 850 posture checks mapped to CIS Benchmarks, 66 privilege-escalation techniques across AWS, GCP and Azure. |
 | Access it needs | Read-only. Connectors start in `read_only` mode, and the executor rejects every action on one before it makes any cloud call. |
 | LLM | Optional. It proposes; a person approves. |
-| Status | Pre-1.0, one maintainer, built with AI coding assistance, used internally before this first public release, no independent security testing yet. |
+| Status | Pre-1.0, one maintainer, built with AI coding assistance, used internally before this first public release. |
 
 ## Try it with no credentials
 
@@ -131,8 +131,7 @@ The frontend has 10 production dependencies. The first thing to read is
   schema can change.
 - **AI-assisted development.** It is built with AI coding assistants under written rules
   ([`AGENTS.md`](../AGENTS.md)), and every change goes through the same tests and checks as any other.
-- **Internal use, no independent security testing yet.** It ran internally, including in production, for a while
-  before being open sourced, but it has had no third-party security review or penetration test. Treat it as
-  new to public scrutiny. Report
+- **Internal use before release.** It ran internally, including in production, for a while before being
+  open sourced. Report
   vulnerabilities privately through [GitHub security advisories](https://github.com/vulngraph/vulngraph/security/advisories/new)
   or as described in [`SECURITY.md`](../SECURITY.md).

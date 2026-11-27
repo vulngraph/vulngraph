@@ -56,7 +56,8 @@ func TestPipelineSoak(t *testing.T) {
 	_, err = pool.Exec(ctx, "DELETE FROM river_job")
 	require.NoError(t, err)
 	r := &soakReport{Version: 1, FixtureVersion: 1, Commit: os.Getenv("PERF_COMMIT"), Platform: runtime.GOOS + "/" + runtime.GOARCH,
-		GoVersion: runtime.Version(), GoMaxProcs: runtime.GOMAXPROCS(0), MaxPending: map[string]int{}, Deferred: map[string]int{}}
+		GoVersion: runtime.Version(), GoMaxProcs: runtime.GOMAXPROCS(0), MinimumSeconds: seconds,
+		MaxPending: map[string]int{}, Deferred: map[string]int{}}
 	t.Cleanup(func() { writeSoakReport(t, r) })
 	cipher, err := connector.NewCipher(testKey(t))
 	require.NoError(t, err)

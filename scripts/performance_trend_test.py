@@ -31,7 +31,7 @@ class TrendContract(unittest.TestCase):
                   partial=False, duplicate_asset_rows=0, run=i, seconds=1, allocated_bytes=1, requests=1) for i in range(3)])
         write("sync.json", {"passed": True, "fixture_version": 2, "measurements": sync})
         write("aws_org.json", [dict(accounts=100, phase=p, seconds=1) for p in ["initial", "unchanged", "unchanged_again"]])
-        write("soak.json", {"passed": True, "fixture_version": 1, "commit": "fixture",
+        write("soak.json", {"passed": True, "fixture_version": 1, "commit": "fixture", "minimum_seconds": 60,
               "verified_assets": 800, "verified_edges": 800, "graph_rebuilt_after_restart": True, "retried_jobs": 2,
               "waves": [dict(seconds=1, heap_bytes_after_gc=1, process_peak_rss_bytes=1) for _ in range(3)],
               "reads": {k: dict(count=1, errors=0, p50_seconds=1, p95_seconds=1, p99_seconds=1, max_seconds=1)

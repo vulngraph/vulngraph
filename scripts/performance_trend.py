@@ -78,6 +78,7 @@ def measurements(root):
         "sync_counts": sorted((m["connector"], m["scenario"], m["verified_assets"], m["verified_edges"]) for m in sync["measurements"]),
         "soak_counts": [soak["verified_assets"], soak["verified_edges"]],
         "request_delay_ms": int(collection_env[0].split("=", 1)[1]),
+        "soak_minimum_seconds": soak["minimum_seconds"],
     }
     values = {}
     collection_counts = []

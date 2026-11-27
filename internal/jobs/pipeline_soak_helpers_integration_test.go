@@ -142,6 +142,7 @@ type soakReport struct {
 	GoMaxProcs     int                    `json:"gomaxprocs"`
 	Passed         bool                   `json:"passed"`
 	Seconds        float64                `json:"seconds"`
+	MinimumSeconds int                    `json:"minimum_seconds"`
 	Waves          []soakWave             `json:"waves"`
 	Reads          map[string]soakLatency `json:"reads"`
 	MaxPending     map[string]int         `json:"max_pending_jobs"`

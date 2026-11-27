@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeAttackPaths } from "./attackPaths";
+import { computeAttackPaths, pathSummary } from "./attackPaths";
 import type { GraphViewNode, GraphViewEdge } from "../GraphView";
 
 const n = (id: string, extra: Partial<GraphViewNode> = {}): GraphViewNode => ({ id, label: id, ...extra });
@@ -75,5 +75,38 @@ describe("computeAttackPaths", () => {
     ];
     const paths = computeAttackPaths(nodes, edges);
     expect(paths[0].severity).toBe("critical");
+  });
+
+  it("starts the chain at the internet node the entry is exposed to", () => {
+    const nodes = [n("internet", { label: "Internet", sub: "external" }), n("vm"), n("admin", { sub: "iam_role admin" })];
+    const edges: GraphViewEdge[] = [
+      { source: "vm", target: "internet", label: "exposed_to_internet" },
+      { source: "vm", target: "admin", label: "can_escalate_to" },
+    ];
+    const [path] = computeAttackPaths(nodes, edges);
+    expect(path.hops.map((h) => h.id)).toEqual(["internet", "vm", "admin"]);
+    expect(path.hops[1].via).toBe("exposed_to_internet");
+    expect(path.hops[2].via).toBe("can_escalate_to");
+    expect([...path.edgeKeys].sort()).toEqual(["vm->admin-1", "vm->internet-0"]);
+  });
+
+  it("summarises a path as start, first hop and end", () => {
+    const nodes = [n("internet", { label: "Internet" }), n("vm", { label: "web-1" }), n("role", { label: "web" }), n("admin", { label: "ec2-admin", risk: 90 })];
+    const edges: GraphViewEdge[] = [
+      { source: "vm", target: "internet", label: "exposed_to_internet" },
+      { source: "vm", target: "role", label: "executes_as" },
+      { source: "role", target: "admin", label: "can_escalate_to" },
+    ];
+    const [path] = computeAttackPaths(nodes, edges);
+    expect(pathSummary(path)).toEqual(["Internet", "web-1", "ec2-admin"]);
+  });
+
+  it("follows an instance profile (has_role) from a workload to its role", () => {
+    const nodes = [n("vm", { exposed: true }), n("role", { sub: "iam_role" }), n("admin", { label: "ec2-admin" })];
+    const edges: GraphViewEdge[] = [
+      { source: "vm", target: "role", label: "has_role" },
+      { source: "role", target: "admin", label: "can_escalate_to" },
+    ];
+    expect(computeAttackPaths(nodes, edges)[0].hops.map((h) => h.id)).toEqual(["vm", "role", "admin"]);
   });
 });

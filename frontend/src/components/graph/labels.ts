@@ -2,6 +2,35 @@
 // own module so panel components can import them without a circular dependency
 // on GraphView.
 
+import schema from "../../generated/graph-schema.json";
+
+// Cypher results label an edge with its Ladybug rel table (ExecutesAs,
+// ExposedToInternetK8sWorkload); the rest of the canvas speaks edge types
+// (executes_as). Rel tables split by endpoint label carry that label as a
+// suffix, so the lookup also tries the name without it.
+const RELS_BY_NAME = new Map<string, string>();
+const ENDPOINT_SUFFIXES = ["K8sServiceAccount", "K8sWorkload", "IamRole", "Service", "Asset"];
+function stripEndpointSuffix(name: string): string {
+  const suffix = ENDPOINT_SUFFIXES.find((s) => name.endsWith(s) && name.length > s.length);
+  return suffix ? name.slice(0, -suffix.length) : name;
+}
+// A rel several edge types share (Accesses holds routes_to, targets and
+// runs_in) cannot say which one a result row was, so it is left unmapped.
+const typesByRel = new Map<string, Set<string>>();
+for (const { type, rel } of schema.edge_types) {
+  for (const name of [rel, stripEndpointSuffix(rel)]) {
+    const types = typesByRel.get(name) ?? typesByRel.set(name, new Set()).get(name)!;
+    types.add(type);
+  }
+}
+for (const [name, types] of typesByRel) if (types.size === 1) RELS_BY_NAME.set(name, [...types][0]);
+
+// edgeType maps a rel table name to its edge type; anything else (already an
+// edge type, or unknown) comes back unchanged.
+export function edgeType(label: string): string {
+  return RELS_BY_NAME.get(label) ?? RELS_BY_NAME.get(stripEndpointSuffix(label)) ?? label;
+}
+
 // edgeLabel converts snake_case edge types to short human labels.
 export function edgeLabel(type: string): string {
   const map: Record<string, string> = {

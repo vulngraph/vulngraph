@@ -201,11 +201,11 @@ verdicts below are fixed sample text, not model output.
 
 ![Two suspected phishing domains for acme.example, with the AI's verdict and reasoning, and Confirm and Dismiss buttons](images/domain-monitor-dark.png)
 
-## Compliance and unknown controls
+## Posture and unknown controls
 
 A control that cannot be assessed because the data is missing is shown as unknown, never as passing.
 
-![Compliance: 2 of 31 controls passing, with the failing CIS and SOC 2 controls and the findings behind them](images/compliance-dark.png)
+![Posture: 2 of 31 controls passing, with the failing CIS and SOC 2 controls and the findings behind them](images/compliance-dark.png)
 
 ## Disk scan results
 

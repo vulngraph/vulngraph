@@ -230,10 +230,9 @@ type Family struct {
 // pagination loop" would otherwise skip.
 //
 // Not here, on purpose:
-//   - families that declare completeness but are not audited yet (Azure,
-//     GitHub, whose listRepos pages out early by design, and Kubernetes, where
-//     RBAC Forbidden on some lists is expected) and the ~30 unaudited AWS/GCP
-//     families. Auditing those loops is separate work.
+//   - Other Azure, Kubernetes, and AWS/GCP families. Completing a VM, pod or
+//     repository listing never proves that a derived or best-effort family
+//     was fully enumerated.
 //
 // ec2:subnets is enforceable only because a subnet's stored `region` is its
 // region, not its AVAILABILITY ZONE ("eu-west-1b"):
@@ -248,6 +247,13 @@ var enforceableFamilies = map[string]Family{
 	"ec2:addresses":       {Types: []string{"elastic_ip"}, RegionScoped: true},
 	"ec2:subnets":         {Types: []string{"subnet"}, RegionScoped: true},
 	"compute.instances":   {Types: []string{"gce_instance"}, RegionScoped: false},
+	// Subscription/installation-wide pagers fail closed on truncated or
+	// malformed inventory. NIC or repository enrichment cannot omit these rows.
+	"compute:vms":  {Types: []string{"azure_vm"}, RegionScoped: false},
+	"github:repos": {Types: []string{"github_repo"}, RegionScoped: false},
+	// Claimed only after every namespace and every pod page completed. The
+	// prefix is the cluster name, matching the stored pod's Region exactly.
+	"kubernetes:pods": {Types: []string{"k8s_pod"}, RegionScoped: true},
 }
 
 // ScopeKey identifies one evaluated unit: a declared scope narrowed to one of
@@ -275,10 +281,14 @@ type Scope struct {
 // enforceable. A key that is not "<region>/<family>" is never enforceable:
 // the region component is half of how a population is selected.
 func ParseScope(key string) (Scope, bool) {
-	region, family, ok := strings.Cut(key, "/")
-	if !ok || region == "" || family == "" {
+	// The scope prefix is an opaque stored region/cluster identity. Kubernetes
+	// cluster names can themselves contain slashes; only the final delimiter
+	// separates the audited API family.
+	delimiter := strings.LastIndexByte(key, '/')
+	if delimiter <= 0 || delimiter == len(key)-1 {
 		return Scope{Key: key}, false
 	}
+	region, family := key[:delimiter], key[delimiter+1:]
 	f, ok := enforceableFamilies[family]
 	if !ok {
 		return Scope{Key: key}, false

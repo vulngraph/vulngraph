@@ -69,8 +69,8 @@ export function ComplianceRequirements() {
     <section className="mt-10" aria-label="Framework requirements">
       <h2 className="mb-1 font-display text-lg text-text">Framework requirements</h2>
       <p className="mb-4 text-xs text-text-3">
-        NIST 800-53, PCI DSS, SOC 2, ISO 27001 and HIPAA requirements, each mapped to benchmark controls and the checks behind
-        them. Unknown is never counted as passing.
+        Requirements of NIST 800-53 and of any frameworks added with FRAMEWORKS_DIR, each mapped to benchmark controls and the
+        checks behind them. Unknown is never counted as passing.
       </p>
       {list.isLoading && <Loading />}
       {list.isError && <ErrorNote message={(list.error as Error).message} />}
@@ -93,6 +93,7 @@ export function ComplianceRequirements() {
               <div className="mt-0.5 tabular-nums text-[11px] text-text-3">
                 {fw.passing} passing · {fw.failing} failing · {fw.unknown} unknown · {fw.manual} manual
               </div>
+              <div className="mt-0.5 text-[11px] text-text-3">Mapping: {fw.source}</div>
             </button>
           ))}
         </div>

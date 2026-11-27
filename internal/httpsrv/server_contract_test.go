@@ -93,7 +93,7 @@ func TestOpenAPIContract(t *testing.T) {
 		{"list decisions", http.MethodGet, "/api/decisions", admin, "", http.StatusOK},
 		{"compliance", http.MethodGet, "/api/compliance", admin, "", http.StatusOK},
 		{"compliance frameworks", http.MethodGet, "/api/compliance/frameworks", viewer, "", http.StatusOK},
-		{"compliance framework", http.MethodGet, "/api/compliance/frameworks/pci-dss-4.0", viewer, "", http.StatusOK},
+		{"compliance framework", http.MethodGet, "/api/compliance/frameworks/nist-800-53-r5", viewer, "", http.StatusOK},
 		{"compliance framework unknown", http.MethodGet, "/api/compliance/frameworks/nope", viewer, "", http.StatusNotFound},
 		{"compliance export", http.MethodGet, "/api/compliance/frameworks/nist-800-53-r5/export", admin, "", http.StatusOK},
 		{"compliance export viewer", http.MethodGet, "/api/compliance/frameworks/nist-800-53-r5/export", viewer, "", http.StatusForbidden},

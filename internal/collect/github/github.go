@@ -273,7 +273,7 @@ func (c *Collector) Collect(ctx context.Context, cfg map[string]string) (collect
 	// Scope is keyed by installation, not org name (not reliably known here),
 	// matching what actually bounds this listing's API surface.
 	if !reposPartial {
-		result.MarkComplete("installation/"+installationID+":repos", []string{"github_repo"}, len(repos))
+		result.MarkComplete(installationID+"/github:repos", []string{"github_repo"}, len(repos))
 	}
 
 	return result, nil
@@ -382,6 +382,7 @@ type repo struct {
 // itself, only "no page we read failed."
 func (c *Collector) listRepos(ctx context.Context, baseURL, token string) ([]repo, bool, error) {
 	var all []repo
+	seen := map[string]bool{}
 	for page := 1; page <= maxPages; page++ {
 		url := fmt.Sprintf("%s/installation/repositories?per_page=%d&page=%d", baseURL, perPage, page)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -392,7 +393,7 @@ func (c *Collector) listRepos(ctx context.Context, baseURL, token string) ([]rep
 		req.Header.Set("Accept", "application/vnd.github+json")
 
 		var body struct {
-			Repositories []repo `json:"repositories"`
+			Repositories *[]repo `json:"repositories"`
 		}
 		if err := c.doJSON(req, http.StatusOK, &body); err != nil {
 			// A mid-pagination failure (after retries) returns the repos we
@@ -406,8 +407,22 @@ func (c *Collector) listRepos(ctx context.Context, baseURL, token string) ([]rep
 			}
 			return nil, false, fmt.Errorf("listRepos: page %d: %w", page, err)
 		}
-		all = append(all, body.Repositories...)
-		if len(body.Repositories) < perPage {
+		if body.Repositories == nil {
+			return nil, false, fmt.Errorf("listRepos: page %d omitted repositories", page)
+		}
+		for _, r := range *body.Repositories {
+			owner, name, ok := strings.Cut(r.FullName, "/")
+			if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
+				return nil, false, fmt.Errorf("listRepos: page %d returned a repository without a valid full name", page)
+			}
+			if seen[r.FullName] {
+				log.FromContext(ctx).Warn().Int("page", page).Msg("repository listing repeated an identity; treating the enumeration as partial")
+				return all, true, nil
+			}
+			seen[r.FullName] = true
+			all = append(all, r)
+		}
+		if len(*body.Repositories) < perPage {
 			return all, false, nil // last page — genuinely exhausted, not truncated
 		}
 		if page == maxPages {

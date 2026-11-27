@@ -1,16 +1,17 @@
-// Package frameworks maps compliance-framework requirements (NIST SP 800-53
-// Rev. 5, PCI DSS 4.0, SOC 2, ISO/IEC 27001:2022 Annex A, the HIPAA
-// Security Rule) to graph's benchmark controls, and through the benchmark
-// matrices to registry checks (ADR 093).
+// Package frameworks maps compliance-framework requirements to graph's
+// benchmark controls, and through the benchmark matrices to registry checks
+// (ADR 093). NIST SP 800-53 Rev. 5 ships built in; an operator adds their own
+// frameworks (HIPAA, FedRAMP, an internal standard) from a directory, see
+// LoadCustom.
 //
 // A requirement names benchmark controls ("aws-fsbp/IAM.6",
 // "cis-aws-foundations/2.3"), never checks: which checks evidence a
 // control is the matrix's answer, so a check added to a matrix row reaches
 // every requirement mapped to that row without regenerating anything here.
 //
-// Files hold requirement IDs and short titles only. ISO, PCI and AICPA text
-// is copyrighted: those titles are paraphrased by hand. NIST and HIPAA are
-// US government works and keep their own titles.
+// Files hold requirement IDs and short titles only. Standards text can be
+// copyrighted, so titles are paraphrased by hand. NIST is a US government
+// work and keeps its own titles.
 package frameworks
 
 import (
@@ -39,11 +40,18 @@ const Dir = "internal/checks/frameworks"
 // maxTitleWords keeps a title a paraphrase rather than standard text.
 const maxTitleWords = 12
 
+// SourceBuiltIn is the Source of a framework embedded in the binary. A custom
+// framework's Source is "custom: <file name>".
+const SourceBuiltIn = "built-in"
+
 // Framework is one compliance framework's requirement list.
 type Framework struct {
 	ID      string `yaml:"framework"`
 	Name    string `yaml:"name"`
 	Version string `yaml:"version"`
+	// Source says where the mapping was loaded from. It is set by the loader,
+	// never read from the file.
+	Source string `yaml:"-"`
 	// Sources attributes where the mapping comes from.
 	Sources      []string      `yaml:"sources"`
 	Requirements []Requirement `yaml:"requirements"`
@@ -70,13 +78,53 @@ func Ref(ref string) (benchmark, control string, ok bool) {
 func FileName(id string) string { return strings.ReplaceAll(id, "-", "_") + ".yaml" }
 
 // Load parses the embedded mapping files, in a stable framework order.
-func Load() ([]Framework, error) { return load(files) }
+func Load() ([]Framework, error) {
+	return load(files, func(string) string { return SourceBuiltIn })
+}
 
 // LoadDir parses the mapping files in dir (the generator reads the committed
 // files to keep their hand-written titles).
-func LoadDir(dir string) ([]Framework, error) { return load(os.DirFS(dir)) }
+func LoadDir(dir string) ([]Framework, error) {
+	return load(os.DirFS(dir), func(name string) string { return "custom: " + name })
+}
 
-func load(fsys fs.FS) ([]Framework, error) {
+// LoadCustom loads the operator's framework files from dir and checks each
+// against the benchmark matrices. Every problem is an error naming its file:
+// a framework that fails to load must not silently drop out of the page. A
+// framework whose ID is already taken, by a built-in or by another file, is
+// refused. An empty dir loads nothing.
+func LoadCustom(dir string, builtIn []Framework, bs []benchmarks.Benchmark) ([]Framework, error) {
+	if dir == "" {
+		return nil, nil
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("LoadCustom: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("LoadCustom: %s is not a directory", dir)
+	}
+	custom, err := LoadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("LoadCustom: %w", err)
+	}
+	taken := map[string]string{}
+	for _, fw := range builtIn {
+		taken[fw.ID] = fw.Source
+	}
+	for _, fw := range custom {
+		if err := Validate(fw, bs); err != nil {
+			return nil, fmt.Errorf("LoadCustom: %s: %w", fw.Source, err)
+		}
+		if from, dup := taken[fw.ID]; dup {
+			return nil, fmt.Errorf("LoadCustom: %s: framework id %q is already defined by %s", fw.Source, fw.ID, from)
+		}
+		taken[fw.ID] = fw.Source
+	}
+	return custom, nil
+}
+
+func load(fsys fs.FS, source func(name string) string) ([]Framework, error) {
 	names, err := fs.Glob(fsys, "*.yaml")
 	if err != nil {
 		return nil, fmt.Errorf("load: %w", err)
@@ -91,6 +139,7 @@ func load(fsys fs.FS) ([]Framework, error) {
 		if err != nil {
 			return nil, fmt.Errorf("load: %s: %w", name, err)
 		}
+		fw.Source = source(name)
 		out = append(out, fw)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })

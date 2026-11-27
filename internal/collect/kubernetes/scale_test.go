@@ -52,6 +52,7 @@ func TestConnectorScale(t *testing.T) {
 			})
 		})
 	}
+	t.Run("paged_http", testConnectorScalePagedPods)
 }
 
 func TestSharedImagesKeepEveryPodEdgeAndDistinctReference(t *testing.T) {

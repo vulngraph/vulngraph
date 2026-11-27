@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -213,4 +214,41 @@ func TestChartDiskScanOffMeansOff(t *testing.T) {
 	hardened, err := os.ReadFile("../../deploy/helm-values/hardened.yaml")
 	require.NoError(t, err)
 	assert.NotContains(t, string(hardened), "diskScanEnabled: true", "the hardened overlay must not turn disk scanning on")
+}
+
+// helmRender renders the chart with the CI's placeholder secrets plus extra
+// --set arguments; it skips where helm is not installed (the CI helm job
+// always has it).
+func helmRender(t *testing.T, extra ...string) string {
+	t.Helper()
+	helm, err := exec.LookPath("helm")
+	if err != nil {
+		t.Skip("helm is not installed")
+	}
+	secrets := "secret.secretKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=,secret.postgresPassword=ci-pg,secret.postgresSuperuserPassword=ci-pg-su," +
+		"secret.postgresScannerPassword=ci-pg-scan,secret.clickhousePassword=ci-ch,secret.clickhouseMigratePassword=ci-ch-migrate," +
+		"secret.clickhouseScannerPassword=ci-ch-scan"
+	args := append([]string{"template", "graph", chartDir, "--set-string", secrets}, extra...)
+	out, err := exec.Command(helm, args...).CombinedOutput() //nolint:gosec // fixed helm arguments in a test
+	require.NoError(t, err, string(out))
+	return string(out)
+}
+
+// TestChartFrameworksDirOnlyWhenConfigured: FRAMEWORKS_DIR, the volume and the
+// mount render on serve only, and only once config.frameworksConfigMap names a
+// ConfigMap. Unset (the default) the chart is unchanged and serve loads NIST
+// alone.
+func TestChartFrameworksDirOnlyWhenConfigured(t *testing.T) {
+	cfg, ok := chartValues(t)["config"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "", cfg["frameworksConfigMap"], "no custom frameworks by default")
+
+	off := helmRender(t)
+	assert.NotContains(t, off, "FRAMEWORKS_DIR")
+	assert.NotContains(t, off, "/etc/vulngraph/frameworks")
+
+	on := helmRender(t, "--set", "config.frameworksConfigMap=my-frameworks")
+	assert.Equal(t, 1, strings.Count(on, "name: FRAMEWORKS_DIR"), "only the serve container reads it")
+	assert.Contains(t, on, "mountPath: /etc/vulngraph/frameworks")
+	assert.Contains(t, on, `name: "my-frameworks"`)
 }

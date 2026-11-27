@@ -11,17 +11,21 @@ import (
 
 const retirementLastSeen = "SELECT id, max(last_seen) FROM assets WHERE id IN (%s) GROUP BY id"
 const retireAssetVersions = `DELETE FROM assets WHERE id IN (%s)
- AND last_seen < parseDateTimeBestEffort(mapFromArrays(?, ?)[id])
+ AND if(last_seen = toStartOfSecond(last_seen), last_seen + INTERVAL 999999999 NANOSECOND, last_seen)
+ < parseDateTime64BestEffort(mapFromArrays(?, ?)[id], 9)
  SETTINGS lightweight_deletes_sync = 1`
 const retireEdgeVersions = `DELETE FROM graph_edges WHERE
- (src_id IN (%s) AND synced_at < parseDateTimeBestEffort(mapFromArrays(?, ?)[src_id]))
- OR (dst_id IN (%s) AND synced_at < parseDateTimeBestEffort(mapFromArrays(?, ?)[dst_id]))
+ (src_id IN (%s) AND if(synced_at = toStartOfSecond(synced_at), synced_at + INTERVAL 999999999 NANOSECOND, synced_at)
+ < parseDateTime64BestEffort(mapFromArrays(?, ?)[src_id], 9))
+ OR (dst_id IN (%s) AND if(synced_at = toStartOfSecond(synced_at), synced_at + INTERVAL 999999999 NANOSECOND, synced_at)
+ < parseDateTime64BestEffort(mapFromArrays(?, ?)[dst_id], 9))
  SETTINGS lightweight_deletes_sync = 1`
 
 // RetireAssets applies complete-enumeration proofs to every stored version,
-// preserving observations at or after the proof's cutoff. The inventory table
-// uses second precision, so equality is deliberately kept. Field-change and
-// finding history live in separate tables and are unaffected.
+// preserving observations at or after the proof's cutoff. A whole-second row
+// may predate the precision migration: treat it as the end of that second so
+// lost fractions cannot turn a resurfacing resource into a confirmed deletion.
+// Apply this per row, including writes arriving after the eligibility read.
 func (r *CHRepo) RetireAssets(ctx context.Context, deletions map[string]time.Time) ([]string, error) {
 	if len(deletions) == 0 {
 		return nil, nil
@@ -36,7 +40,7 @@ func (r *CHRepo) RetireAssets(ctx context.Context, deletions map[string]time.Tim
 			return nil, fmt.Errorf("RetireAssets: empty identity or deletion time")
 		}
 		ids = append(ids, id)
-		cutoffs = append(cutoffs, at.UTC().Truncate(time.Second).Format(time.RFC3339))
+		cutoffs = append(cutoffs, at.UTC().Format(time.RFC3339Nano))
 	}
 	in, args := dbutil.CHIn(ids)
 	qctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -52,7 +56,7 @@ func (r *CHRepo) RetireAssets(ctx context.Context, deletions map[string]time.Tim
 			if err := rows.Scan(&id, &lastSeen); err != nil {
 				return err
 			}
-			if !lastSeen.Before(deletions[id].Truncate(time.Second)) {
+			if !observedBeforeDeletion(lastSeen, deletions[id]) {
 				delete(eligible, id)
 			}
 		}

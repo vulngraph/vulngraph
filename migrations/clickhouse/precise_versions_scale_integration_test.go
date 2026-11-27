@@ -28,7 +28,7 @@ func TestPreciseVersionsPopulatedScale(t *testing.T) {
  SELECT concat('image-',toString(number%100000)),'container_image',concat('package-',toString(number)),
  'package','runs_package','{"version":"original","location":"/usr/lib"}',now() FROM numbers(`+strconv.Itoa(n)+`) SETTINGS max_threads=2`))
 	start := time.Now()
-	_, err = p.Up(ctx)
+	_, err = p.UpTo(ctx, 3)
 	seconds := time.Since(start).Seconds()
 	require.NoError(t, err)
 	var count uint64

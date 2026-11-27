@@ -19,16 +19,15 @@ func jsonFile(t *testing.T, v any) *fstest.MapFile {
 }
 
 type preq struct {
-	ID, Name, Section string
-	Checks            []string
+	ID, Name string
+	Checks   []string
 }
 
 func prowlerFile(t *testing.T, reqs ...preq) *fstest.MapFile {
 	t.Helper()
 	var out []map[string]any
 	for _, r := range reqs {
-		out = append(out, map[string]any{"Id": r.ID, "Name": r.Name, "Checks": r.Checks,
-			"Attributes": []map[string]any{{"Section": r.Section}}})
+		out = append(out, map[string]any{"Id": r.ID, "Name": r.Name, "Checks": r.Checks})
 	}
 	return jsonFile(t, map[string]any{"Framework": "f", "Requirements": out})
 }
@@ -105,7 +104,7 @@ func TestGenerateNISTFoldsItemsAndAddsSecurityHub(t *testing.T) {
 	nist := map[string]string{"AC-2": "Account Management", "AC-2(3)": "Disable Accounts", "CP-1": "Policy and Procedures",
 		"SC-28(3)": "Cryptographic Keys", "SC-7(16)": "Prevent Discovery of System Components"}
 	src := FrameworkSource{ID: "nist-800-53-r5", Prowler: map[string]string{"aws": "nist.json"}, SecurityHubPrefix: shNISTPrefix}
-	fw, err := generateOne(b, src, frameworkMetas[src.ID], byCheck, related, ix, nil, nist)
+	fw, err := generateOne(b, src, frameworkMetas[src.ID], byCheck, related, ix, nist)
 	require.NoError(t, err)
 
 	got := map[string]frameworks.Requirement{}
@@ -128,40 +127,14 @@ func TestGenerateNISTFoldsItemsAndAddsSecurityHub(t *testing.T) {
 	require.Zero(t, got["SC-7(16)"].Unjoined, "Account.2 is not FSBP, so it is not a source mapping")
 }
 
-func TestGenerateHandTitledNeedsCommittedTitles(t *testing.T) {
+func TestGenerateNISTRefusesARequirementWithNoCatalogTitle(t *testing.T) {
 	bs := genMatrices()
 	b := genBundle(t)
-	b[ProwlerFilePath("aws", "pci.json")] = prowlerFile(t,
-		preq{ID: "4.2.1.7", Section: "4.2.1: PAN is protected in transit.", Checks: []string{"iam_root_mfa_enabled"}})
+	b[ProwlerFilePath("aws", "nist.json")] = prowlerFile(t, preq{Name: "ZZ-9", Checks: []string{"iam_root_mfa_enabled"}})
 	ix := frameworks.NewIndex(bs)
 	byCheck, err := prowlerCheckRefs(b, bs, ix)
 	require.NoError(t, err)
-	related, err := securityHubRelatedAll(b)
-	require.NoError(t, err)
-	src := FrameworkSource{ID: "pci-dss-4.0", Prowler: map[string]string{"aws": "pci.json"}, SecurityHubPrefix: shPCIPrefix}
-
-	_, err = generateOne(b, src, frameworkMetas[src.ID], byCheck, related, ix, map[string]string{}, nil)
-	require.ErrorContains(t, err, "4.2.1", "an untitled requirement is an error, never a placeholder or copied text")
-
-	fw, err := generateOne(b, src, frameworkMetas[src.ID], byCheck, related, ix, map[string]string{"4.2.1": "Strong cryptography in transit"}, nil)
-	require.NoError(t, err)
-	require.Len(t, fw.Requirements, 1, "Prowler's sub-items roll up to the PCI requirement in their section")
-	require.Equal(t, []string{"aws-fsbp/ACM.1", "aws-fsbp/IAM.6", "cis-aws-foundations/2.3"}, fw.Requirements[0].Controls)
-}
-
-func TestGenerateKeepsCommittedCatalogue(t *testing.T) {
-	bs := genMatrices()
-	b := genBundle(t)
-	b[ProwlerFilePath("aws", "soc2.json")] = prowlerFile(t, preq{Name: "CC6.1 long AICPA text", Checks: []string{"iam_root_mfa_enabled"}})
-	ix := frameworks.NewIndex(bs)
-	byCheck, err := prowlerCheckRefs(b, bs, ix)
-	require.NoError(t, err)
-	src := FrameworkSource{ID: "soc2-2017", Prowler: map[string]string{"aws": "soc2.json"}}
-	fw, err := generateOne(b, src, frameworkMetas[src.ID], byCheck, nil, ix,
-		map[string]string{"CC6.1": "Logical access security", "CC1.1": "Integrity and ethics"}, nil)
-	require.NoError(t, err)
-	require.Len(t, fw.Requirements, 2, "CC1.1 has no mapping but stays in the catalogue, so coverage counts it")
-	require.Equal(t, "CC1.1", fw.Requirements[0].ID)
-	require.Empty(t, fw.Requirements[0].Controls)
-	require.Equal(t, "Logical access security", fw.Requirements[1].Title, "the hand title, never Prowler's copied criterion text")
+	src := FrameworkSource{ID: "nist-800-53-r5", Prowler: map[string]string{"aws": "nist.json"}}
+	_, err = generateOne(b, src, frameworkMetas[src.ID], byCheck, nil, ix, map[string]string{"AC-2": "Account Management"})
+	require.ErrorContains(t, err, "ZZ-9", "an untitled requirement is an error, never a placeholder title")
 }

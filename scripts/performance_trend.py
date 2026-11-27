@@ -16,15 +16,27 @@ def read(path):
     return json.loads(Path(path).read_text())
 
 
+def linux_cpu(cpuinfo, fallback):
+    models, arm_ids = set(), set()
+    arm_keys = ["CPU implementer", "CPU architecture", "CPU variant", "CPU part", "CPU revision"]
+    for block in cpuinfo.strip().split("\n\n"):
+        fields = dict(line.split(":", 1) for line in block.splitlines() if ":" in line)
+        fields = {key.strip(): value.strip() for key, value in fields.items()}
+        if fields.get("model name"):
+            models.add(fields["model name"])
+        # Linux ARM often has no model name; the architecture alone would make
+        # different processors appear to be comparable benchmark hardware.
+        if fields.get("CPU implementer") and fields.get("CPU part"):
+            arm_ids.add(", ".join(f"{key}={fields[key]}" for key in arm_keys if key in fields))
+    return " | ".join(sorted(arm_ids or models)) or fallback
+
+
 def environment(postgres, clickhouse):
     cpu = platform.processor()
     if sys.platform == "darwin":
         cpu = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"], text=True).strip()
     elif Path("/proc/cpuinfo").exists():
-        for line in Path("/proc/cpuinfo").read_text().splitlines():
-            if line.startswith("model name"):
-                cpu = line.split(":", 1)[1].strip()
-                break
+        cpu = linux_cpu(Path("/proc/cpuinfo").read_text(), cpu)
     stores = {}
     for name, container in [("postgres", postgres), ("clickhouse", clickhouse)]:
         # Select only resource limits and image identity; never export credentials.

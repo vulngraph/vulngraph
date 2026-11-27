@@ -59,6 +59,7 @@ jobs:
         run: |
           go vet -tags=integration ./internal/perfassurance ./cmd/perf-inventory ./internal/throughput ./internal/jobs ./internal/app/asset ./internal/app/finding ./internal/app/enrich ./internal/app/correlate ./internal/app/connector ./internal/migrate ./migrations/...
           python3 -m unittest discover -s scripts -p performance_trend_test.py
+          python3 -m unittest discover -s scripts -p run_bounded_test.py
       - name: Measure connector API fixtures
         env:
           PERF_CONNECTORS: "1"
@@ -77,6 +78,7 @@ jobs:
       - name: Reconcile workload inventory
         run: go run ./cmd/perf-inventory -check
       - name: Check inventory and dashboard query budgets
+        timeout-minutes: 15
         env:
           PERF_CH_MEMORY: 3g
           PERF_CH_CPUS: "2"

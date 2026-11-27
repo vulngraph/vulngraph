@@ -282,7 +282,7 @@ export function GraphView({
     setPeek(null);
     setActivePathId(p.id);
     setStepIdx(0);
-    rfApi?.fitView({ nodes: p.hops.map((h) => ({ id: h.id })), padding: 0.35, maxZoom: 1.2, duration: 700 });
+    rfApi?.fitView({ nodes: p.hops.map((h) => ({ id: h.id })), padding: 0.2, maxZoom: 1.2, duration: 1200 });
   }
 
   function clearPath() {
@@ -371,7 +371,7 @@ export function GraphView({
     return base.map((n) => {
       const passes = matchesFilter(nodeById.get(n.id));
       const focused = !effectiveFocus || effectiveFocus.has(n.id);
-      const opacity = !passes ? 0.05 : focused ? 1 : 0.18;
+      const opacity = !passes ? 0.05 : focused ? 1 : 0.1;
       return { ...n, selected: n.id === peek?.id, style: { ...n.style, opacity } };
     });
   }, [rfNodes, hidden, effectiveFocus, filterActive, matchesFilter, nodeById, peek]);
@@ -405,7 +405,7 @@ export function GraphView({
       // canvas clean instead of a fog of always-on 8px text.
       const showLabel = !grouped && (onPath || (peek != null && (e.source === peek.id || e.target === peek.id)));
       const strokeColor = onPath ? "#f0abfc" : baseColor;
-      const strokeWidth = onPath ? 4 : isExposed || isPrivilege ? 1.5 : 1;
+      const strokeWidth = onPath ? 5 : isExposed || isPrivilege ? 1.5 : 1;
       out.push({
         id: edgeKey,
         source: src,
@@ -423,7 +423,7 @@ export function GraphView({
         style: {
           stroke: strokeColor,
           strokeWidth,
-          opacity: dimmed ? 0.12 : onPath ? 1 : 0.75,
+          opacity: dimmed ? 0.05 : onPath ? 1 : 0.75,
         },
       });
     });

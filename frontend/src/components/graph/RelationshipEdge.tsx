@@ -62,7 +62,7 @@ export function RelationshipEdge({
         strokeWidth={strokeWidth}
         opacity={opacity}
         markerEnd={markerEnd}
-        style={{ transition: "opacity 0.15s, stroke-width 0.1s" }}
+        style={{ transition: "opacity 0.15s, stroke-width 0.1s", filter: onPath ? `drop-shadow(0 0 6px ${strokeColor})` : undefined }}
       />
       {showLabel && (
         <EdgeLabelRenderer>

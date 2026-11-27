@@ -157,7 +157,7 @@ func execCypher(conn *ladybug.Connection, query string, budget QueryBudget) (exp
 			n := explore.Node{
 				ID:        id,
 				Name:      strVal(typed.Properties["name"]),
-				Type:      strVal(typed.Properties["type"]),
+				Type:      nodeType(typed.Label, typed.Properties),
 				Provider:  strVal(typed.Properties["provider"]),
 				Region:    strVal(typed.Properties["region"]),
 				AccountID: strVal(typed.Properties["account_id"]),
@@ -217,7 +217,7 @@ func execCypher(conn *ladybug.Connection, query string, budget QueryBudget) (exp
 	}
 	sort.Strings(columns)
 
-	return explore.Result{Nodes: nodes, Edges: edges, Rows: rows, Columns: columns, Truncated: truncated}, nil
+	return explore.Result{Nodes: nodes, Edges: dedupeEdges(edges), Rows: rows, Columns: columns, Truncated: truncated}, nil
 }
 
 // blastRadiusCountCap is the node budget for blast-radius counting.
@@ -507,6 +507,35 @@ func flattenPaths(m map[string]any) map[string]any {
 		for i, r := range path.Relationships {
 			out[fmt.Sprintf("%s.rel%d", col, i)] = r
 		}
+	}
+	return out
+}
+
+// nodeType is the asset type a result node reports. The Repo table has no type
+// column, so a repo would otherwise come back untyped.
+func nodeType(label string, props map[string]any) string {
+	if t := strVal(props["type"]); t != "" {
+		return t
+	}
+	if label == NodeRepo {
+		return "github_repo"
+	}
+	return ""
+}
+
+// dedupeEdges drops repeated edges. OPTIONAL MATCH fan-out returns the same
+// relationship on every row it joins, which would draw and count it many times.
+func dedupeEdges(edges []explore.Edge) []explore.Edge {
+	type key struct{ src, dst, typ string }
+	seen := make(map[key]bool, len(edges))
+	out := edges[:0:0]
+	for _, e := range edges {
+		k := key{e.SrcID, e.DstID, e.EdgeType}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, e)
 	}
 	return out
 }

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "revision": "2026-11-27.1",
+  "revision": "2026-11-27.2",
   "issue": "https://github.com/vulngraph/vulngraph/issues/19",
-  "source_baseline": "f9e5fa7fd8c3b2873e1ca181731fb36bc0269793",
+  "source_baseline": "476ec5bdab5dfe4ffb073dc99e719dc46afa5f0c",
   "profiles": [
     "small",
     "target",
@@ -2333,8 +2333,8 @@
     },
     {
       "id": "collect.github.apps",
-      "title": "GitHub Apps, installation grants and workflow token scopes (parallel feature)",
-      "owner": "GitHub App/workflow task; performance-assurance integration (#19)",
+      "title": "GitHub Apps, installation grants and workflow token scopes",
+      "owner": "GitHub collector maintainers; performance-assurance (#19)",
       "weight": 5,
       "rationale": "Permission freshness and relationship completeness affect cross-repository/cloud risk visibility.",
       "budget": "connector",
@@ -2345,16 +2345,21 @@
       "status": "unmeasured",
       "entries": [
         "collection:internal/collect/github:Collect",
-        "collection:internal/collect/github:collectWorkflows",
+        "collection:internal/collect/github:collectAppInventory",
+        "collection:internal/collect/github:collectWorkflowVisibility",
+        "collection:internal/collect/github:collectWorkflowVisibilityIndexed",
+        "module:internal/collect/github/app_inventory.go",
         "module:internal/collect/github/github.go",
-        "module:internal/collect/github/workflow_ingest.go"
+        "module:internal/collect/github/workflow_ingest.go",
+        "module:internal/collect/github/workflow_lifecycle.go",
+        "module:internal/collect/github/workflow_visibility.go"
       ],
-      "next_action": "Reconcile incoming peer registrations. Measure populated 100/1k/10k fixtures, bounded grant-hub cardinality, full permission lifecycle; empty trees earn no credit."
+      "next_action": "Retain populated deterministic API/native fixtures; complete latency, quota, denied/partial and recovery scenarios across profiles before coverage credit. Async SBOM ready and pending report costs are distinct."
     },
     {
       "id": "collect.github.branchprotection",
       "title": "collect / github / branchprotection",
-      "owner": "GitHub App/workflow task; performance-assurance integration (#19)",
+      "owner": "GitHub collector maintainers; performance-assurance (#19)",
       "weight": 3,
       "rationale": "Frequent user work or substantial estate-wide query, API or processing cost.",
       "budget": "connector",
@@ -2366,12 +2371,12 @@
         "collection:internal/collect/github:collectBranchProtection",
         "module:internal/collect/github/branchprotection.go"
       ],
-      "next_action": "Reconcile peer App/installations and workflow permission/cross-repository scenarios before new evidence; existing empty-tree fixture does not cover them."
+      "next_action": "Retain populated deterministic API/native fixtures; complete latency, quota, denied/partial and recovery scenarios across profiles before coverage credit. Async SBOM ready and pending report costs are distinct."
     },
     {
       "id": "collect.github.codeowners",
       "title": "collect / github / codeowners",
-      "owner": "GitHub App/workflow task; performance-assurance integration (#19)",
+      "owner": "GitHub collector maintainers; performance-assurance (#19)",
       "weight": 3,
       "rationale": "Frequent user work or substantial estate-wide query, API or processing cost.",
       "budget": "connector",
@@ -2383,12 +2388,12 @@
         "collection:internal/collect/github:collectCodeowners",
         "module:internal/collect/github/codeowners.go"
       ],
-      "next_action": "Reconcile peer App/installations and workflow permission/cross-repository scenarios before new evidence; existing empty-tree fixture does not cover them."
+      "next_action": "Retain populated deterministic API/native fixtures; complete latency, quota, denied/partial and recovery scenarios across profiles before coverage credit. Async SBOM ready and pending report costs are distinct."
     },
     {
       "id": "collect.github.iac",
       "title": "collect / github / iac",
-      "owner": "GitHub App/workflow task; performance-assurance integration (#19)",
+      "owner": "GitHub collector maintainers; performance-assurance (#19)",
       "weight": 3,
       "rationale": "Frequent user work or substantial estate-wide query, API or processing cost.",
       "budget": "connector",
@@ -2404,12 +2409,12 @@
         "module:internal/collect/github/k8s_ingest.go",
         "module:internal/collect/github/tfstate_ingest.go"
       ],
-      "next_action": "Reconcile peer App/installations and workflow permission/cross-repository scenarios before new evidence; existing empty-tree fixture does not cover them."
+      "next_action": "Retain populated deterministic API/native fixtures; complete latency, quota, denied/partial and recovery scenarios across profiles before coverage credit. Async SBOM ready and pending report costs are distinct."
     },
     {
       "id": "collect.github.pipeline",
       "title": "collect / github / pipeline",
-      "owner": "GitHub App/workflow task; performance-assurance integration (#19)",
+      "owner": "GitHub collector maintainers; performance-assurance (#19)",
       "weight": 5,
       "rationale": "Availability, ingestion completeness, freshness or recovery depends on this path.",
       "budget": "connector",
@@ -2418,17 +2423,20 @@
       ],
       "status": "unmeasured",
       "entries": [
+        "collection:internal/collect/github:collectRepositorySources",
         "collector:TypeGitHub",
         "module:internal/collect/github/github.go",
         "module:internal/collect/github/ratelimit.go",
+        "module:internal/collect/github/repository_read_cache.go",
+        "module:internal/collect/github/repository_sources.go",
         "module:internal/collect/github/resolve.go"
       ],
-      "next_action": "Reconcile peer App/installations and workflow permission/cross-repository scenarios before new evidence; existing empty-tree fixture does not cover them."
+      "next_action": "Retain populated deterministic API/native fixtures; complete latency, quota, denied/partial and recovery scenarios across profiles before coverage credit. Async SBOM ready and pending report costs are distinct."
     },
     {
       "id": "collect.github.sbom",
       "title": "collect / github / sbom",
-      "owner": "GitHub App/workflow task; performance-assurance integration (#19)",
+      "owner": "GitHub collector maintainers; performance-assurance (#19)",
       "weight": 3,
       "rationale": "Frequent user work or substantial estate-wide query, API or processing cost.",
       "budget": "connector",
@@ -2438,14 +2446,15 @@
       "status": "unmeasured",
       "entries": [
         "collection:internal/collect/github:collectPackages",
-        "module:internal/collect/github/sbom.go"
+        "module:internal/collect/github/sbom.go",
+        "module:internal/collect/github/sbom_report.go"
       ],
-      "next_action": "Reconcile peer App/installations and workflow permission/cross-repository scenarios before new evidence; existing empty-tree fixture does not cover them."
+      "next_action": "Retain populated deterministic API/native fixtures; complete latency, quota, denied/partial and recovery scenarios across profiles before coverage credit. Async SBOM ready and pending report costs are distinct."
     },
     {
       "id": "collect.github.security_alerts",
       "title": "collect / github / security alerts",
-      "owner": "GitHub App/workflow task; performance-assurance integration (#19)",
+      "owner": "GitHub collector maintainers; performance-assurance (#19)",
       "weight": 3,
       "rationale": "Frequent user work or substantial estate-wide query, API or processing cost.",
       "budget": "connector",
@@ -2459,12 +2468,12 @@
         "module:internal/collect/github/ghas.go",
         "module:internal/collect/github/ghas_closed.go"
       ],
-      "next_action": "Reconcile peer App/installations and workflow permission/cross-repository scenarios before new evidence; existing empty-tree fixture does not cover them."
+      "next_action": "Retain populated deterministic API/native fixtures; complete latency, quota, denied/partial and recovery scenarios across profiles before coverage credit. Async SBOM ready and pending report costs are distinct."
     },
     {
       "id": "collect.github.workflows",
       "title": "collect / github / workflows",
-      "owner": "GitHub App/workflow task; performance-assurance integration (#19)",
+      "owner": "GitHub collector maintainers; performance-assurance (#19)",
       "weight": 3,
       "rationale": "Frequent user work or substantial estate-wide query, API or processing cost.",
       "budget": "connector",
@@ -2478,7 +2487,7 @@
         "module:internal/collect/github/image_harvest.go",
         "module:internal/collect/github/workflow_ingest.go"
       ],
-      "next_action": "Reconcile peer App/installations and workflow permission/cross-repository scenarios before new evidence; existing empty-tree fixture does not cover them."
+      "next_action": "Retain populated deterministic API/native fixtures; complete latency, quota, denied/partial and recovery scenarios across profiles before coverage credit. Async SBOM ready and pending report costs are distinct."
     },
     {
       "id": "collect.google.pipeline",
@@ -2639,6 +2648,7 @@
       ],
       "status": "unmeasured",
       "entries": [
+        "module:internal/collect/iac/workflow_supply_chain.go",
         "module:internal/collect/iac/workflows.go"
       ],
       "next_action": "Measure required scenarios on all profiles/native architectures; retain raw costs and independent persisted-output readback."

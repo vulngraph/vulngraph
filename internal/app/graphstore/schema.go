@@ -17,6 +17,15 @@ import (
 // tables. Used during schema upgrades so column changes take effect. On a fresh
 // database the IF EXISTS clauses make every statement a no-op.
 const dropDDL = `
+DROP TABLE IF EXISTS GitHubAppInstallation;
+DROP TABLE IF EXISTS GitHubInstallationGrant;
+DROP TABLE IF EXISTS GitHubGrantRepository;
+DROP TABLE IF EXISTS GitHubWorkflow;
+DROP TABLE IF EXISTS GitHubWorkflowToken;
+DROP TABLE IF EXISTS GitHubTokenGrant;
+DROP TABLE IF EXISTS GitHubTokenRepository;
+DROP TABLE IF EXISTS GitHubWorkflowCall;
+
 DROP TABLE IF EXISTS AssignedTo;
 DROP TABLE IF EXISTS GrantsAccessTo;
 DROP TABLE IF EXISTS GrantsAdmin;
@@ -128,6 +137,14 @@ CREATE NODE TABLE IF NOT EXISTS DataClass(id STRING, classification STRING, PRIM
 CREATE NODE TABLE IF NOT EXISTS ` + "`Group`" + `(id STRING, name STRING, provider STRING, PRIMARY KEY(id));
 CREATE NODE TABLE IF NOT EXISTS PermissionSet(id STRING, name STRING, provider STRING, account_id STRING, grants_admin INT32, PRIMARY KEY(id));
 
+CREATE REL TABLE IF NOT EXISTS GitHubAppInstallation(FROM Asset TO Asset, evidence STRING, coverage STRING, execution STRING, permissions STRING, condition STRING, scope STRING);
+CREATE REL TABLE IF NOT EXISTS GitHubInstallationGrant(FROM Asset TO Asset, evidence STRING, coverage STRING, execution STRING, permissions STRING, condition STRING, scope STRING);
+CREATE REL TABLE IF NOT EXISTS GitHubGrantRepository(FROM Asset TO Repo, evidence STRING, coverage STRING, execution STRING, permissions STRING, condition STRING, scope STRING);
+CREATE REL TABLE IF NOT EXISTS GitHubWorkflow(FROM Repo TO Asset, evidence STRING, coverage STRING, execution STRING, permissions STRING, condition STRING, scope STRING);
+CREATE REL TABLE IF NOT EXISTS GitHubWorkflowToken(FROM Asset TO Asset, evidence STRING, coverage STRING, execution STRING, permissions STRING, condition STRING, scope STRING);
+CREATE REL TABLE IF NOT EXISTS GitHubTokenGrant(FROM Asset TO Asset, evidence STRING, coverage STRING, execution STRING, permissions STRING, condition STRING, scope STRING);
+CREATE REL TABLE IF NOT EXISTS GitHubTokenRepository(FROM Asset TO Repo, evidence STRING, coverage STRING, execution STRING, permissions STRING, condition STRING, scope STRING);
+CREATE REL TABLE IF NOT EXISTS GitHubWorkflowCall(FROM Asset TO Asset, evidence STRING, coverage STRING, execution STRING, permissions STRING, condition STRING, scope STRING);
 CREATE REL TABLE IF NOT EXISTS RunsIn(FROM Package TO Asset, via STRING);
 CREATE REL TABLE IF NOT EXISTS DeployedBy(FROM Asset TO Repo, via STRING);
 CREATE REL TABLE IF NOT EXISTS CanEscalateTo(FROM IamRole TO IamRole, via STRING);
@@ -153,9 +170,9 @@ CREATE REL TABLE IF NOT EXISTS AccessesSecret(FROM IamRole TO Asset, via STRING)
 CREATE REL TABLE IF NOT EXISTS CanAssume(FROM IamRole TO IamRole, via STRING);
 CREATE REL TABLE IF NOT EXISTS ProtectedBy(FROM Asset TO Asset, via STRING);
 CREATE REL TABLE IF NOT EXISTS DnsPointsTo(FROM Asset TO Asset, matched STRING);
-CREATE REL TABLE IF NOT EXISTS FederatedAccess(FROM Repo TO IamRole, trust_type STRING, subject STRING, provenance STRING, confidence STRING, workflow_path STRING);
-CREATE REL TABLE IF NOT EXISTS FederatedAccessK8sWorkload(FROM K8sWorkload TO IamRole, trust_type STRING, subject STRING, provenance STRING, confidence STRING, workflow_path STRING);
-CREATE REL TABLE IF NOT EXISTS FederatedAccessAsset(FROM Asset TO IamRole, trust_type STRING, subject STRING, provenance STRING, confidence STRING, workflow_path STRING);
+CREATE REL TABLE IF NOT EXISTS FederatedAccess(FROM Repo TO IamRole, trust_type STRING, subject STRING, provenance STRING, confidence STRING, workflow_path STRING, evidence STRING, execution STRING, coverage STRING, condition STRING);
+CREATE REL TABLE IF NOT EXISTS FederatedAccessK8sWorkload(FROM K8sWorkload TO IamRole, trust_type STRING, subject STRING, provenance STRING, confidence STRING, workflow_path STRING, evidence STRING, execution STRING, coverage STRING, condition STRING);
+CREATE REL TABLE IF NOT EXISTS FederatedAccessAsset(FROM Asset TO IamRole, trust_type STRING, subject STRING, provenance STRING, confidence STRING, workflow_path STRING, evidence STRING, execution STRING, coverage STRING, condition STRING);
 CREATE REL TABLE IF NOT EXISTS Edge(FROM Asset TO Asset, edge_type STRING, via STRING);
 CREATE REL TABLE IF NOT EXISTS Owns(FROM CloudAccount TO Asset, via STRING);
 CREATE REL TABLE IF NOT EXISTS OwnsAsset(FROM Asset TO Repo, via STRING);
@@ -265,6 +282,15 @@ var nodeUnwindQ = map[string]string{
 // MATCH inside UNWIND skips silently when src/dst nodes are absent — correct
 // behaviour since edge datasets may reference nodes not in the Ladybug graph.
 var edgeUnwindQ = map[string]string{
+	"GitHubAppInstallation":   `UNWIND $rows AS r MATCH (s:Asset {id: r.src}), (d:Asset {id: r.dst}) CREATE (s)-[:GitHubAppInstallation {evidence: r.evidence, coverage: r.coverage, execution: r.execution, permissions: r.permissions, condition: r.condition, scope: r.scope}]->(d)`,
+	"GitHubInstallationGrant": `UNWIND $rows AS r MATCH (s:Asset {id: r.src}), (d:Asset {id: r.dst}) CREATE (s)-[:GitHubInstallationGrant {evidence: r.evidence, coverage: r.coverage, execution: r.execution, permissions: r.permissions, condition: r.condition, scope: r.scope}]->(d)`,
+	"GitHubGrantRepository":   `UNWIND $rows AS r MATCH (s:Asset {id: r.src}), (d:Repo {id: r.dst}) CREATE (s)-[:GitHubGrantRepository {evidence: r.evidence, coverage: r.coverage, execution: r.execution, permissions: r.permissions, condition: r.condition, scope: r.scope}]->(d)`,
+	"GitHubWorkflow":          `UNWIND $rows AS r MATCH (s:Repo {id: r.src}), (d:Asset {id: r.dst}) CREATE (s)-[:GitHubWorkflow {evidence: r.evidence, coverage: r.coverage, execution: r.execution, permissions: r.permissions, condition: r.condition, scope: r.scope}]->(d)`,
+	"GitHubWorkflowToken":     `UNWIND $rows AS r MATCH (s:Asset {id: r.src}), (d:Asset {id: r.dst}) CREATE (s)-[:GitHubWorkflowToken {evidence: r.evidence, coverage: r.coverage, execution: r.execution, permissions: r.permissions, condition: r.condition, scope: r.scope}]->(d)`,
+	"GitHubTokenGrant":        `UNWIND $rows AS r MATCH (s:Asset {id: r.src}), (d:Asset {id: r.dst}) CREATE (s)-[:GitHubTokenGrant {evidence: r.evidence, coverage: r.coverage, execution: r.execution, permissions: r.permissions, condition: r.condition, scope: r.scope}]->(d)`,
+	"GitHubTokenRepository":   `UNWIND $rows AS r MATCH (s:Asset {id: r.src}), (d:Repo {id: r.dst}) CREATE (s)-[:GitHubTokenRepository {evidence: r.evidence, coverage: r.coverage, execution: r.execution, permissions: r.permissions, condition: r.condition, scope: r.scope}]->(d)`,
+	"GitHubWorkflowCall":      `UNWIND $rows AS r MATCH (s:Asset {id: r.src}), (d:Asset {id: r.dst}) CREATE (s)-[:GitHubWorkflowCall {evidence: r.evidence, coverage: r.coverage, execution: r.execution, permissions: r.permissions, condition: r.condition, scope: r.scope}]->(d)`,
+
 	"ExposedToInternet":            `UNWIND $rows AS r MATCH (s:Asset {id: r.src}), (d:Asset {id: r.dst}) CREATE (s)-[:ExposedToInternet {via: r.via}]->(d)`,
 	"ExposedToInternetK8sWorkload": `UNWIND $rows AS r MATCH (s:K8sWorkload {id: r.src}), (d:Asset {id: r.dst}) CREATE (s)-[:ExposedToInternetK8sWorkload {via: r.via}]->(d)`,
 	"DnsPointsTo":                  `UNWIND $rows AS r MATCH (s:Asset {id: r.src}), (d:Asset {id: r.dst}) CREATE (s)-[:DnsPointsTo {matched: r.via}]->(d)`,
@@ -286,9 +312,9 @@ var edgeUnwindQ = map[string]string{
 	"Binds":                        `UNWIND $rows AS r MATCH (s:Asset {id: r.src}), (d:Asset {id: r.dst}) CREATE (s)-[:Binds {via: r.via}]->(d)`,
 	"BindsK8sWorkload":             `UNWIND $rows AS r MATCH (s:K8sWorkload {id: r.src}), (d:Asset {id: r.dst}) CREATE (s)-[:BindsK8sWorkload {via: r.via}]->(d)`,
 	"AccessesSecret":               `UNWIND $rows AS r MATCH (s:IamRole {id: r.src}), (d:Asset {id: r.dst}) CREATE (s)-[:AccessesSecret {via: r.via}]->(d)`,
-	"FederatedAccess":              `UNWIND $rows AS r MATCH (s:Repo {id: r.src}), (d:IamRole {id: r.dst}) CREATE (s)-[:FederatedAccess {trust_type: r.trust_type, subject: r.subject, provenance: r.provenance, confidence: r.confidence, workflow_path: r.workflow_path}]->(d)`,
-	"FederatedAccessK8sWorkload":   `UNWIND $rows AS r MATCH (s:K8sWorkload {id: r.src}), (d:IamRole {id: r.dst}) CREATE (s)-[:FederatedAccessK8sWorkload {trust_type: r.trust_type, subject: r.subject, provenance: r.provenance, confidence: r.confidence, workflow_path: r.workflow_path}]->(d)`,
-	"FederatedAccessAsset":         `UNWIND $rows AS r MATCH (s:Asset {id: r.src}), (d:IamRole {id: r.dst}) CREATE (s)-[:FederatedAccessAsset {trust_type: r.trust_type, subject: r.subject, provenance: r.provenance, confidence: r.confidence, workflow_path: r.workflow_path}]->(d)`,
+	"FederatedAccess":              `UNWIND $rows AS r MATCH (s:Repo {id: r.src}), (d:IamRole {id: r.dst}) CREATE (s)-[:FederatedAccess {trust_type: r.trust_type, subject: r.subject, provenance: r.provenance, confidence: r.confidence, workflow_path: r.workflow_path, evidence: r.evidence, execution: r.execution, coverage: r.coverage, condition: r.condition}]->(d)`,
+	"FederatedAccessK8sWorkload":   `UNWIND $rows AS r MATCH (s:K8sWorkload {id: r.src}), (d:IamRole {id: r.dst}) CREATE (s)-[:FederatedAccessK8sWorkload {trust_type: r.trust_type, subject: r.subject, provenance: r.provenance, confidence: r.confidence, workflow_path: r.workflow_path, evidence: r.evidence, execution: r.execution, coverage: r.coverage, condition: r.condition}]->(d)`,
+	"FederatedAccessAsset":         `UNWIND $rows AS r MATCH (s:Asset {id: r.src}), (d:IamRole {id: r.dst}) CREATE (s)-[:FederatedAccessAsset {trust_type: r.trust_type, subject: r.subject, provenance: r.provenance, confidence: r.confidence, workflow_path: r.workflow_path, evidence: r.evidence, execution: r.execution, coverage: r.coverage, condition: r.condition}]->(d)`,
 	"RunsPackage":                  `UNWIND $rows AS r MATCH (s:Asset {id: r.src}), (d:Package {id: r.dst}) CREATE (s)-[:RunsPackage {via: r.via}]->(d)`,
 	"RunsIn":                       `UNWIND $rows AS r MATCH (s:Package {id: r.src}), (d:Asset {id: r.dst}) CREATE (s)-[:RunsIn {via: r.via}]->(d)`,
 	"Accesses":                     `UNWIND $rows AS r MATCH (s:Asset {id: r.src}), (d:Asset {id: r.dst}) CREATE (s)-[:Accesses {via: r.via}]->(d)`,

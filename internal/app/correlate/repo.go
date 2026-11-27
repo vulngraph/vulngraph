@@ -28,7 +28,7 @@ var correlationTypes = []string{
 	// declared_ci_access: the GitHub-workflow-parse intermediate CIAccess reads.
 	// iam_role/gcp_service_account (its live join targets) are
 	// already above for other rules' sake.
-	"declared_ci_access",
+	"declared_ci_access", "github_workflow",
 	// declared_cloud_identity: the generic identifier-harvest intermediate
 	// DeclaredIdentityOwnership reads. Its absence here would mean the rule
 	// only ever sees edges from PartialCorrelate (which loads types from the
@@ -154,6 +154,7 @@ const loadViewTimeout = 5 * time.Minute
 // server-side-projected away) impossible to ship unnoticed. Add the key here
 // FIRST, in the same commit as the rule change that starts reading it.
 var metadataProjectedKeys = []string{
+	"workflow_id", "coverage", "condition",
 	"account_id", "address", "allowed", "custom_name", "denied", "deny_world", "direction",
 	"destination_ranges", "firewall_rules_complete", "network_interfaces", "nsg_rules_complete", "network_interfaces_complete", "direct_public_ip",
 	"disabled", "drift", "exec_role", "external_ip_configured", "federated_provider",

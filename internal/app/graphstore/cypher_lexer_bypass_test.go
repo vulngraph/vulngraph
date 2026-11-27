@@ -80,7 +80,9 @@ func TestRunCypherBudget_LexerBypassesWriteNothing(t *testing.T) {
 // one ExposedToInternet edge, plus the write connection that seeded it.
 func openSeededGraph(t *testing.T) (*Service, *ladybug.Connection) {
 	t.Helper()
-	s, err := Open("", 64, 1, 1, "")
+	// Untyped variable-length reads plan across every rel table. The GitHub
+	// visibility tables exceed the old 64 MiB test-only planning allowance.
+	s, err := Open("", 128, 1, 1, "")
 	require.NoError(t, err)
 	t.Cleanup(s.Close)
 	wc, err := s.db.newWriteConn()

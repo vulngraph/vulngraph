@@ -54,7 +54,7 @@ type CIAccess struct {
 func (*CIAccess) Name() string { return "ci_access" }
 
 func (*CIAccess) InterestedIn() []string {
-	return []string{"declared_ci_access", "iam_role", "gcp_service_account"}
+	return []string{"declared_ci_access", "github_workflow", "iam_role", "gcp_service_account"}
 }
 
 // PendingLiveVerify returns a copy of the AWS role targets that had no live
@@ -87,6 +87,9 @@ func (r *CIAccess) Correlate(g Graph) []asset.Edge {
 	var edges []asset.Edge
 	var pending []PendingVerify
 	for _, d := range g.DeclaredCIAccess() {
+		if d.Metadata["condition"] == "disabled" {
+			continue
+		}
 		repoID := d.Metadata["repo"]
 		if repoID == "" {
 			continue
@@ -99,7 +102,7 @@ func (r *CIAccess) Correlate(g Graph) []asset.Edge {
 				continue
 			}
 			if g.IsPrincipal(arn) {
-				edges = append(edges, ciAccessEdge(repoID, arn, "iam_role", d.Metadata["workflow_path"]))
+				edges = append(edges, declaredCIEdges(g, d, repoID, arn, "iam_role")...)
 			} else {
 				pending = append(pending, PendingVerify{
 					RepoID: repoID, TargetARN: arn, AccountID: d.Metadata["account_id"],
@@ -113,7 +116,7 @@ func (r *CIAccess) Correlate(g Graph) []asset.Edge {
 			}
 			saID := "serviceAccount:" + sa
 			if g.IsPrincipal(saID) {
-				edges = append(edges, ciAccessEdge(repoID, saID, "gcp_service_account", d.Metadata["workflow_path"]))
+				edges = append(edges, declaredCIEdges(g, d, repoID, saID, "gcp_service_account")...)
 			}
 		}
 	}
@@ -134,8 +137,25 @@ func ciAccessEdge(repoID, targetID, targetType, workflowPath string) asset.Edge 
 			"origin":        edgeOrigin,
 			"rule":          "ci_access",
 			"provenance":    "gh_workflow",
-			"confidence":    "high",
+			"confidence":    "declared",
 			"workflow_path": workflowPath,
 		},
 	}
+}
+
+// A workflow declaration proves an intended target, not the trust policy,
+// successful federation, or execution. Preserve that distinction in both views.
+func declaredCIEdges(g Graph, d asset.Asset, repoID, targetID, targetType string) []asset.Edge {
+	edge := ciAccessEdge(repoID, targetID, targetType, d.Metadata["workflow_path"])
+	edge.Properties["evidence"] = "declaration"
+	edge.Properties["execution"] = "unverified"
+	edge.Properties["coverage"] = d.Metadata["coverage"]
+	edge.Properties["condition"] = d.Metadata["condition"]
+	out := []asset.Edge{edge}
+	if workflow, ok := g.AssetByID(d.Metadata["workflow_id"]); ok && workflow.Type == "github_workflow" {
+		edge.SrcID = workflow.ID
+		edge.SrcType = workflow.Type
+		out = append(out, edge)
+	}
+	return out
 }

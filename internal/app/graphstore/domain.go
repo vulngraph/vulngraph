@@ -205,7 +205,7 @@ func RelTableFor(edgeType string) (string, bool) {
 // old label is not rerouted, so the loader's node-match silently discards every
 // edge on that endpoint. See producer_label_test.go and the assetTypeToNode
 // comment above.
-const SchemaVersion = "v3"
+const SchemaVersion = "v4"
 
 // SchemaDDLChecksum pins a hash of the Ladybug DDL — node/rel CREATE statements plus
 // the UNWIND insert templates. TestSchemaDDLChecksum recomputes it and fails if it
@@ -213,7 +213,7 @@ const SchemaVersion = "v3"
 // stale PVC snapshot or a cross-pod replica would otherwise load against the wrong
 // shape with no error. When you change the DDL, bump SchemaVersion AND update this
 // checksum in the same commit (the test prints the new value on failure).
-const SchemaDDLChecksum = "c64cfd0cb4dda7eb"
+const SchemaDDLChecksum = "0bbdc48386fccde5"
 
 // Sentinel node ID for the internet in ExposedToInternet edges.
 const InternetNodeID = "internet"

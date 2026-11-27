@@ -97,7 +97,10 @@ func newTestCollector(srv *httptest.Server) *Collector {
 		rateLimitStates.Delete(k)
 		return true
 	})
-	return &Collector{client: srv.Client(), baseURL: srv.URL}
+	c := New()
+	c.client = srv.Client()
+	c.baseURL = srv.URL
+	return c
 }
 
 func validConfig(t *testing.T) map[string]string {
@@ -114,7 +117,7 @@ func TestCollect_SinglePage(t *testing.T) {
 
 	res, err := c.Collect(context.Background(), validConfig(t))
 	require.NoError(t, err)
-	require.Len(t, res.Assets, 3)
+	require.Len(t, res.Assets, 4)
 
 	a := res.Assets[0]
 	require.Equal(t, "org/repo0", a.ID)
@@ -131,7 +134,7 @@ func TestCollect_Pagination(t *testing.T) {
 
 	res, err := c.Collect(context.Background(), validConfig(t))
 	require.NoError(t, err)
-	require.Len(t, res.Assets, 150)
+	require.Len(t, res.Assets, 151)
 	require.Equal(t, "org/repo149", res.Assets[149].ID)
 }
 
@@ -141,7 +144,8 @@ func TestCollect_NoRepos(t *testing.T) {
 
 	res, err := c.Collect(context.Background(), validConfig(t))
 	require.NoError(t, err)
-	require.Empty(t, res.Assets)
+	require.Len(t, res.Assets, 1)
+	require.Equal(t, "github_visibility_snapshot", res.Assets[0].Type)
 }
 
 func TestCollect_MissingCredentials(t *testing.T) {
@@ -173,8 +177,8 @@ func TestCollect_ConcurrentSafe(t *testing.T) {
 	for i := 0; i < goroutines; i++ {
 		go func() {
 			res, err := c.Collect(context.Background(), cfg)
-			if err == nil && len(res.Assets) != 5 {
-				err = fmt.Errorf("got %d assets, want 5", len(res.Assets))
+			if err == nil && len(res.Assets) != 6 {
+				err = fmt.Errorf("got %d assets, want 6", len(res.Assets))
 			}
 			errCh <- err
 		}()
@@ -328,7 +332,7 @@ func TestCollect_UnknownBranchProtection_OmitsKey(t *testing.T) {
 	c := newTestCollector(srv)
 	res, err := c.Collect(context.Background(), validConfig(t))
 	require.NoError(t, err)
-	require.Len(t, res.Assets, 2)
+	require.Len(t, res.Assets, 3)
 	for _, a := range res.Assets {
 		require.NotContains(t, a.Metadata, "branch_protection",
 			"the fake server has no graphql route — nothing was observed, so no key")

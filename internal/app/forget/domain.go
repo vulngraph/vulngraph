@@ -249,8 +249,11 @@ var enforceableFamilies = map[string]Family{
 	"compute.instances":   {Types: []string{"gce_instance"}, RegionScoped: false},
 	// Subscription/installation-wide pagers fail closed on truncated or
 	// malformed inventory. NIC or repository enrichment cannot omit these rows.
-	"compute:vms":  {Types: []string{"azure_vm"}, RegionScoped: false},
-	"github:repos": {Types: []string{"github_repo"}, RegionScoped: false},
+	"compute:vms":          {Types: []string{"azure_vm"}, RegionScoped: false},
+	"github:repos":         {Types: []string{"github_repo"}, RegionScoped: false},
+	"github:workflows":     {Types: []string{"github_workflow", "github_workflow_reference", "declared_ci_access"}, RegionScoped: false},
+	"github:tokens":        {Types: []string{"github_app_token_scope"}, RegionScoped: false},
+	"github:installations": {Types: []string{"github_app_installation", "github_app_grant"}, RegionScoped: false},
 	// Claimed only after every namespace and every pod page completed. The
 	// prefix is the cluster name, matching the stored pod's Region exactly.
 	"kubernetes:pods": {Types: []string{"k8s_pod"}, RegionScoped: true},

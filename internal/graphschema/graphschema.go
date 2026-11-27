@@ -302,6 +302,14 @@ const EdgeFreshnessCond = "synced_at > now() - INTERVAL 48 HOUR"
 // EdgeTypes is the registry of every edge_type any producer writes.
 // Order is meaningful: derived slices (sync tiers → SQL IN lists) keep it.
 var EdgeTypes = []EdgeType{
+	{Type: "github_app_installation", Rel: "GitHubAppInstallation", Tier: TierCritical, Weight: 0.3, Dir: DirForward, Doc: "GitHub supply-chain declaration or observed grant; not confirmed execution and not an internet Reach edge."},
+	{Type: "github_installation_grant", Rel: "GitHubInstallationGrant", Tier: TierCritical, Weight: 0.3, Dir: DirForward, Doc: "GitHub supply-chain declaration or observed grant; not confirmed execution and not an internet Reach edge."},
+	{Type: "github_grant_repository", Rel: "GitHubGrantRepository", Tier: TierCritical, Weight: 0.3, Dir: DirForward, Doc: "GitHub supply-chain declaration or observed grant; not confirmed execution and not an internet Reach edge."},
+	{Type: "github_workflow", Rel: "GitHubWorkflow", Tier: TierCritical, Weight: 0.3, Dir: DirForward, Doc: "GitHub supply-chain declaration or observed grant; not confirmed execution and not an internet Reach edge."},
+	{Type: "github_workflow_token", Rel: "GitHubWorkflowToken", Tier: TierCritical, Weight: 0.3, Dir: DirForward, Doc: "GitHub supply-chain declaration or observed grant; not confirmed execution and not an internet Reach edge."},
+	{Type: "github_token_grant", Rel: "GitHubTokenGrant", Tier: TierCritical, Weight: 0.3, Dir: DirForward, Doc: "GitHub supply-chain declaration or observed grant; not confirmed execution and not an internet Reach edge."},
+	{Type: "github_token_repository", Rel: "GitHubTokenRepository", Tier: TierCritical, Weight: 0.3, Dir: DirForward, Doc: "GitHub supply-chain declaration or observed grant; not confirmed execution and not an internet Reach edge."},
+	{Type: "github_workflow_call", Rel: "GitHubWorkflowCall", Tier: TierCritical, Weight: 0.3, Dir: DirForward, Doc: "GitHub supply-chain declaration or observed grant; not confirmed execution and not an internet Reach edge."},
 	// ── Critical tier: fetched uncapped ─────────────────────────────────────
 	// DirReverse — the internet is the origin of risk, not a recipient of it —
 	// but the BFS effect is nil either way: the `internet` dst is a sentinel
@@ -583,6 +591,14 @@ var EdgeTypes = []EdgeType{
 // Rels is the registry of every Ladybug rel table reachable from the edge
 // pipeline (edgeUnwindQ keys). Order is kept in derived slices.
 var Rels = []Rel{
+	{Name: "GitHubAppInstallation", From: NodeAsset, To: NodeAsset, Loaded: true, Expand: true, Doc: "GitHub App/workflow visibility with evidence and coverage properties."},
+	{Name: "GitHubInstallationGrant", From: NodeAsset, To: NodeAsset, Loaded: true, Expand: true, Doc: "GitHub App/workflow visibility with evidence and coverage properties."},
+	{Name: "GitHubGrantRepository", From: NodeAsset, To: NodeRepo, Loaded: true, Expand: true, Doc: "GitHub App/workflow visibility with evidence and coverage properties."},
+	{Name: "GitHubWorkflow", From: NodeRepo, To: NodeAsset, Loaded: true, Expand: true, Doc: "GitHub App/workflow visibility with evidence and coverage properties."},
+	{Name: "GitHubWorkflowToken", From: NodeAsset, To: NodeAsset, Loaded: true, Expand: true, Doc: "GitHub App/workflow visibility with evidence and coverage properties."},
+	{Name: "GitHubTokenGrant", From: NodeAsset, To: NodeAsset, Loaded: true, Expand: true, Doc: "GitHub App/workflow visibility with evidence and coverage properties."},
+	{Name: "GitHubTokenRepository", From: NodeAsset, To: NodeRepo, Loaded: true, Expand: true, Doc: "GitHub App/workflow visibility with evidence and coverage properties."},
+	{Name: "GitHubWorkflowCall", From: NodeAsset, To: NodeAsset, Loaded: true, Expand: true, Doc: "GitHub App/workflow visibility with evidence and coverage properties."},
 	{Name: "ExposedToInternet", From: NodeAsset, To: NodeAsset, Loaded: true, Expand: true,
 		Doc: "internet-reachable asset"},
 	{Name: "ExposedToInternetK8sWorkload", From: NodeK8sWorkload, To: NodeAsset, Loaded: true, Expand: true,

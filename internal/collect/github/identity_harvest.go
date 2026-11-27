@@ -112,10 +112,12 @@ func (c *Collector) collectRepoHarvest(ctx context.Context, baseURL, token strin
 	}
 	wg.Wait()
 
-	logger.Info().Int("assets", len(all)).Int("repos_with_hits", reposWithHits).
-		Int("image_assets", imageAssets).
-		Int("files_scanned", filesScanned).Int("repos", len(repos)).
-		Msg("repo harvest: projected declared_cloud_identity + declared_image_build")
+	if repositoryCache(ctx) == nil {
+		logger.Info().Int("assets", len(all)).Int("repos_with_hits", reposWithHits).
+			Int("image_assets", imageAssets).
+			Int("files_scanned", filesScanned).Int("repos", len(repos)).
+			Msg("repo harvest: projected declared_cloud_identity + declared_image_build")
+	}
 	return all
 }
 

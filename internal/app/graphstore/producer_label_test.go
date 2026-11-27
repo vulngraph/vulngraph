@@ -45,6 +45,17 @@ type producerEdge struct {
 // reading each producer — there is no way to derive these from the type system,
 // because SrcType/DstType are plain strings assigned at the emit site.
 var producerEdges = []producerEdge{
+	{"federated_access", "github_workflow", "iam_role", "correlate/ci_access.go"},
+	{"federated_access", "github_workflow", "gcp_service_account", "correlate/ci_access.go"},
+	{"github_app_installation", "github_app", "github_app_installation", "collect/github/app_inventory.go or workflow_visibility.go"},
+	{"github_installation_grant", "github_app_installation", "github_app_grant", "collect/github/app_inventory.go or workflow_visibility.go"},
+	{"github_grant_repository", "github_app_grant", "github_repo", "collect/github/app_inventory.go or workflow_visibility.go"},
+	{"github_workflow", "github_repo", "github_workflow", "collect/github/app_inventory.go or workflow_visibility.go"},
+	{"github_workflow_token", "github_workflow", "github_app_token_scope", "collect/github/app_inventory.go or workflow_visibility.go"},
+	{"github_token_grant", "github_app_token_scope", "github_app_grant", "collect/github/app_inventory.go or workflow_visibility.go"},
+	{"github_token_repository", "github_app_token_scope", "github_repo", "collect/github/app_inventory.go or workflow_visibility.go"},
+	{"github_workflow_call", "github_workflow", "github_workflow_reference", "collect/github/app_inventory.go or workflow_visibility.go"},
+
 	{"has_role", "ec2_instance", "iam_role", "correlate/ec2_iam.go:55"},
 	{"executes_as", "k8s_pod", "iam_role", "correlate/executes_as.go"},
 	{"executes_as", "lambda_function", "iam_role", "correlate/executes_as.go"},

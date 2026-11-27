@@ -158,7 +158,7 @@ func worker(ctx context.Context, getenv func(string) string) error {
 		}
 		out := make(map[string]map[string]string, len(assets))
 		for _, a := range assets {
-			if a.Type == "github_repo" {
+			if a.Type == "github_repo" || a.Type == "github_visibility_snapshot" {
 				out[a.ID] = a.Metadata
 			}
 		}

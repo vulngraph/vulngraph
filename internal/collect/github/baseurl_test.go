@@ -9,15 +9,18 @@ import (
 
 func TestCheckBaseURL(t *testing.T) {
 	for raw, ok := range map[string]bool{
-		"https://ghes.corp.example/api/v3": true,
-		"http://127.0.0.1:8080":            true,
-		"http://localhost:8080":            true,
-		"http://[::1]:8080":                true,
-		"http://ghes.corp.example/api/v3":  false,
-		"http://10.0.0.5/api/v3":           false,
-		"ftp://ghes.corp.example":          false,
-		"ghes.corp.example":                false,
-		"https://":                         false,
+		"https://ghes.corp.example/api/v3":                  true,
+		"http://127.0.0.1:8080":                             true,
+		"http://localhost:8080":                             true,
+		"http://[::1]:8080":                                 true,
+		"http://ghes.corp.example/api/v3":                   false,
+		"http://10.0.0.5/api/v3":                            false,
+		"ftp://ghes.corp.example":                           false,
+		"ghes.corp.example":                                 false,
+		"https://":                                          false,
+		"https://user:fixture-password@ghes.example/api/v3": false,
+		"https://ghes.example/api/v3?token=fixture":         false,
+		"https://ghes.example/api/v3#fragment":              false,
 	} {
 		err := checkBaseURL(raw)
 		if ok {

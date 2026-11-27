@@ -59,7 +59,7 @@ type Collector struct {
 	manifestFile func(ctx context.Context, baseURL, token string, r repo, path string) (string, bool)
 	// workflowTree lists a repo's .github/workflows/*.{yml,yaml} blob paths
 	// (default-branch tree, capped). Seam for tests.
-	workflowTree func(ctx context.Context, baseURL, token string, r repo) []string
+	workflowTree func(ctx context.Context, baseURL, token string, r repo) ([]string, bool)
 	// workflowFile fetches one file's content. Seam for tests; defaults to fetchFileContent.
 	workflowFile func(ctx context.Context, baseURL, token string, r repo, path string) (string, bool)
 	// tfStateFiles fetches a repo's *.tf file contents (filename -> content).
@@ -115,7 +115,7 @@ func New() *Collector {
 	c := &Collector{client: safenet.New(httpTimeout), baseURL: defaultBaseURL}
 	c.manifestTree = c.listManifestPaths
 	c.manifestFile = c.fetchFileContent
-	c.workflowTree = c.listWorkflowPaths
+	c.workflowTree = c.workflowPathsChecked
 	c.workflowFile = c.fetchFileContent
 	c.tfStateFiles = c.fetchTerraformFiles
 	c.harvestFiles = c.fetchHarvestFiles
@@ -128,7 +128,10 @@ func New() *Collector {
 func checkBaseURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
-		return fmt.Errorf("invalid base_url %q", raw)
+		return fmt.Errorf("invalid base_url")
+	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("base_url must not contain credentials, query parameters or a fragment")
 	}
 	if u.Scheme == "https" {
 		return nil
@@ -139,7 +142,7 @@ func checkBaseURL(raw string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("base_url %q must use https", raw)
+	return fmt.Errorf("base_url must use https")
 }
 
 // Collect authenticates with the App credentials in cfg and returns one asset
@@ -159,10 +162,11 @@ func (c *Collector) Collect(ctx context.Context, cfg map[string]string) (collect
 	if err != nil {
 		return collect.Result{}, fmt.Errorf("Collect: %w", err)
 	}
-	instToken, err := c.installationToken(ctx, baseURL, installationID, jwtToken)
+	credential, err := c.installationTokenInfo(ctx, baseURL, installationID, jwtToken)
 	if err != nil {
 		return collect.Result{}, fmt.Errorf("Collect: %w", err)
 	}
+	instToken := credential.Token
 	repos, reposPartial, err := c.listRepos(ctx, baseURL, instToken)
 	if err != nil {
 		return collect.Result{}, fmt.Errorf("Collect: %w", err)
@@ -184,36 +188,34 @@ func (c *Collector) Collect(ctx context.Context, cfg map[string]string) (collect
 	// resource declared in this repo to the team owning the declaring file.
 	codeowners, codeownersFile := c.collectCodeowners(ctx, baseURL, instToken, repos)
 
-	// IaC: scan each repo's Terraform for misconfigurations (shift-left).
-	// Best-effort per repo; findings are keyed to the github_repo asset.
-	iacFindings := c.collectIaC(ctx, baseURL, instToken, repos)
-
-	// k8s manifest IaC: parse plain manifests into declared_k8s_workload assets;
-	// the K8sManifestOwnership correlate rule joins them to live k8s assets and
-	// emits defined_in ownership edges.
-	k8sDeclared := c.collectK8sManifests(ctx, baseURL, instToken, repos)
-
 	// CI workflow IaC: parse every non-archived repo's .github/workflows/ for
 	// declared cloud-identity intents (role-to-assume / service_account) into
 	// declared_ci_access assets; the ci_access correlate rule later joins these
 	// to live iam_role/gcp_service_account assets.
-	workflowDeclared := c.collectWorkflows(ctx, baseURL, instToken, repos)
-
-	// Generic repo harvest: sweep EVERY repo for the concrete identifiers written
-	// in its files — cloud identities (role ARNs, service-account emails, GitHub
-	// OIDC subjects) into declared_cloud_identity, and private-registry container
-	// image paths into declared_image_build. The declared_identity_ownership and
-	// image_ownership correlate rules join them to live assets. It takes no
-	// configuration and no per-tool parser, so it reaches every org and tool —
-	// and it is the only signal that links a running image back to its repo when
-	// an image carries no OCI source/revision labels or build provenance.
-	harvestDeclared := c.collectRepoHarvest(ctx, baseURL, instToken, repos)
-
-	// Terraform state IaC: read each repo's S3-backed tfstate (when a static
-	// backend block names it) and address-confirm state resources against the
-	// repo's own .tf into declared_tf_resource assets; the tf_ownership
-	// correlate rule later joins these to live assets by arn/id.
-	tfStateDeclared, tfStateFindings := c.collectTFState(ctx, baseURL, instToken, repos, c.tfStateObj, c.tfStateBucketAcct, c.tfStateConn, cfg["tfstate_aws_account_id"])
+	priorIDs := []string{visibilityID(baseURL, "inventory", installationID)}
+	for _, r := range repos {
+		priorIDs = append(priorIDs, r.FullName)
+	}
+	prior := map[string]map[string]string{}
+	if c.priorRepoMeta != nil {
+		prior, err = c.priorRepoMeta(ctx, priorIDs)
+		if err != nil {
+			return collect.Result{}, fmt.Errorf("Collect: prior GitHub visibility: %w", err)
+		}
+	}
+	appInventory := c.collectAppInventory(ctx, baseURL, jwtToken, instToken, installationID, repos, reposPartial, prior[priorIDs[0]])
+	sources := c.collectRepositorySources(ctx, baseURL, instToken, repos, prior, appInventory, cfg["tfstate_aws_account_id"])
+	if sources.Failed {
+		return collect.Result{}, fmt.Errorf("Collect: repository source scan panicked")
+	}
+	workflows := sources.Workflows
+	for i := range appInventory.Assets {
+		if appInventory.Assets[i].ID == appInventory.ID {
+			appInventory.Assets[i].Metadata["collector_token_scope"] = "configured_installation_default"
+			appInventory.Assets[i].Metadata["collector_token_permissions"] = jsonString(credential.Permissions)
+			appInventory.Assets[i].Metadata["collector_token_repository_selection"] = credential.RepositorySelection
+		}
+	}
 
 	now := time.Now()
 	assets := make([]asset.Asset, 0, len(repos)+len(pkgAssets))
@@ -224,6 +226,10 @@ func (c *Collector) Collect(ctx context.Context, cfg map[string]string) (collect
 			"language":       r.Language,
 			"default_branch": r.DefaultBranch,
 		}
+		for k, v := range workflows.Metadata[r.FullName] {
+			meta[k] = v
+		}
+		meta["app_inventory_coverage"] = appInventory.Snapshot.Coverage
 		// Absent = we never observed the branch's protection state. Writing
 		// "disabled" there would turn a missing App permission into a flood of false findings.
 		if bp, ok := branchProtection[r.FullName]; ok {
@@ -248,34 +254,37 @@ func (c *Collector) Collect(ctx context.Context, cfg map[string]string) (collect
 		})
 	}
 	assets = append(assets, pkgAssets...)
-	assets = append(assets, k8sDeclared...)
-	assets = append(assets, workflowDeclared...)
-	assets = append(assets, tfStateDeclared...)
-	assets = append(assets, harvestDeclared...)
-	findings := append(ghasFindings, iacFindings...)
-	findings = append(findings, tfStateFindings...)
+	assets = append(assets, sources.Assets...)
+	assets = append(assets, workflows.Assets...)
+	assets = append(assets, appInventory.Assets...)
+	edges = append(edges, appInventory.Edges...)
+	edges = append(edges, workflows.Edges...)
+	findings := append(ghasFindings, sources.Findings...)
+	findings = append(findings, workflows.Findings...)
 	// reposPartial: the repo list paged out early (rate-limit/5xx), so repos on
 	// the un-fetched pages are missing from Assets — mark the result partial so
 	// the sync worker does not mistake them for deleted.
 	result := collect.Result{Assets: assets, Edges: edges, Findings: findings, Partial: reposPartial, ClosedFindings: ghasClosed}
+	result.ClosedFindings = append(result.ClosedFindings, workflowClosures(baseURL, repos, prior, workflows, appInventory)...)
 
-	// The repo listing is the only enumeration in this collector that can ever
-	// be claimed complete: it is the sole listing whose own loop (listRepos)
-	// returns a page-read failure or a maxPages truncation as an explicit
-	// signal rather than swallowing it and moving on. Every derived listing
-	// below it (branch protection, GHAS, IaC, k8s/workflow/tfstate
-	// declarations, the repo harvest) is deliberately best-effort per
-	// repo — it counts and logs skips but folds them into the same success
-	// path, so a nil error there is not the "no page failed" guarantee
-	// MarkComplete requires. Claiming any of those would be exactly the
-	// over-claim the contract forbids.
-	//
-	// Scope is keyed by installation, not org name (not reliably known here),
-	// matching what actually bounds this listing's API surface.
+	// Only authoritative complete listings license retirement. Workflow and
+	// installation scopes are independent, so a denied workflow file cannot
+	// suppress a fully observed installation removal.
 	if !reposPartial {
 		result.MarkComplete(installationID+"/github:repos", []string{"github_repo"}, len(repos))
 	}
-
+	if !reposPartial && workflows.Complete {
+		result.MarkComplete(installationID+"/github:workflows", []string{"github_workflow", "github_workflow_reference", "declared_ci_access"}, len(workflows.Assets))
+	}
+	if !reposPartial && workflows.Complete && appInventory.Snapshot.Coverage == "complete" {
+		result.MarkComplete(installationID+"/github:tokens", []string{"github_app_token_scope"}, len(workflows.Assets))
+	}
+	if !reposPartial && appInventory.Snapshot.Coverage == "complete" {
+		result.MarkComplete(installationID+"/github:installations", []string{"github_app_installation", "github_app_grant"}, len(appInventory.Snapshot.Installations)*2)
+	}
+	if err := ctx.Err(); err != nil {
+		return collect.Result{}, fmt.Errorf("Collect: cancelled: %w", err)
+	}
 	return result, nil
 }
 
@@ -339,38 +348,43 @@ func appJWT(appID, privateKeyPEM string) (string, error) {
 	return signed, nil
 }
 
-func (c *Collector) installationToken(ctx context.Context, baseURL, installationID, jwtToken string) (string, error) {
+type installationCredential struct {
+	Token               string            `json:"token"`
+	Permissions         map[string]string `json:"permissions"`
+	RepositorySelection string            `json:"repository_selection"`
+}
+
+func (c *Collector) installationTokenInfo(ctx context.Context, baseURL, installationID, jwtToken string) (installationCredential, error) {
 	if installationID == "" {
-		return "", fmt.Errorf("installationToken: installation_id is required")
+		return installationCredential{}, fmt.Errorf("installationToken: installation_id is required")
 	}
 	url := baseURL + "/app/installations/" + installationID + "/access_tokens"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
 	if err != nil {
-		return "", fmt.Errorf("installationToken: %w", err)
+		return installationCredential{}, fmt.Errorf("installationToken: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+jwtToken)
 	req.Header.Set("Accept", "application/vnd.github+json")
 
-	var body struct {
-		Token string `json:"token"`
-	}
+	var body installationCredential
 	if err := c.doJSON(req, http.StatusCreated, &body); err != nil {
-		return "", fmt.Errorf("installationToken: %w", err)
+		return installationCredential{}, fmt.Errorf("installationToken: %w", err)
 	}
 	if body.Token == "" {
-		return "", fmt.Errorf("installationToken: empty token in response")
+		return installationCredential{}, fmt.Errorf("installationToken: empty token in response")
 	}
-	return body.Token, nil
+	return body, nil
 }
 
 type repo struct {
-	Name          string `json:"name"`
-	FullName      string `json:"full_name"`
-	HTMLURL       string `json:"html_url"`
-	Visibility    string `json:"visibility"`
-	Archived      bool   `json:"archived"`
-	Language      string `json:"language"`
-	DefaultBranch string `json:"default_branch"`
+	Owner         appAccount `json:"owner"`
+	Name          string     `json:"name"`
+	FullName      string     `json:"full_name"`
+	HTMLURL       string     `json:"html_url"`
+	Visibility    string     `json:"visibility"`
+	Archived      bool       `json:"archived"`
+	Language      string     `json:"language"`
+	DefaultBranch string     `json:"default_branch"`
 }
 
 // listRepos returns the installation's repos. The bool is true when the listing
@@ -382,6 +396,7 @@ type repo struct {
 // itself, only "no page we read failed."
 func (c *Collector) listRepos(ctx context.Context, baseURL, token string) ([]repo, bool, error) {
 	var all []repo
+	expected := -1
 	seen := map[string]bool{}
 	for page := 1; page <= maxPages; page++ {
 		url := fmt.Sprintf("%s/installation/repositories?per_page=%d&page=%d", baseURL, perPage, page)
@@ -394,6 +409,7 @@ func (c *Collector) listRepos(ctx context.Context, baseURL, token string) ([]rep
 
 		var body struct {
 			Repositories *[]repo `json:"repositories"`
+			TotalCount   *int    `json:"total_count"`
 		}
 		if err := c.doJSON(req, http.StatusOK, &body); err != nil {
 			// A mid-pagination failure (after retries) returns the repos we
@@ -410,6 +426,12 @@ func (c *Collector) listRepos(ctx context.Context, baseURL, token string) ([]rep
 		if body.Repositories == nil {
 			return nil, false, fmt.Errorf("listRepos: page %d omitted repositories", page)
 		}
+		if body.TotalCount != nil {
+			if *body.TotalCount < 0 || (expected >= 0 && expected != *body.TotalCount) {
+				return all, true, nil
+			}
+			expected = *body.TotalCount
+		}
 		for _, r := range *body.Repositories {
 			owner, name, ok := strings.Cut(r.FullName, "/")
 			if !ok || owner == "" || name == "" || strings.Contains(name, "/") {
@@ -423,7 +445,7 @@ func (c *Collector) listRepos(ctx context.Context, baseURL, token string) ([]rep
 			all = append(all, r)
 		}
 		if len(*body.Repositories) < perPage {
-			return all, false, nil // last page — genuinely exhausted, not truncated
+			return all, expected >= 0 && expected != len(all), nil // a mismatched total is incomplete
 		}
 		if page == maxPages {
 			// The ceiling was reached with a still-full last page: there is no

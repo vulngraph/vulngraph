@@ -53,6 +53,7 @@ ch_port="$(docker port "$ch" 9000/tcp | sed 's/.*://')"
 docker inspect --format '{{.Name}} image={{.Image}} memory={{.HostConfig.Memory}} nanocpus={{.HostConfig.NanoCpus}}' "$pg" "$ch" > "$output/environment.txt"
 cd "$root"
 git status --short >> "$output/environment.txt"
+python3 scripts/performance_trend.py environment "$pg" "$ch" > "$output/environment.json"
 export PERF_ISOLATED=1 PERF_PROFILE="$profile" PERF_REPORT="$output/report.json"
 export PERF_COMMIT="$(git rev-parse HEAD)"
 export PERF_POSTGRES_URL="postgres://bench:$password@127.0.0.1:$pg_port/vg_perf?sslmode=disable"
@@ -65,7 +66,10 @@ if [[ -n "${PERF_CONNECTOR_DIR:-}" ]]; then
   go test -tags=integration ./internal/app/connector -run '^TestAWSOrgThroughput$' -count=1 -timeout=20m -v 2>&1 | tee "$PERF_CONNECTOR_DIR/aws_org.log"
 fi
 export TEST_DATABASE_URL="$PERF_POSTGRES_URL" TEST_CLICKHOUSE_URL="$PERF_CLICKHOUSE_URL"
-go test -p 1 -tags=integration ./internal/app/asset ./internal/app/finding ./internal/app/connector ./internal/jobs ./internal/migrate ./migrations/clickhouse \
-  -run '^(TestWideInventoryBatchesPreserveEveryRow|TestBoundedLineageFreshnessVersionsAndExposureGrade|TestPackageSignalsFollowInventoryProducer|TestRecordObservedLargeBatchPreservesFirstDetection|TestRapidFindingUpdatesReadBack|TestOrgBatchWriteFailureRecoversExistingChildren|TestEnrichBatchQueuePreservesPriorityUniquenessAndCapacity|TestDeletionBacklogRequiresConfirmationAndDrains|TestDeletionConfirmationMigrationUpgradeRollbackReplay|TestEdgeTypeIndexMigrationExistingDataRollbackReplay|TestPreciseVersions.*)$' \
+go test -p 1 -tags=integration ./internal/app/asset ./internal/app/finding ./internal/app/enrich ./internal/app/connector ./internal/jobs ./internal/migrate ./migrations/clickhouse \
+  -run '^(TestWideInventoryBatchesPreserveEveryRow|TestBoundedLineageFreshnessVersionsAndExposureGrade|TestPackageSignalsFollowInventoryProducer|TestRecordObservedLargeBatchPreservesFirstDetection|TestRapidFindingUpdatesReadBack|TestCoalescedEnrichmentIsImmediatelyReadable|TestOrgBatchWriteFailureRecoversExistingChildren|TestEnrichBatchQueuePreservesPriorityUniquenessAndCapacity|TestDeletionBacklogRequiresConfirmationAndDrains|TestDeletionConfirmationMigrationUpgradeRollbackReplay|TestEdgeTypeIndexMigrationExistingDataRollbackReplay|TestPreciseVersions.*)$' \
   -count=1 -timeout=10m -v 2>&1 | tee "$output/regressions.log"
 echo "Report: $output/report.json"
+if [[ -n "${PERF_SOAK_SECONDS:-}" ]]; then
+  go test -tags=integration ./internal/jobs -run '^TestPipelineSoak$' -count=1 -timeout=25m -v 2>&1 | tee "$PERF_CONNECTOR_DIR/soak.log"
+fi

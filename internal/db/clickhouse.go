@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -43,8 +44,10 @@ const defaultCHMaxConcurrent = 8
 // CH wraps a ClickHouse connection and a concurrency semaphore. All repositories
 // that read or write ClickHouse share one CH.
 type CH struct {
-	conn driver.Conn
-	sem  chan struct{}
+	conn     driver.Conn
+	sem      chan struct{}
+	singleMu sync.Mutex
+	single   map[string]*singleBatcher
 }
 
 // NewCH opens a ClickHouse connection from a clickhouse:// DSN and verifies
@@ -262,10 +265,20 @@ func (c *CH) Batch(ctx context.Context, query string, append func(driver.Batch) 
 	}
 	defer c.release()
 
+	// Batch promises immediate readback on success. Server defaults (or caller
+	// settings) enabling asynchronous acknowledgement must not weaken it.
+	// These writes are already grouped locally; a second server buffer also
+	// adds its flush delay to every dependent enrichment step.
+	ctx = c.WithQuerySettings(ctx, map[string]any{"async_insert": 0})
 	batch, err := c.conn.PrepareBatch(batchContext(ctx), query)
 	if err != nil {
 		return fmt.Errorf("Batch: prepare: %w", batchErr(ctx, err))
 	}
+	defer func() {
+		if !batch.IsSent() {
+			_ = batch.Abort()
+		}
+	}()
 	if err := append(batch); err != nil {
 		_ = batch.Abort()
 		return fmt.Errorf("Batch: append: %w", err)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -86,25 +85,29 @@ func (s *Service) RunCypherBudget(ctx context.Context, query string, budget Quer
 	return res, err
 }
 
-// BlastRadiusCount returns reachable asset count from seedID in depth hops.
-// Replaces the sequential ClickHouse BFS in enrich.BlastRadius.
-// Results are memoised in blastRadiusCache for the current graph snapshot —
-// the same asset ID recurs across many findings, so repeated lookups are served
-// from the cache.
+// BlastRadiusCount walks one immutable topology snapshot, capped at 500 nodes.
+// The retained adjacency has the same labels, relationships and attacker
+// directions as the native walk, without preparing a query for every hop.
 func (s *Service) BlastRadiusCount(ctx context.Context, seedID string, depth int) (int, error) {
-	key := seedID + ":" + strconv.Itoa(depth)
-	if v, ok := s.blastRadiusCache.Load(key); ok {
-		return v.(int), nil
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	s.mu.RLock()
+	open := s.db != nil
+	adj := s.blastAdj.Load()
+	s.mu.RUnlock()
+	if !open {
+		return 0, ErrLadybugUnavailable
+	}
+	if adj != nil {
+		return adj.count(ctx, seedID, depth)
 	}
 	var count int
 	err := s.withRead(ctx, blastRadiusTimeout, func(conn *ladybug.Connection) error {
-		var e error
-		count, e = blastRadiusCount(conn, seedID, depth)
-		return e
+		var err error
+		count, err = blastRadiusCount(conn, seedID, depth)
+		return err
 	})
-	if err == nil {
-		s.blastRadiusCache.Store(key, count)
-	}
 	return count, err
 }
 

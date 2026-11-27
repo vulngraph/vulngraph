@@ -36,17 +36,11 @@ func (r *SignalCHRepo) WriteFactors(ctx context.Context, findingID, assetID stri
 		return fmt.Errorf("WriteFactors: marshal factors: %w", err)
 	}
 	now := time.Now()
-	// One enrich job per finding means one single-row INSERT here, one row per
-	// part — expensive to maintain via ClickHouse merges at volume.
-	//
-	// Server-side async insert (wait_for_async_insert=0) would coalesce those and
-	// was tried. Rejected: respond.Context reads these factors back on the decide
-	// path (respond/service.go), and a decide job on an idle queue can run inside
-	// the flush window — so the LLM would decide with less evidence than the
-	// enrichment actually produced. The read is guarded by len(factors) > 0, so it
-	// degrades silently rather than failing, which makes it worse to ship, not
-	// safer. The real fix is batching the per-finding enrich job.
-	err = r.ch.Batch(ctx, insertSignals, func(b driver.Batch) error {
+	// Concurrent single-row writes share a bounded native batch. Completion is
+	// synchronous: decisions must be able to read these factors immediately.
+	ctx, cancel := db.WithWriteBudget(ctx, 5*time.Minute)
+	defer cancel()
+	err = r.ch.BatchSingle(ctx, insertSignals, len(factors)+2*len(findingID)+len(assetID)+64, func(b driver.Batch) error {
 		return b.Append(
 			findingID, findingID, assetID, "enrich",
 			score.Value, string(score.Band), string(factors), now, now,

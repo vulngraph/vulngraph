@@ -106,6 +106,5 @@ func (s *Service) refreshSignalCache(current map[string]NodeSignals) {
 		}
 		s.nodeSignalsCache.Delete(id)
 	}
-	s.blastRadiusCache.Range(func(k, _ any) bool { s.blastRadiusCache.Delete(k); return true })
 	s.packageSeeds.Store(kevPackageSeeds(current))
 }

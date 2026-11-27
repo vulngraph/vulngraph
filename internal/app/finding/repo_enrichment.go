@@ -32,7 +32,13 @@ func (r *CHRepo) UpsertEnrichment(ctx context.Context, enrichments []Enrichment)
 	for start := 0; start < len(enrichments); start += findingBatchSize {
 		end := min(start+findingBatchSize, len(enrichments))
 		chunk := enrichments[start:end]
-		err := r.ch.Batch(ctx, insertEnrichment, func(b driver.Batch) error {
+		write := r.ch.Batch
+		if len(chunk) == 1 {
+			write = func(ctx context.Context, query string, appendRow func(driver.Batch) error) error {
+				return r.ch.BatchSingle(ctx, query, enrichmentWriteBytes(chunk[0]), appendRow)
+			}
+		}
+		err := write(ctx, insertEnrichment, func(b driver.Batch) error {
 			for _, e := range chunk {
 				if err := b.Append(
 					e.ID, e.Score, e.ScoreBand, boolToUint8(e.KnownExploited),
@@ -50,4 +56,8 @@ func (r *CHRepo) UpsertEnrichment(ctx context.Context, enrichments []Enrichment)
 		}
 	}
 	return nil
+}
+
+func enrichmentWriteBytes(e Enrichment) int {
+	return 64 + len(e.ID) + len(e.ScoreBand) + len(e.SafetyClass) + len(e.FixTarget) + len(e.MustFixClass) + len(e.MustFixReason) + len(e.OwnerTeam) + len(e.OwnerSource) + len(e.OwnerConfidence) + len(e.Environment)
 }

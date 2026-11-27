@@ -5224,6 +5224,7 @@ var mutations = []Mutation{
 // Keep it truthful. A harness claiming full coverage while actually testing
 // half is the same class of lie as the guards it audits.
 var exempt = map[string]string{
+	"TestPipelineSoak":            "reads collected API fixture JSON to exercise real workers, queues and databases, not repository source; behavioral integration test",
 	"TestConnectorSyncThroughput": "reads measured API fixture JSON to exercise real storage, not repository source; behavioral database test",
 	// Asserts go.mod text. The only mutation that would make it fail is deleting
 	// the ldapserver replace, which changes module resolution for the whole build

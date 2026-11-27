@@ -175,19 +175,12 @@ type Service struct {
 	// for every loaded node, not only the finding-bearing ones sigByResource carries.
 	lastNodeIDs []string
 
-	// blastRadiusCache memoises BlastRadiusCount results for the lifetime of the
-	// current graph snapshot. BlastRadiusCount is called once per finding during
-	// enrichment; the same seedID appears across many findings for the same asset,
-	// so the hit rate is high. The result is deterministic per graph — no TTL needed,
-	// the graph swap is the invalidation event.
-	blastRadiusCache sync.Map // map["seedID:depth"]int
-
 	// blastAdj is the retained, LoadedRels()-scoped Go adjacency
 	// ladybugBlastProvider.BlastRadius (cmd/graph/ladybug_blast.go) walks instead of
 	// querying Ladybug — see blast_adjacency.go. Replaced wholesale (never mutated)
 	// by buildBlastAdjacency on every successful topology build
 	// (LoadFromSnapshot or SyncFromSources' full-rebuild path); nil until the
-	// first one completes, and — unlike blastRadiusCache — never reset on a
+	// first one completes, and never reset on a
 	// build that reuses the existing topology (signals-only refresh / no-op),
 	// because the adjacency it would rebuild is identical.
 	blastAdj atomic.Pointer[blastAdjacency]

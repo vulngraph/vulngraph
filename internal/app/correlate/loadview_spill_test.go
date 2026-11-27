@@ -62,7 +62,7 @@ func TestScanAssetsBoundsAggregationMemory(t *testing.T) {
 
 	require.True(t, appliesSettings,
 		"scanAssets no longer calls WithQuerySettings. Every correlation read (LoadView, "+
-			"LoadViewForTypes, LoadByIDs) goes through here; without it the full-view "+
+			"LoadViewForTypes) goes through here; without it the full-view "+
 			"aggregation is unbounded again and can exceed the memory limit under concurrent load.")
 	require.True(t, namesTheSetting,
 		"scanAssets applies query settings but not max_bytes_before_external_group_by — "+

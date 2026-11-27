@@ -65,7 +65,7 @@ func (r *envelopeTrace) sample(ctx context.Context) error {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m) // no forced collection: preserve live workload pressure
 		files := map[string]string{}
-		for _, name := range []string{"/proc/self/status", "/proc/self/io", "/proc/meminfo", "/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory.peak", "/sys/fs/cgroup/cpu.stat", "/sys/fs/cgroup/io.stat"} {
+		for _, name := range []string{"/proc/self/status", "/proc/self/io", "/proc/meminfo", "/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory.peak", "/sys/fs/cgroup/memory.swap.current", "/sys/fs/cgroup/memory.swap.max", "/sys/fs/cgroup/memory.swap.peak", "/sys/fs/cgroup/memory.swap.events", "/sys/fs/cgroup/memory.events", "/sys/fs/cgroup/memory.stat", "/sys/fs/cgroup/cpu.stat", "/sys/fs/cgroup/io.stat"} {
 			b, err := os.ReadFile(name)
 			if err != nil {
 				return fmt.Errorf("sample %s: %w", name, err)

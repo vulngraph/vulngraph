@@ -2,6 +2,8 @@
 # Local fixtures only. Render deployed tuning; retain exact config/image/source.
 set -euo pipefail
 profile="${1:-smoke}"
+test_package="${PERF_ENVELOPE_PACKAGE:-./internal/jobs}"
+case "$test_package" in ./internal/jobs|./internal/app/correlate) ;; *) echo 'unsupported fixture package' >&2; exit 2;; esac
 case "$profile" in smoke|target|million|two-million) ;; *) echo 'expected smoke, target, million or two-million' >&2; exit 2;; esac
 root="$(cd "$(dirname "$0")/.." && pwd)"
 bounded() { python3 "$root/scripts/run_bounded.py" "$@"; }
@@ -10,6 +12,14 @@ case "$resources" in
  deployed) ch_cpus=2; ch_memory=4g; server_memory=3221225472; query_memory=2147483648; worker_cpus=1; worker_memory=4g;;
  local16g) ch_cpus=4; ch_memory=8g; server_memory=6442450944; query_memory=2147483648; worker_cpus=4; worker_memory=16g;;
  *) echo 'expected deployed or local16g resources' >&2; exit 2;;
+esac
+# Declare total RAM+swap explicitly. "equal" matches the previous Docker
+# default of one RAM allowance of swap; "disabled" is a separate cohort.
+swap_mode="${PERF_ENVELOPE_SWAP:-equal}"
+case "$swap_mode" in
+ equal) pg_memory_swap=2g; ch_memory_swap="$(( ${ch_memory%g} * 2 ))g"; worker_memory_swap="$(( ${worker_memory%g} * 2 ))g";;
+ disabled) pg_memory_swap=1g; ch_memory_swap="$ch_memory"; worker_memory_swap="$worker_memory";;
+ *) echo 'expected equal or disabled swap' >&2; exit 2;;
 esac
 case "$profile" in
  smoke) connectors=25; assets=5000;;
@@ -48,6 +58,7 @@ cleanup() {
  fi
  bounded 10 docker logs "$ch" > "$output/clickhouse.log" 2>&1 || true
  bounded 10 docker logs "$pg" > "$output/postgres.log" 2>&1 || true
+ bounded 10 docker inspect --format '{"memory_bytes":{{.HostConfig.Memory}},"ram_plus_swap_bytes":{{.HostConfig.MemorySwap}},"nanocpus":{{.HostConfig.NanoCpus}}}'  "$worker" > "$output/worker-container-limits.json" 2>/dev/null || true
  bounded 10 docker inspect --format '{{json .State}}' "$worker" > "$output/worker-exit.json" 2>/dev/null || true
  bounded 15 docker rm -fv "$worker" "$builder" "$ch" "$pg" >/dev/null 2>&1 || true
  bounded 10 docker network rm "$suffix" >/dev/null 2>&1 || true
@@ -61,14 +72,14 @@ cd "$root"
 helm template graph deploy/helm-chart/graph --set secret.create=false --show-only templates/clickhouse-config.yaml > "$output/deployed-config.yaml"
 helm template graph deploy/helm-chart/graph --set secret.create=false "${helm_limits[@]}" --show-only templates/clickhouse-config.yaml > "$output/effective-config.yaml"
 cp deploy/helm-chart/graph/values.yaml "$output/deployed-values.yaml"
-python3 - "$output" "$resources" "$ch_cpus" "$server_memory" "$query_memory" <<'PY'
+python3 - "$output" "$resources" "$ch_cpus" "$server_memory" "$query_memory" "$swap_mode" <<'PY'
 import json,pathlib,re,shutil,subprocess,sys
 root=pathlib.Path(sys.argv[1]);src=(root/'effective-config.yaml').read_text()
 host=json.loads(subprocess.check_output(['docker','info','--format','{"cpus":{{.NCPU}},"memory_bytes":{{.MemTotal}}}']))
 free=shutil.disk_usage(root).free
 if free<40*1024**3:raise SystemExit('less than 40 GiB free workspace disk')
 if sys.argv[2]=='local16g' and (host['memory_bytes']<32*1024**3 or host['cpus']<8):raise SystemExit('local16g requires at least 24 GiB Docker memory and 8 CPUs')
-(root/'resource-profile.json').write_text(json.dumps({'cohort':sys.argv[2],'clickhouse_cpus':int(sys.argv[3]),'server_memory_bytes':int(sys.argv[4]),'query_memory_bytes':int(sys.argv[5]),'per_query_threads':2,'fixed_comparison_query_budget_bytes':512*1024**2,'docker':host,'workspace_free_bytes':free,'limitation':'local synthetic one-worker envelope, not SDK or fleet capacity evidence'},indent=2)+'\n')
+(root/'resource-profile.json').write_text(json.dumps({'cohort':sys.argv[2],'swap_policy':sys.argv[6],'clickhouse_cpus':int(sys.argv[3]),'server_memory_bytes':int(sys.argv[4]),'query_memory_bytes':int(sys.argv[5]),'per_query_threads':2,'fixed_comparison_query_budget_bytes':512*1024**2,'docker':host,'workspace_free_bytes':free,'limitation':'local synthetic one-worker envelope, not SDK or fleet capacity evidence'},indent=2)+'\n')
 for name in ['config.xml','users.xml','graph-users.xml']:
  m=re.search(r'^  '+re.escape(name)+r': \|\n((?:    .*\n|\n)+)',src,re.M)
  if not m: raise SystemExit('missing rendered '+name)
@@ -88,10 +99,10 @@ printf "stage=database-start time=%s\n" "$(date -u +%FT%TZ)"
 password="$(openssl rand -hex 16)"
 app_password="$(openssl rand -hex 16)"
 bounded 10 docker network create "$suffix" >/dev/null
-bounded 180 docker run -d --network "$suffix" --name "$pg" --cpus 1 --memory 1g \
+bounded 180 docker run -d --network "$suffix" --name "$pg" --cpus 1 --memory 1g --memory-swap "$pg_memory_swap" \
  -e POSTGRES_USER=bench -e "POSTGRES_PASSWORD=$password" -e POSTGRES_DB=vg_query_perf \
  -p 127.0.0.1::5432 "$pg_image" > /dev/null
-bounded 180 docker run -d --network "$suffix" --name "$ch" --cpus "$ch_cpus" --memory "$ch_memory" \
+bounded 180 docker run -d --network "$suffix" --name "$ch" --cpus "$ch_cpus" --memory "$ch_memory" --memory-swap "$ch_memory_swap" \
  -e CLICKHOUSE_SKIP_USER_SETUP=1 -e CLICKHOUSE_USER=bench -e "CLICKHOUSE_PASSWORD=$password" -e CLICKHOUSE_DB=vg_query_perf \
  -e "GRAPH_CH_APP_PASSWORD=$app_password" -e "GRAPH_CH_MIGRATE_PASSWORD=$password" -e "GRAPH_CH_SCANNER_PASSWORD=$password" \
  -v "$output/config.xml:/etc/clickhouse-server/config.d/zz-fixture.xml:ro" \
@@ -119,7 +130,7 @@ export PERF_CLICKHOUSE_URL="clickhouse://bench:$password@127.0.0.1:$ch_port/vg_q
 export PERF_APP_CLICKHOUSE_URL="clickhouse://graph:$app_password@127.0.0.1:$ch_port/vg_query_perf"
 helm version --short > "$output/helm-version.txt"
 python3 scripts/performance_trend.py environment "$pg" "$ch" > "$output/environment.json"
-bounded 10 docker inspect --format '{{.Name}} image={{.Image}} memory={{.HostConfig.Memory}} nanocpus={{.HostConfig.NanoCpus}}' "$pg" "$ch" > "$output/environment.txt"
+bounded 10 docker inspect --format '{{.Name}} image={{.Image}} memory={{.HostConfig.Memory}} memory_swap={{.HostConfig.MemorySwap}} nanocpus={{.HostConfig.NanoCpus}}' "$pg" "$ch" > "$output/environment.txt"
 git ls-files -z --cached --others --exclude-standard | xargs -0 shasum -a 256 > "$output/source-files.sha256"
 GIT_INDEX_FILE="$tmp/source-index" git read-tree HEAD
 GIT_INDEX_FILE="$tmp/source-index" git add -A
@@ -135,7 +146,7 @@ printf "stage=compile-worker time=%s\n" "$(date -u +%FT%TZ)"
 bounded 900 docker run --rm --name "$builder" --cpus 4 --memory 8g \
  --user "$(id -u):$(id -g)" -v "$root:/workspace:ro" -v "$modules:/go/pkg/mod" -v "$cache:/go-cache" -v "$output:/evidence" -w /workspace \
  -e GOTOOLCHAIN=local -e GOMAXPROCS=4 -e GOCACHE=/go-cache -e GOFLAGS=-buildvcs=false \
- golang:1.26.11-trixie go test -c -tags=integration -o /evidence/envelope.test ./internal/jobs > "$output/compile.log" 2>&1
+ golang:1.26.11-trixie go test -c -tags=integration -o /evidence/envelope.test "$test_package" > "$output/compile.log" 2>&1
 bounded 10 docker image inspect golang:1.26.11-trixie --format '{{.Id}} {{json .RepoDigests}}' > "$output/worker-image.txt"
 python3 scripts/sample-container-resources.py "$ch" > "$output/clickhouse-resources.jsonl" &
 resources_pid=$!
@@ -145,7 +156,7 @@ python3 scripts/sample-envelope-database.py "$ch" vg_query_perf > "$output/datab
 stats_pid=$!
 printf "stage=measurements time=%s\n" "$(date -u +%FT%TZ)"
 measurements_started=1
-bounded 3500 docker run --name "$worker" --network "$suffix" --cpus "$worker_cpus" --memory "$worker_memory" \
+bounded 3500 docker run --name "$worker" --network "$suffix" --cpus "$worker_cpus" --memory "$worker_memory" --memory-swap "$worker_memory_swap" \
  --user "$(id -u):$(id -g)" -v "$output:/evidence" -v "$root:/workspace:ro" -w /evidence \
  -e GOMAXPROCS="$worker_cpus" -e PERF_ENVELOPE_ISOLATED=1 -e PERF_ENVELOPE_DIR=/evidence \
  -e PERF_ENVELOPE_CONNECTORS="$connectors" -e PERF_ENVELOPE_ASSETS="$assets" -e PERF_COMMIT="$PERF_COMMIT" \

@@ -176,17 +176,10 @@ func (w *CorrelateWorker) Timeout(_ *river.Job[CorrelateArgs]) time.Duration {
 
 func (w *CorrelateWorker) Work(ctx context.Context, job *river.Job[CorrelateArgs]) error {
 	if len(job.Args.ChangedIDs) > 0 {
-		// A partial correlate older than the full-sweep interval is dead work:
-		// the periodic whole-graph sweep has already re-derived every edge it
-		// would compute. Skipping (instead of running superseded joins) is what
-		// lets a backed-up correlate queue burn off — a large backlog of stale
-		// partials can otherwise starve this queue's periodic ticks.
-		// 2× the default interval gives headroom for an env-tuned longer sweep.
-		if time.Since(job.CreatedAt) > 2*defaultCorrelateInterval {
-			log.FromContext(ctx).Info().Time("created_at", job.CreatedAt).
-				Int("changed_ids", len(job.Args.ChangedIDs)).
-				Msg("partial correlate stale — skipped (superseded by full sweep)")
-			return nil
+		// Age alone does not prove a successful full sweep covered this job.
+		// Failed/truncated full sweeps must not make queued invalidations vanish.
+		if err := validateCorrelateIDs(job.Args.ChangedIDs); err != nil {
+			return err
 		}
 		return w.workPartial(ctx, job.Args.ChangedIDs)
 	}

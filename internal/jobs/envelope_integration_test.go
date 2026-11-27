@@ -81,9 +81,9 @@ func TestConnectorMemoryEnvelope(t *testing.T) {
 	require.NoError(t, err)
 	trace := &envelopeTrace{file: traceFile, active: map[string]int{}, peak: map[string]int{}}
 	defer traceFile.Close()
-	r := &envelopeReport{Version: 5, Source: os.Getenv("PERF_COMMIT"), Platform: runtime.GOOS + "/" + runtime.GOARCH,
+	r := &envelopeReport{Version: 7, Source: os.Getenv("PERF_COMMIT"), Platform: runtime.GOOS + "/" + runtime.GOARCH,
 		Connectors: n, Resources: resources, Scopes: scopes, Sizes: envelopeScopeSizes(scopes, resources), Queues: map[string]int{},
-		Scope: []string{"one worker replica; production queue concurrency", "provider round-robin admission; version4 grouped providers sequentially", "explicit wave controller and final reconciliation; not production periodic scheduling latency", "synthetic per-provider Collect Result allocation; no SDK/API cost or quota proof",
+		Scope: []string{"one worker replica; production queue concurrency", "provider round-robin admission; version4 grouped providers sequentially", "production five-second coalescer; prior version5 flushed only after sync drain", "explicit wave controller and final reconciliation; not production periodic scheduling latency", "synthetic per-provider Collect Result allocation; no SDK/API cost or quota proof",
 			"24 correlation rules; default CSPM checks; four local enrichment sources; native graph",
 			"HTTP domain handlers over loopback; no authentication middleware or browser",
 			"250ms worker samples include benchmark observer; no forced GC; native allocator bytes not separately available",
@@ -189,10 +189,23 @@ func TestConnectorMemoryEnvelope(t *testing.T) {
 	riverCtx, stopRiver := soakRiverContext(ctx)
 	defer stopRiver()
 	require.NoError(t, client.Start(riverCtx))
+	coalesceStop := make(chan struct{})
+	var coalescers errgroup.Group
+	coalescers.Go(func() (err error) {
+		defer func() {
+			if p := recover(); p != nil {
+				err = fmt.Errorf("coalescer panic: %v", p)
+			}
+		}()
+		RunCorrelateCoalescer(ctx, coalesceStop, client)
+		return nil
+	})
 	defer func() {
 		stopCtx, done := context.WithTimeout(context.Background(), 30*time.Second)
 		defer done()
 		require.NoError(t, client.StopAndCancel(stopCtx))
+		close(coalesceStop)
+		require.NoError(t, coalescers.Wait())
 	}()
 	stopReads := envelopeReads(t, ctx, inv, findings, graph, trace, r)
 	defer stopReads()
@@ -318,9 +331,11 @@ func envelopeDrain(t *testing.T, ctx context.Context, pool *pgxpool.Pool, ch *db
 		}
 		require.NoError(t, rows.Err())
 		rows.Close()
-		trace.write(map[string]any{"event": "queues", "counts": counts})
+		buffered, full, age := partialCorrelateCoalescer.buf.state()
+		flushing := partialCorrelateCoalescer.flushing.Load()
+		trace.write(map[string]any{"event": "queues", "counts": counts, "buffered_changed_ids": buffered, "buffered_full": full, "buffer_age_seconds": age.Seconds(), "coalescer_flushing": flushing})
 		envelopeCheckCorrelationLimit(t, ctx, pool, ch, trace, report)
-		if pending == 0 {
+		if pending == 0 && buffered == 0 && !full && flushing == 0 {
 			return failed
 		}
 		select {

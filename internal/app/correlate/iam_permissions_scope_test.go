@@ -138,3 +138,23 @@ func TestPermissionPrincipals_IncludesGCPServiceAccount(t *testing.T) {
 		"gcp_service_account must be iterated by PermissionPrincipals, same as iam_role and iam_user")
 	require.Contains(t, g.PermissionPrincipals(), sa)
 }
+
+func TestPartialCorrelate_SCPAccountMoveActivatesBothAccounts(t *testing.T) {
+	seed := asset.Asset{ID: "scp", Type: "aws_scp_set", AccountID: "old"}
+	current := seed
+	current.AccountID = "new"
+	view := []asset.Asset{current}
+	for _, account := range []string{"old", "new", "unrelated"} {
+		view = append(view, asset.Asset{ID: "role-" + account, Type: "iam_role", AccountID: account, Metadata: map[string]string{"policies": adminPolicy(account)}})
+	}
+	var loader viewLoader = scopedLoader{changed: []asset.Asset{seed}, view: view}
+	writer := &fakeWriter{}
+	svc := NewService(loader, writer, []Rule{IAMEffectivePermissions{}})
+	_, err := svc.PartialCorrelate(t.Context(), []string{"scp"})
+	require.NoError(t, err)
+	var sources []string
+	for _, edge := range writer.got {
+		sources = append(sources, edge.SrcID)
+	}
+	require.ElementsMatch(t, []string{"role-old", "role-new"}, sources)
+}

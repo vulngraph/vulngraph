@@ -719,21 +719,17 @@ var mutations = []Mutation{
 	},
 	{
 		Guard: "TestCorrelateScanOrderMatchesSelectOrder", Pkg: "./internal/app/correlate",
-		File: "internal/app/correlate/repo.go",
-		Old: "\targMax(name, synced_at), argMax(type, synced_at), argMax(account_id, synced_at),\n" +
-			"\targMax(public_ip, synced_at), argMax(private_ip, synced_at), argMax(domain, synced_at), argMax(tags, synced_at),\n" +
-			"\t` + projectMetadataExpr + `\n\tFROM asset_versions_with_derivations\n\tWHERE type IN (%s)",
-		New: "\targMax(type, synced_at), argMax(name, synced_at), argMax(account_id, synced_at),\n" +
-			"\targMax(public_ip, synced_at), argMax(private_ip, synced_at), argMax(domain, synced_at), argMax(tags, synced_at),\n" +
-			"\t` + projectMetadataExpr + `\n\tFROM asset_versions_with_derivations\n\tWHERE type IN (%s)",
-		Why: "Scan is positional: transposing two same-typed columns compiles and leaves every asset's Name holding its Type",
+		File: "internal/app/correlate/repo_view_query.go",
+		Old:  "tuple(name,type,account_id,public_ip,private_ip,domain,tags,",
+		New:  "tuple(type,name,account_id,public_ip,private_ip,domain,tags,",
+		Why:  "tuple position and scan position must agree; same-typed swaps silently corrupt matching fields",
 	},
 	{
-		Guard: "TestCorrelateQueriesShareTheSameColumnList", Pkg: "./internal/app/correlate",
+		Guard: "TestCorrelateSeedSelectMatchesScanOrder", Pkg: "./internal/app/correlate",
 		File: "internal/app/correlate/repo.go",
-		Old:  "\t` + projectMetadataExpr + `\n\tFROM asset_versions_with_derivations\n\tWHERE id IN (%s)\n\tGROUP BY id`",
-		New:  "\t` + projectMetadataExpr + `, argMax(region, synced_at)\n\tFROM asset_versions_with_derivations\n\tWHERE id IN (%s)\n\tGROUP BY id`",
-		Why:  "a column added to one of the two queries that share scanAssets is a runtime scan mismatch, not a compile error",
+		Old:  "const loadByIDs = `SELECT id, argMax(type, synced_at), argMax(account_id, synced_at)",
+		New:  "const loadByIDs = `SELECT id, argMax(account_id, synced_at), argMax(type, synced_at)",
+		Why:  "activation seed scan is positional; swapping type and account silently changes rule activation",
 	},
 
 	// ── River job routing ───────────────────────────────────────────────
@@ -1854,8 +1850,8 @@ var mutations = []Mutation{
 	{
 		Guard: "TestRepoCommentDoesNotContradictOptimizableTables", Pkg: "./internal/app/asset",
 		File: "internal/app/asset/repo.go",
-		Old:  "\t// assetSelect uses FINAL to read the deduplicated ReplacingMergeTree\n",
-		New:  "\t// assetSelect uses FINAL because the optimize job skips assets entirely\n",
+		Old:  "\t// assetSummary and the List query are NOT here: both apply inventoryReadCond,\n",
+		New:  "\t// assetSummary never optimizes assets; both queries apply inventoryReadCond,\n",
 		Why:  "repo.go's load-bearing comment has been wrong twice in opposite directions, both times as plausible prose beside code that said otherwise",
 	},
 

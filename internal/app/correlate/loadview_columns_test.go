@@ -25,7 +25,7 @@ var scanFieldColumn = map[string]string{
 	"metaJSON":  "metadata",
 }
 
-// loadView and loadByIDs must select every column scanAssets reads, in the same
+// loadView must select every column scanAssets reads, in the same
 // order. `name` was missing for months and nothing caught it: asset.Name was ""
 // for EVERY asset in EVERY correlation Graph, which silently killed the rules
 // that match on it (DeploysTo's compute-service branch is gated behind
@@ -46,12 +46,13 @@ var scanFieldColumn = map[string]string{
 // shape is right; the test is what has to be mechanical.
 func TestCorrelateScanOrderMatchesSelectOrder(t *testing.T) {
 	scanned := scanAssetsColumns(t)
+	require.Equal(t, "tuple(name,type,account_id,public_ip,private_ip,domain,tags,", strings.Split(projectedCorrelationTuple, "\n")[0])
+	require.Equal(t, []string{"id", "row.1 AS name", "row.2 AS type", "row.3 AS account_id", "row.4 AS public_ip", "row.5 AS private_ip", "row.6 AS domain", "row.7 AS tags", "row.8 AS metadata"}, projectedSelectItems(loadViewSource))
 	require.Len(t, scanned, len(scanFieldColumn),
 		"scanAssets scans a different number of values than scanFieldColumn maps — update the map")
 
 	for _, q := range []struct{ name, sql string }{
 		{"loadView", loadView},
-		{"loadByIDs", loadByIDs},
 	} {
 		t.Run(q.name, func(t *testing.T) {
 			require.Equal(t, selectColumns(q.sql), scanned,
@@ -61,11 +62,10 @@ func TestCorrelateScanOrderMatchesSelectOrder(t *testing.T) {
 	}
 }
 
-// The two queries must stay column-identical: scanAssets is shared, so a column
-// added to one and not the other is a scan mismatch at runtime, not compile time.
-func TestCorrelateQueriesShareTheSameColumnList(t *testing.T) {
-	require.Equal(t, selectColumns(loadView), selectColumns(loadByIDs),
-		"loadView and loadByIDs must select the same columns — they share scanAssets")
+// Seed fields are activation only; full metadata belongs to the later view.
+func TestCorrelateSeedSelectMatchesScanOrder(t *testing.T) {
+	require.Equal(t, []string{"id", "type", "account_id"}, selectColumns(loadByIDs))
+	require.Equal(t, selectColumns(loadByIDs), scanFunctionColumns(t, "loadSeedPage"))
 }
 
 // selectColumns returns the column names a query's SELECT clause projects, in
@@ -85,6 +85,9 @@ func selectColumns(query string) []string {
 		item := strings.TrimSpace(clause[start:end])
 		if item == "" {
 			return
+		}
+		if _, alias, ok := strings.Cut(item, " AS "); ok {
+			item = alias
 		}
 		switch item {
 		case projectMetadataExpr:
@@ -115,14 +118,15 @@ func selectColumns(query string) []string {
 
 // scanAssetsColumns returns the columns scanAssets' rows.Scan call consumes, in
 // argument order, by reading the source.
-func scanAssetsColumns(t *testing.T) []string {
+func scanAssetsColumns(t *testing.T) []string { return scanFunctionColumns(t, "scanCorrelationAsset") }
+func scanFunctionColumns(t *testing.T, name string) []string {
 	t.Helper()
 	var cols []string
 	found := false
 	for _, f := range parsePackage(t) {
 		for _, d := range f.Decls {
 			fn, ok := d.(*ast.FuncDecl)
-			if !ok || fn.Name.Name != "scanAssets" {
+			if !ok || fn.Name.Name != name {
 				continue
 			}
 			ast.Inspect(fn, func(n ast.Node) bool {
@@ -218,4 +222,12 @@ func TestLoadViewProjectsAllReadMetadataKeys(t *testing.T) {
 			"rule reads Metadata[%q] but that key is not in metadataProjectedKeys (repo.go) — "+
 				"the server-side metadata projection would silently drop it; add it to the list", key)
 	}
+}
+
+func projectedSelectItems(query string) []string {
+	items := strings.Split(strings.TrimPrefix(strings.Split(query, "FROM")[0], "SELECT"), ",")
+	for i := range items {
+		items[i] = strings.TrimSpace(items[i])
+	}
+	return items
 }

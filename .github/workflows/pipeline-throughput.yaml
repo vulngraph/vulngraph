@@ -87,6 +87,13 @@ jobs:
       - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
         with:
           version: v3.19.0
+      - name: Check production correlation source costs
+        timeout-minutes: 8
+        env:
+          PERF_ENVELOPE_PACKAGE: ./internal/app/correlate
+          PERF_ENVELOPE_TEST: ^TestProductionCorrelationLoaderCosts$
+          PERF_ENVELOPE_SWAP: equal
+        run: bash scripts/benchmark-connector-envelope.sh target "$RUNNER_TEMP/correlation-source-throughput"
       - name: Check latest-row joins and lifecycle parity
         timeout-minutes: 15
         env:
@@ -125,4 +132,6 @@ jobs:
             ${{ runner.temp }}/connector-throughput/
             ${{ runner.temp }}/derived-throughput/
             !${{ runner.temp }}/derived-throughput/envelope.test
+            ${{ runner.temp }}/correlation-source-throughput/
+            !${{ runner.temp }}/correlation-source-throughput/envelope.test
           retention-days: 14

@@ -23,7 +23,7 @@ import (
 // re-stamp the edge, and an un-re-stamped edge leaves the traversable graph
 // within the 48h freshness window. A truncated sweep therefore DELETES topology
 // rather than merely missing it, so the only safe response is to refuse the
-// sweep and let the operator raise the ceiling.
+// sweep. Refusal does not extend prior edges beyond their freshness window.
 var ErrViewTruncated = errors.New("correlate: inventory view truncated at limit")
 
 // EdgeType values produced by correlation rules.

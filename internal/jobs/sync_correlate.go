@@ -15,21 +15,14 @@ import (
 	"github.com/riverqueue/river"
 )
 
-// maxPartialCorrelateIDs caps the changedIDs slice sent to LoadByIDs. The
-// ClickHouse IN clause is query-string-interpolated by the driver, so hundreds
-// of long ARN/DNS IDs can exceed CH's 256KB max_query_size. Mass updates
-// (> this limit) fall back to the 30-min full correlate sweep.
-const maxPartialCorrelateIDs = 200
+// An analysis work unit can share one complete context across many changes.
+// The repository separately limits each seed query to 200 IDs. The byte bound
+// is a conservative JSON-escaped argument charge, not decoded asset memory.
+const maxPartialCorrelateIDs = 10_000
+const maxPartialCorrelateBytes = 1 << 20
 
-// correlateQueueMax caps pending jobs on the correlate queue before sync stops
-// enqueueing partial correlates. Beyond this depth the single correlate worker
-// is already behind by more than the full-sweep interval, so a new partial
-// would go stale in the queue anyway — the 30-min full sweep covers the change.
-// (Same backpressure pattern as enrichQueueMax.)
-//
-// Depth is counted in JOBS, not proportional work: the coalescer
-// (correlate_coalescer.go) can pack up to maxPartialCorrelateIDs IDs into one
-// job, chunked from a larger union, so this does not mean "N syncs' worth".
+// correlateQueueMax caps queued jobs, not proportional work. Refused or lost
+// enqueues require a successful later full sweep; elapsed time is not coverage.
 const correlateQueueMax = 500
 
 // correlateQueueDepth measures the correlate backlog, capped at
@@ -58,9 +51,8 @@ func correlateQueueDepth(ctx context.Context, client jobLister) (int, error) {
 // operation's lifetime. flush()'s own logging carries the per-chunk detail
 // (chunk index, size, total coalesced IDs).
 //
-// Best-effort: the full 30-min correlate sweep corrects anything a coalesced flush drops under
-// correlateQueueMax backpressure. No ID accepted here is ever silently lost
-// otherwise — see the coalescer's own doc.
+// Best-effort across process crashes. Failed enqueues retain a bounded full
+// request for retry; recovery still requires a successful sweep.
 func enqueuePartialCorrelate(changedIDs []string) {
 	partialCorrelateCoalescer.Add(changedIDs)
 }

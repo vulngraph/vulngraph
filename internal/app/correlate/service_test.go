@@ -288,21 +288,26 @@ func TestPartialCorrelate_DoesNotDoubleIndexChangedAssets(t *testing.T) {
 	require.Equal(t, "seen-0", w.got[0].DstID)
 }
 
-func TestMergeChangedIntoView_KeepsTheChangedCopy(t *testing.T) {
-	view := []asset.Asset{
-		{ID: "a", Type: "iam_role", Name: "stale"},
-		{ID: "b", Type: "iam_role", Name: "untouched"},
+func TestPartialCorrelate_LaterViewWinsOverSeed(t *testing.T) {
+	for _, deleted := range []bool{false, true} {
+		old := dnsRecord("record", "A", "1.2.3.4")
+		fresh := dnsRecord("record", "A", "5.6.7.8")
+		target := asset.Asset{ID: "target", Type: "ec2_instance", PublicIP: "5.6.7.8"}
+		view := []asset.Asset{fresh, target}
+		if deleted {
+			view = []asset.Asset{target}
+		}
+		writer := &fakeWriter{}
+		svc := NewService(scopedLoader{changed: []asset.Asset{old}, view: view}, writer, []Rule{DNSPointsTo{}})
+		_, err := svc.PartialCorrelate(t.Context(), []string{old.ID})
+		require.NoError(t, err)
+		if deleted {
+			require.Empty(t, writer.got)
+		} else {
+			require.Len(t, writer.got, 1)
+			require.Equal(t, "target", writer.got[0].DstID)
+		}
 	}
-	changed := []asset.Asset{{ID: "a", Type: "iam_role", Name: "fresh"}}
-
-	merged := mergeChangedIntoView(view, changed)
-	require.Len(t, merged, 2)
-	byID := map[string]string{}
-	for _, a := range merged {
-		byID[a.ID] = a.Name
-	}
-	require.Equal(t, "fresh", byID["a"], "the newer read wins")
-	require.Equal(t, "untouched", byID["b"])
 }
 
 func TestDedupe_PrefersHigherConfidence(t *testing.T) {

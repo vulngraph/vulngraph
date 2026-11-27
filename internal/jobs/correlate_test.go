@@ -38,18 +38,16 @@ func correlateJob(createdAt time.Time, changedIDs []string) *river.Job[Correlate
 	}
 }
 
-// A partial correlate older than 2× the full-sweep interval is superseded by the
-// periodic whole-graph sweep — it must be skipped, not run. This is what lets a
-// deeply backed-up correlate queue burn off in minutes.
-func TestCorrelateWorker_StalePartialSkipped(t *testing.T) {
-	c := &fakeCorrelator{}
+// A failed full sweep is not coverage for an old partial job.
+func TestCorrelateWorker_OldPartialRunsAfterFailedFull(t *testing.T) {
+	c := &fakeCorrelator{err: errors.New("full view refused")}
 	w := &CorrelateWorker{correlate: c}
-
-	stale := time.Now().Add(-2*defaultCorrelateInterval - time.Minute)
-	err := w.Work(context.Background(), correlateJob(stale, []string{"i-123"}))
-	require.NoError(t, err)
-	require.Equal(t, 0, c.partialCalls, "stale partial is skipped")
-	require.Equal(t, 0, c.fullCalls)
+	require.Error(t, w.Work(t.Context(), correlateJob(time.Now(), nil)))
+	c.err = nil
+	require.NoError(t, w.Work(t.Context(), correlateJob(time.Now().Add(-24*time.Hour), []string{"i-123"})))
+	require.Equal(t, 1, c.fullCalls)
+	require.Equal(t, 1, c.partialCalls)
+	require.Equal(t, []string{"i-123"}, c.partialIDs)
 }
 
 func TestCorrelateWorker_FreshPartialRuns(t *testing.T) {

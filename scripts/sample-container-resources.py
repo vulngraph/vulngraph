@@ -20,7 +20,7 @@ def main():
     # One persistent exec avoids starting a new Docker process for every sample.
     command = """while test -r /proc/1/status; do
   echo @sample
-  for item in /proc/uptime /proc/1/status /proc/1/stat /proc/1/io /sys/fs/cgroup/memory.current /sys/fs/cgroup/memory.peak /sys/fs/cgroup/cpu.stat /sys/fs/cgroup/io.stat; do
+  for item in /proc/uptime /proc/1/status /proc/1/stat /proc/1/io /sys/fs/cgroup/memory.current /sys/fs/cgroup/memory.peak /sys/fs/cgroup/memory.swap.current /sys/fs/cgroup/memory.swap.max /sys/fs/cgroup/memory.swap.peak /sys/fs/cgroup/memory.swap.events /sys/fs/cgroup/memory.events /sys/fs/cgroup/memory.stat /sys/fs/cgroup/cpu.stat /sys/fs/cgroup/io.stat; do
     echo "@file $item"
     cat "$item" 2>/dev/null || true
   done

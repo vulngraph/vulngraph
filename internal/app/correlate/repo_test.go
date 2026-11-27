@@ -78,7 +78,13 @@ func TestLoadViewHasNoRecencyFilter(t *testing.T) {
 		{"loadView", loadView},
 		{"loadByIDs", loadByIDs},
 	} {
-		where := q.sql[strings.Index(q.sql, "WHERE"):]
+		predicate := "WHERE type IN"
+		if q.name == "loadByIDs" {
+			predicate = "WHERE id IN"
+		}
+		start := strings.Index(q.sql, predicate)
+		require.NotEqual(t, -1, start)
+		where := q.sql[start:]
 		where = where[:strings.Index(where, "GROUP BY")]
 		// synced_at may appear only inside argMax(...) (already excluded — WHERE
 		// starts after the SELECT clause) or inside EphemeralLivenessCond's

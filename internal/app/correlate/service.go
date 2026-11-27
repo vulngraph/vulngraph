@@ -103,7 +103,8 @@ func (s *Service) Correlate(ctx context.Context) (int, error) {
 	// Fail closed, not a Warn, on truncation: a rule that never re-stamps an
 	// edge lets it age out of the freshness window, so a truncated sweep
 	// deletes topology rather than merely missing some. Refusing the sweep
-	// keeps the last good edge set alive until the ceiling is raised.
+	// avoids publishing an incomplete result. Prior edges still age out under
+	// their normal freshness policy if successful sweeps do not resume.
 	if truncated {
 		return 0, fmt.Errorf("Correlate: %w", ErrViewTruncated)
 	}
@@ -199,13 +200,20 @@ func (s *Service) PartialCorrelate(ctx context.Context, changedIDs []string) (in
 		return 0, fmt.Errorf("PartialCorrelate: %w", ErrViewTruncated)
 	}
 
-	g := NewGraph(mergeChangedIntoView(view, changed))
+	g := NewGraph(view)
 	g.changedIDs = make(map[string]bool, len(changed))
 	g.changedSCPAccounts = make(map[string]bool)
 	g.changedTypes = changedTypes
+
 	for _, a := range changed {
 		g.changedIDs[a.ID] = true
 		if a.Type == "aws_scp_set" && a.AccountID != "" {
+			g.changedSCPAccounts[a.AccountID] = true
+		}
+	}
+
+	for _, a := range view {
+		if g.changedIDs[a.ID] && a.Type == "aws_scp_set" && a.AccountID != "" {
 			g.changedSCPAccounts[a.AccountID] = true
 		}
 	}
@@ -229,24 +237,6 @@ func (s *Service) PartialCorrelate(ctx context.Context, changedIDs []string) (in
 		return 0, fmt.Errorf("PartialCorrelate: ingest: %w", err)
 	}
 	return len(edges), nil
-}
-
-// mergeChangedIntoView combines the type-scoped view with the freshly changed
-// assets, keeping ONE copy of each ID — the changed one, which is the newer
-// read. Appending both lists blindly would double-enter any changed asset
-// whose type is also in neededTypes, running every rule on it twice.
-func mergeChangedIntoView(view, changed []asset.Asset) []asset.Asset {
-	isChanged := make(map[string]bool, len(changed))
-	for _, a := range changed {
-		isChanged[a.ID] = true
-	}
-	merged := make([]asset.Asset, 0, len(view)+len(changed))
-	for _, a := range view {
-		if !isChanged[a.ID] {
-			merged = append(merged, a)
-		}
-	}
-	return append(merged, changed...)
 }
 
 func typesOf(assets []asset.Asset) map[string]bool {

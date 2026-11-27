@@ -207,7 +207,7 @@ func testInventoryQueryCosts(t *testing.T, derived bool) {
 			require.NoError(t, err)
 			if derived {
 				// Preserve the original joined page shape as the populated baseline.
-				q = strings.Replace(q, baselineInventorySelect, assetSelect, 1)
+				q = strings.Replace(q, baselineInventorySelect, baselineEffectiveInventorySelect, 1)
 			}
 			begin := min(page*100, len(expected))
 			end := min(begin+100, len(expected))
@@ -487,3 +487,8 @@ func inventoryKeysWithRisk(n int, f Filter, derived bool) []inventoryFixtureKey 
 	})
 	return keys
 }
+
+// Retained pre-key-hydration control, not a production query prefix.
+const baselineEffectiveInventorySelect = `SELECT id, name, type, provider, region, account_id, endpoint,
+ public_ip, private_ip, domain, tags, metadata, risk_score, discovered_at, first_discovered_at, last_seen
+ FROM asset_current_with_derivations`

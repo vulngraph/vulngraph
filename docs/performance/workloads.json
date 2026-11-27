@@ -3980,7 +3980,7 @@
       "scenarios": [
         "pipeline"
       ],
-      "status": "unmeasured",
+      "status": "partial",
       "entries": [
         "job:correlate",
         "module:internal/app/correlate/azure_nsg.go",
@@ -4013,6 +4013,7 @@
         "module:internal/app/correlate/port_eval.go",
         "module:internal/app/correlate/reachability.go",
         "module:internal/app/correlate/repo.go",
+        "module:internal/app/correlate/repo_view_query.go",
         "module:internal/app/correlate/rules.go",
         "module:internal/app/correlate/secgroups.go",
         "module:internal/app/correlate/secret_access.go",
@@ -4022,7 +4023,7 @@
         "module:internal/jobs/correlate.go",
         "module:internal/jobs/correlate_coalescer.go"
       ],
-      "next_action": "Measure required scenarios on all profiles/native architectures; retain raw costs and independent persisted-output readback."
+      "next_action": "Measure complete input/output working sets, coalesced invalidations and mixed freshness; the default 600k refusal remains and larger-profile capacity is unaccepted."
     },
     {
       "id": "graph.fallback",

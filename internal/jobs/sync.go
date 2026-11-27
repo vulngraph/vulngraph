@@ -491,18 +491,11 @@ func (w *SyncWorker) Work(ctx context.Context, job *river.Job[SyncConnectorArgs]
 		}
 
 		if len(changedAssetIDs) > 0 {
-			// Enqueue a partial correlate for changed assets so graph edges are
-			// updated immediately rather than waiting for the next full sweep.
-			// Cap at maxPartialCorrelateIDs: the LoadByIDs IN clause is interpolated
-			// into the CH query string; with hundreds of long ARN/DNS IDs it hits
-			// CH's max_query_size (256KB). Mass updates fall back to the full sweep.
-			if len(changedAssetIDs) <= maxPartialCorrelateIDs {
-				ids := make([]string, 0, len(changedAssetIDs))
-				for id := range changedAssetIDs {
-					ids = append(ids, id)
-				}
-				enqueuePartialCorrelate(ids)
+			ids := make([]string, 0, len(changedAssetIDs))
+			for id := range changedAssetIDs {
+				ids = append(ids, id)
 			}
+			enqueuePartialCorrelate(ids)
 
 		}
 	}
@@ -537,6 +530,9 @@ func (w *SyncWorker) Work(ctx context.Context, job *river.Job[SyncConnectorArgs]
 	return nil
 }
 
+// Diff hydration is observability work, separate from correlation job batching.
+const maxChangeLogAssets = 200
+
 // writeAssetChangeLog computes per-field diffs for assets that existed and
 // changed this sweep, and appends them to the asset change-log audit table.
 // Best-effort: a failure here never affects the sync itself.
@@ -546,8 +542,8 @@ func (w *SyncWorker) writeAssetChangeLog(ctx context.Context, connectorID string
 	}
 	// Cap the diff work so a first-sync-style mass change doesn't issue a huge
 	// ByIDs read; the timeline is observability, partial coverage is acceptable.
-	if len(changedExistingIDs) > maxPartialCorrelateIDs {
-		changedExistingIDs = changedExistingIDs[:maxPartialCorrelateIDs]
+	if len(changedExistingIDs) > maxChangeLogAssets {
+		changedExistingIDs = changedExistingIDs[:maxChangeLogAssets]
 	}
 	oldAssets, err := w.assets.ByIDs(ctx, changedExistingIDs)
 	if err != nil {

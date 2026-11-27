@@ -160,7 +160,8 @@ var livenessExemptAssetQueries = map[string]string{
 	"assetArgMaxSelect":          "the shared id-lookup SELECT prefix; the gate belongs to whichever reader composes it, and its two composers (selectAsset, ByIDs) are exempt below",
 	"selectAsset":                "GetAsset is a by-id detail read. An asset page reached from a link, an alert or a finding must still render for a resource that has stopped being collected — that is exactly when an operator needs to see last_seen. Absence here would be a 404 that looks like the asset never existed.",
 	"selectAssetByName":          "FindByExactName backs ResolveID, the same by-name detail read as selectAsset's by-id case — a finding's blast-radius resolution must still find a role that has stopped being collected, not silently treat it as absent.",
-	"assetSelect":                "the full-table row SELECT prefix; its listAllForSyncQ composer applies the inventory gate.",
+	"selectHydratedAssets":       "hydrates only explicitly selected current-version keys; shared by bounded inventory pages and the complete graph source read.",
+	"listAllForSyncKeys":         "narrow full-inventory selection with the graph liveness predicate; asserted by TestListAllForSyncAppliesEphemeralLiveness.",
 	"selectAssetPage":            "hydrates only the composite keys selected by listQuery, whose liveness and derived-score predicates are asserted below.",
 	"externalAssetIDs":           "the scan target set, not a UI read. Gating it is a plausible improvement (scanning a deleted pod's address wastes work) but it changes what the scanner does, so it is deliberately out of this change.",
 	"assetIDsByType":             "the OSV feed's per-type page — a background pipeline, not a UI read. Packages, its only real caller, are not an ephemeral type, so the gate would be a no-op for it.",
@@ -189,8 +190,8 @@ var livenessExemptAssetQueries = map[string]string{
 // `assets FINAL WHERE public_ip != ” / type = ?` — a filtered lookup on
 // columns with no skip index, forcing a full unindexed dedup-merge scan of the
 // whole table on every correlate sweep / OSV feed page (the same CPU-saturation
-// class documented on assetSelect above, on two more queries). FINAL is only safe for a genuine
-// full-table read (assetSelect); any predicate on an unindexed
+// class, on two more queries). FINAL is only safe for a genuine
+// full-table read; any predicate on an unindexed
 // column must use the argMax+HAVING form instead.
 func TestFilteredAssetReadersAvoidFINAL(t *testing.T) {
 	for name, q := range map[string]string{

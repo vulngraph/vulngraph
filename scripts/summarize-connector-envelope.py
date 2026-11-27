@@ -43,6 +43,9 @@ def main():
     for row in worker:
         at = timestamp(row["at"])
         times = [at]
+        swap = {}
+        if "/sys/fs/cgroup/memory.swap.current" in row["files"]:
+            swap["worker"] = integer_file(row, "/sys/fs/cgroup/memory.swap.current")
         sample = {"at": row["at"], "active": row["active"], "worker": integer_file(row, "/sys/fs/cgroup/memory.current"),
                   "worker_go_heap": row["go_heap_alloc_bytes"], "cpu_seconds": {"worker": cpu_seconds(row)}}
         for name, (rows, stamps) in databases.items():
@@ -54,9 +57,15 @@ def main():
             times.append(stamps[match])
             sample[name] = integer_file(rows[match], "/sys/fs/cgroup/memory.current")
             sample["cpu_seconds"][name] = cpu_seconds(rows[match])
+            if "/sys/fs/cgroup/memory.swap.current" in rows[match]["files"]:
+                swap[name] = integer_file(rows[match], "/sys/fs/cgroup/memory.swap.current")
         sample["span_seconds"] = max(times) - min(times)
         if sample["span_seconds"] <= 0.4:
             sample["sum_cgroup_bytes"] = sum(sample[name] for name in ("worker", "clickhouse", "postgres"))
+            sample["swap_bytes"] = swap
+            if len(swap) == 3:
+                sample["sum_swap_bytes"] = sum(swap.values())
+                sample["sum_resident_and_swap_bytes"] = sample["sum_cgroup_bytes"] + sample["sum_swap_bytes"]
             aligned.append(sample)
     pipeline = ("sync", "collect", "retained_result", "correlation_full", "correlation_partial", "enrich", "graph")
     native_windows = [(timestamp(row["at"]) - row["seconds"], timestamp(row["at"]))
@@ -106,6 +115,7 @@ def main():
         "worker_samples": len(worker), "aligned_samples": len(aligned),
         "maximum_alignment_span_seconds": max((row["span_seconds"] for row in aligned), default=None),
         "coincident_peak": peak(aligned),
+        "coincident_resident_and_swap_peak": max((row for row in aligned if "sum_resident_and_swap_bytes" in row), key=lambda row: row["sum_resident_and_swap_bytes"], default=None),
         "active_pipeline_peak": peak([row for row in aligned if any(row["active"].get(kind, 0) for kind in pipeline)]),
         "phase_peaks": {kind: peak([row for row in aligned if row["active"].get(kind, 0)]) for kind in pipeline + ("oracle",)},
         "all_four_overlap_samples": sum(all_four(row) for row in aligned),
@@ -116,7 +126,8 @@ def main():
         "aligned_cpu_window_seconds": timestamp(aligned[-1]["at"]) - timestamp(aligned[0]["at"]) if aligned else None,
         "aligned_cpu_core_seconds": {name: aligned[-1]["cpu_seconds"][name] - aligned[0]["cpu_seconds"][name]
                                      for name in ("worker", "clickhouse", "postgres")} if aligned else None,
-        "limitations": ["sampled cgroup totals include caches and benchmark observer overhead; not separate native allocator bytes",
+        "limitations": ["resident cgroup totals exclude swap; aligned resident+swap is reported only when all sources sampled it",
+                        "sampled cgroup totals include caches and benchmark observer overhead; not separate native allocator bytes",
                         "nearest samples align within 400ms; peaks between samples can be missed",
                         "query costs include validation reads unless explicitly tagged output_oracle",
                         "database query CPU excludes background merges; process CPU/IO counters remain in resource timelines",

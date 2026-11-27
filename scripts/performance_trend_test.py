@@ -33,6 +33,8 @@ class TrendContract(unittest.TestCase):
         write("aws_org.json", [dict(accounts=100, phase=p, seconds=1) for p in ["initial", "unchanged", "unchanged_again"]])
         write("soak.json", {"passed": True, "fixture_version": 1, "commit": "fixture", "minimum_seconds": 60,
               "verified_assets": 800, "verified_edges": 800, "graph_rebuilt_after_restart": True, "retried_jobs": 2,
+              "verified_enrichments": 800, "final_unmeasured_findings": 0,
+              "clickhouse_concurrency": 4, "blast_query_failures": 0,
               "waves": [dict(seconds=1, heap_bytes_after_gc=1, process_peak_rss_bytes=1) for _ in range(3)],
               "reads": {k: dict(count=1, errors=0, p50_seconds=1, p95_seconds=1, p99_seconds=1, max_seconds=1)
                         for k in ["inventory", "findings", "graph"]}})
@@ -68,6 +70,20 @@ class TrendContract(unittest.TestCase):
                     path.write_text(json.dumps(data))
                 with self.assertRaises(ValueError):
                     trend.measurements(root)
+
+    def test_rejects_mixed_query_concurrency_and_hidden_fallbacks(self):
+        roots = [self.fixture(str(i)) for i in range(3)]
+        path = roots[1] / "soak.json"
+        data = trend.read(path)
+        data["clickhouse_concurrency"] = 8
+        path.write_text(json.dumps(data))
+        with self.assertRaises(ValueError):
+            trend.summarize(roots)
+        data["clickhouse_concurrency"] = 4
+        data["blast_query_failures"] = 1
+        path.write_text(json.dumps(data))
+        with self.assertRaises(ValueError):
+            trend.measurements(roots[1])
 
     def summary(self, samples, machine="bench-1"):
         import statistics

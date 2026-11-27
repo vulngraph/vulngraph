@@ -4,6 +4,7 @@ package jobs
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"github.com/vulngraph/vulngraph/internal/app/asset"
+	"github.com/vulngraph/vulngraph/internal/app/enrich"
 	"github.com/vulngraph/vulngraph/internal/app/finding"
 	"github.com/vulngraph/vulngraph/internal/app/graphstore"
 	"github.com/vulngraph/vulngraph/internal/collect"
@@ -67,6 +69,77 @@ func (c *soakCollector) Collect(ctx context.Context, _ map[string]string) (colle
 }
 
 type soakSignals struct{ findings *finding.Service }
+
+// River v0.39.0's notifier exits on context.Canceled, but retries indefinitely
+// on context.DeadlineExceeded. Retain values and propagate the parent's end as
+// cancellation so a failed benchmark can still shut down its client cleanly.
+func soakRiverContext(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.WithoutCancel(parent))
+	stop := context.AfterFunc(parent, cancel)
+	return ctx, func() { stop(); cancel() }
+}
+
+type soakBlast struct {
+	assets   *asset.Service
+	graph    *graphstore.Service
+	failures atomic.Uint64
+}
+
+func (s *soakBlast) observe(ctx context.Context, err error) {
+	// Forced worker cancellation is expected; timeouts and storage failures
+	// must not turn into a fast run through the scorer's fallback path.
+	if err != nil && ctx.Err() != context.Canceled {
+		s.failures.Add(1)
+	}
+}
+
+func (s *soakBlast) BlastRadius(ctx context.Context, seed string, depth int) (asset.BlastRadius, error) {
+	value, err := s.assets.BlastRadius(ctx, seed, depth)
+	s.observe(ctx, err)
+	return value, err
+}
+
+func (s *soakBlast) BlastRadiusAccounts(ctx context.Context, seed string, depth int) (asset.BlastAccountCounts, error) {
+	value, err := s.assets.BlastRadiusAccounts(ctx, seed, depth)
+	s.observe(ctx, err)
+	return value, err
+}
+
+func (s *soakBlast) BlastRadiusCount(ctx context.Context, seed string, depth int) (int, error) {
+	value, err := s.graph.BlastRadiusCount(ctx, seed, depth)
+	s.observe(ctx, err)
+	return value, err
+}
+
+type soakEnrichmentValue struct {
+	score      uint8
+	band       string
+	factors    [32]byte
+	unmeasured int
+}
+
+// Observe production outputs so storage verification compares values, not just
+// nonzero scores. No output is substituted or recomputed by this adapter.
+type soakEnricher struct {
+	service *enrich.Service
+	mu      sync.Mutex
+	values  map[string]soakEnrichmentValue
+}
+
+func (s *soakEnricher) Enrich(ctx context.Context, f finding.Finding) (enrich.Score, error) {
+	score, err := s.service.Enrich(ctx, f)
+	if err != nil {
+		return score, err
+	}
+	factors, err := json.Marshal(score.Factors)
+	if err != nil {
+		return score, err
+	}
+	s.mu.Lock()
+	s.values[f.ID] = soakEnrichmentValue{score.Value, string(score.Band), sha256.Sum256(factors), len(score.Unmeasured)}
+	s.mu.Unlock()
+	return score, nil
+}
 
 func (s soakSignals) SignalsByResource(ctx context.Context) (map[string]graphstore.NodeSignals, error) {
 	raw, err := s.findings.SignalsByResource(ctx)
@@ -133,6 +206,15 @@ type soakWave struct {
 	EnrichedFindings int     `json:"enriched_findings"`
 	Restarted        bool    `json:"restarted"`
 }
+type soakQueryCost struct {
+	Query        string `json:"normalized_query"`
+	Calls        uint64 `json:"calls"`
+	Milliseconds uint64 `json:"total_milliseconds"`
+	ReadRows     uint64 `json:"read_rows"`
+	ReadBytes    uint64 `json:"read_bytes"`
+	MaxMemory    uint64 `json:"max_memory_bytes"`
+}
+
 type soakReport struct {
 	Version        int                    `json:"format_version"`
 	FixtureVersion int                    `json:"fixture_version"`
@@ -140,6 +222,8 @@ type soakReport struct {
 	Platform       string                 `json:"platform"`
 	GoVersion      string                 `json:"go_version"`
 	GoMaxProcs     int                    `json:"gomaxprocs"`
+	CHConcurrency  int                    `json:"clickhouse_concurrency"`
+	BlastFailures  uint64                 `json:"blast_query_failures"`
 	Passed         bool                   `json:"passed"`
 	Seconds        float64                `json:"seconds"`
 	MinimumSeconds int                    `json:"minimum_seconds"`
@@ -150,6 +234,8 @@ type soakReport struct {
 	Retried        int                    `json:"retried_jobs"`
 	VerifiedAssets int                    `json:"verified_assets"`
 	VerifiedEdges  int                    `json:"verified_edges"`
+	VerifiedScores int                    `json:"verified_enrichments"`
+	Unmeasured     int                    `json:"final_unmeasured_findings"`
 	GraphRebuilt   bool                   `json:"graph_rebuilt_after_restart"`
 	GraphEdges     int64                  `json:"graph_loaded_edges"`
 	UnloadedEdges  int64                  `json:"graph_unloaded_edge_types"`
@@ -159,6 +245,7 @@ type soakReport struct {
 	ReadRows       uint64                 `json:"read_rows"`
 	ReadBytes      uint64                 `json:"read_bytes"`
 	MaxQueryMemory uint64                 `json:"max_query_memory_bytes"`
+	QueryCosts     []soakQueryCost        `json:"top_query_costs"`
 	ReadError      string                 `json:"first_read_error,omitempty"`
 }
 

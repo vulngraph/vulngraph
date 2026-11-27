@@ -526,20 +526,20 @@ func TestEnrichSweepWorker_BackfillsUnenrichedSeverityFirst(t *testing.T) {
 	w := &EnrichSweepWorker{findings: r}
 	require.NoError(t, w.Work(context.Background(), &river.Job[EnrichSweepArgs]{}))
 
-	require.Len(t, r.seen, 5, "4 unenriched severity passes + 1 drift pass")
+	require.Len(t, r.seen, 6, "5 unenriched severity passes + 1 drift pass")
 	wantSev := []finding.Severity{
-		finding.SeverityCritical, finding.SeverityHigh, finding.SeverityMedium, finding.SeverityLow,
+		finding.SeverityCritical, finding.SeverityHigh, finding.SeverityMedium, finding.SeverityLow, finding.SeverityInfo,
 	}
 	for i, sev := range wantSev {
 		require.True(t, r.seen[i].Unenriched, "phase-1 pass %d targets never-enriched findings", i)
 		require.Equal(t, sev, r.seen[i].Severity, "phase-1 pass %d severity order", i)
 	}
-	require.False(t, r.seen[4].Unenriched, "phase-2 drift pass targets already-enriched findings")
-	require.True(t, r.seen[4].StaleFirst,
+	require.False(t, r.seen[5].Unenriched, "phase-2 drift pass targets already-enriched findings")
+	require.True(t, r.seen[5].StaleFirst,
 		"phase-2 drift pass must sort oldest-enriched-first (not detected_at desc) or it "+
 			"never reaches a corpus tail bigger than one tick's budget — the root cause of "+
 			"a large share of findings stuck without must_fix_class after the feature shipped")
-	require.Empty(t, r.seen[4].Severity)
+	require.Empty(t, r.seen[5].Severity)
 }
 
 // pagingStaleLister returns enrichSweepLimit findings on the first call (to force
@@ -629,7 +629,7 @@ func TestEnrichSweepWorker_Phase1RunsWithoutARiverClient(t *testing.T) {
 	r := &recordingLister{}
 	w := &EnrichSweepWorker{findings: r}
 	require.NoError(t, w.Work(context.Background(), &river.Job[EnrichSweepArgs]{}))
-	require.Len(t, r.seen, 5, "4 backfill passes + 1 drift pass")
+	require.Len(t, r.seen, 6, "5 backfill passes + 1 drift pass")
 }
 
 // TestEnrichSweepWorker_Phase1CeilingIsHigherNotAbsent pins the invariant BETWEEN the

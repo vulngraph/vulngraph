@@ -57,6 +57,8 @@ def measurements(root):
             raise ValueError(f"{root}: {label} did not pass")
     if len(soak["waves"]) < 3 or not soak["graph_rebuilt_after_restart"] or soak["retried_jobs"] < 2:
         raise ValueError(f"{root}: incomplete recovery measurement")
+    if soak["final_unmeasured_findings"] or soak["verified_enrichments"] <= 0 or soak["blast_query_failures"]:
+        raise ValueError(f"{root}: incomplete enrichment verification")
     if any(v["errors"] or v["count"] == 0 for v in soak["reads"].values()) or len(soak["reads"]) != 3:
         raise ValueError(f"{root}: missing or failed concurrent reads")
     if len(sync["measurements"]) != 40 or len(graph["measurements"]) != 6:
@@ -76,9 +78,10 @@ def measurements(root):
         "go_version": graph["go_version"], "gomaxprocs": graph["gomaxprocs"],
         "ladybug_buffer_mb": graph["ladybug_buffer_mb"],
         "sync_counts": sorted((m["connector"], m["scenario"], m["verified_assets"], m["verified_edges"]) for m in sync["measurements"]),
-        "soak_counts": [soak["verified_assets"], soak["verified_edges"]],
+        "soak_counts": [soak["verified_assets"], soak["verified_edges"], soak["verified_enrichments"]],
         "request_delay_ms": int(collection_env[0].split("=", 1)[1]),
         "soak_minimum_seconds": soak["minimum_seconds"],
+        "soak_ch_concurrency": soak["clickhouse_concurrency"],
     }
     values = {}
     collection_counts = []

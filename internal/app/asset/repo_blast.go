@@ -45,29 +45,31 @@ func (r *CHRepo) EdgesForAttack(ctx context.Context, ids []string) ([]Edge, erro
 		"max_execution_time": 10, "max_memory_usage": 128 << 20,
 		"max_rows_to_read": 50_000_000, "read_overflow_mode": "throw",
 	})
+	if len(ids) <= 64 {
+		ctx = r.ch.WithQuerySettings(ctx, map[string]any{"max_threads": 1})
+	}
 	keys, keyArgs := dbutil.CHIn(ids)
+	outTypes, outArgs := dbutil.CHIn(attackOutgoingExcluded)
+	inTypes, inArgs := dbutil.CHIn(attackIncomingIncluded)
+	args := append(append(append(append([]any(nil), keyArgs...), outArgs...), keyArgs...), inArgs...)
+	// Separate branches retain each direction's index pruning. An OR over
+	// source/destination predicates reads the entire irrelevant image fan-out.
+	query := fmt.Sprintf(attackOutgoingEdges, keys, outTypes) + " UNION ALL " + fmt.Sprintf(attackIncomingEdges, keys, inTypes)
 	var edges []Edge
-	for _, direction := range []struct {
-		query string
-		types []string
-	}{{attackOutgoingEdges, attackOutgoingExcluded}, {attackIncomingEdges, attackIncomingIncluded}} {
-		types, typeArgs := dbutil.CHIn(direction.types)
-		args := append(append([]any(nil), keyArgs...), typeArgs...)
-		err := r.ch.Select(ctx, func(rows driver.Rows) error {
-			for rows.Next() {
-				var e Edge
-				var properties string
-				if err := rows.Scan(&e.SrcID, &e.SrcType, &e.DstID, &e.DstType, &e.EdgeType, &properties); err != nil {
-					return fmt.Errorf("scan attack edge: %w", err)
-				}
-				e.Properties = decodeMap(properties)
-				edges = append(edges, e)
+	err := r.ch.Select(ctx, func(rows driver.Rows) error {
+		for rows.Next() {
+			var e Edge
+			var properties string
+			if err := rows.Scan(&e.SrcID, &e.SrcType, &e.DstID, &e.DstType, &e.EdgeType, &properties); err != nil {
+				return fmt.Errorf("scan attack edge: %w", err)
 			}
-			return rows.Err()
-		}, fmt.Sprintf(direction.query, keys, types), args...)
-		if err != nil {
-			return nil, fmt.Errorf("EdgesForAttack: %w", err)
+			e.Properties = decodeMap(properties)
+			edges = append(edges, e)
 		}
+		return rows.Err()
+	}, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("EdgesForAttack: %w", err)
 	}
 	return edges, nil
 }

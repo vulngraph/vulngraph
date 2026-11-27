@@ -2452,14 +2452,28 @@ var mutations = []Mutation{
 	},
 	{
 		Guard: "TestBlastRadius_HydrationFailureErrors", Pkg: "./internal/app/asset",
-		File: "internal/app/asset/service.go",
-		Old:  "\t\t\treturn result, fmt.Errorf(\"BlastRadius: depth %d: hydrate %d nodes: %w\", depth, len(ids), err)\n",
-		New:  "\t\t\tfetched = nil // degrade to stubs below\n",
+		File: "internal/app/asset/service_blast.go",
+		Old:  "\t\treturn result, fmt.Errorf(\"BlastRadius: hydrate %d nodes: %w\", len(ids), err)\n",
+		New:  "\t\tfetched = nil // degrade to stubs below\n",
 		Why: "restores the verbatim pre-fix line. A ByIDs failure mid-walk substitutes Asset{ID, Type} stubs for " +
 			"every node in the hop — no Provider, no RiskScore, no LastSeen — keeps the COUNT correct so nothing " +
 			"looks wrong, leaves Truncated false so the reason-cache fingerprint does not even change, and returns " +
 			"a nil error. summarizeBlast's ByType and topReachable then render the placeholders to the LLM reasoner " +
 			"as measurements, and respond.blastRadiusFor reports the walk as a measurement because it got no error",
+	},
+	{
+		Guard: "TestQueueFetchCadencePreservesWorkerLimits", Pkg: "./internal/jobs",
+		File: "internal/jobs/routing.go",
+		Old:  "config.FetchCooldown = 10 * time.Millisecond",
+		New:  "config.FetchCooldown = 100 * time.Millisecond",
+		Why:  "restores a fetch cadence that caps ten short-running workers at 100 jobs per second regardless of storage speed",
+	},
+	{
+		Guard: "TestEnrichSweepWorker_BackfillsUnenrichedSeverityFirst", Pkg: "./internal/jobs",
+		File: "internal/jobs/enrich.go",
+		Old:  "finding.SeverityCritical, finding.SeverityHigh, finding.SeverityMedium, finding.SeverityLow, finding.SeverityInfo,",
+		New:  "finding.SeverityCritical, finding.SeverityHigh, finding.SeverityMedium, finding.SeverityLow,",
+		Why:  "drops informational findings from backfill after ingest-time capacity defers them",
 	},
 
 	{

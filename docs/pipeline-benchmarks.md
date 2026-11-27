@@ -155,6 +155,9 @@ fixtures through the production workers, four local enrichment sources and 24
 correlation rules. Every wave changes 1% of asset and edge properties. It waits
 for those queues to drain, then checks the database for findings still awaiting
 enrichment and runs the real backfill worker until that backlog is empty.
+Each completed backfill tick must reduce the remaining backlog. A storage
+regression first fills the ingest queue, then verifies deferred findings of
+every severity are recovered and their enrichment is persisted.
 
 At least three waves run. `PERF_SOAK_SECONDS` sets a minimum duration, from 1 to
 600 seconds; draining the final wave can exceed it. One collection fails
@@ -166,8 +169,13 @@ Ladybug engine must also rebuild from stored data without a snapshot.
 Concurrent inventory, finding-list and public Cypher service calls record
 p50/p95/p99 latency and must have zero errors. These are service calls, not HTTP
 middleware or network benchmarks. Every expected stored asset and edge is read
-back, and completed enrichment jobs must have persisted outputs. The report
+back, and completed enrichment jobs must have the exact returned scores, bands
+and factor values persisted, with no final unmeasured sources. Unexpected blast
+query failures fail the run, including failures that the scorer can recover
+from with a fallback. Soak fixture version 3 records these checks and the query
+concurrency. The report
 includes queue peaks, retries, backfill ticks, ClickHouse query/read/memory costs,
+the 25 most costly normalized query shapes by cumulative query duration,
 Go heap after GC and cumulative process peak RSS. It also reports graph edges
 dropped by type or missing endpoints: the VM-only Azure fixture lacks its NSG
 endpoint and the deliberately partial GCP fixture has an absent endpoint.
@@ -214,6 +222,18 @@ signal write counts rather than wall-clock thresholds. Manual workflow runs use
 connector type, but not every service family, API quota, throttling pattern or
 production payload. Full-suite connector correctness tests remain separate from
 performance measurements.
+
+Enrichment retains ten concurrent workers. Its River fetch cooldown is 10 ms;
+the default 100 ms would impose a ceiling of 100 short jobs per second even
+with idle storage. Idle polling retains River's default. Concurrent finding
+reads are combined into fresh queries of at most ten IDs; results are not
+cached. The soak uses the same queue configuration and reader as production.
+
+The soak defaults to four concurrent ClickHouse queries. Set
+`PERF_SOAK_CH_CONCURRENCY=8` to measure the application's default query
+concurrency on the same CPU and memory limits. The report records this value,
+and trend comparisons reject mixed concurrency settings. Storage-only phases
+retain their four-query limit.
 
 To measure the precision migration with existing rows, point `TEST_CLICKHOUSE_URL`
 at a disposable test server and run:

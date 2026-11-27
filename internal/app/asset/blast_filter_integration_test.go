@@ -44,9 +44,11 @@ func TestAttackTraversalFiltersBeforeReturningRows(t *testing.T) {
 	)
 	require.NoError(t, repo.UpsertEdges(ctx, edges))
 	// Independently retain the old service's direction filtering as the oracle.
-	out, err := repo.EdgesFrom(ctx, []string{hub})
+	referenceComment := "attack-reference-" + uuid.NewString()
+	referenceCtx := ch.WithQuerySettings(ctx, map[string]any{"log_comment": referenceComment, "log_queries": 1, "log_queries_probability": 1})
+	out, err := repo.EdgesFrom(referenceCtx, []string{hub})
 	require.NoError(t, err)
-	in, err := repo.EdgesTo(ctx, []string{hub})
+	in, err := repo.EdgesTo(referenceCtx, []string{hub})
 	require.NoError(t, err)
 	var want []Edge
 	for _, e := range out {
@@ -76,8 +78,19 @@ func TestAttackTraversalFiltersBeforeReturningRows(t *testing.T) {
 		return rows.Scan(&queries, &resultRows, &readRows, &memory)
 	}, `SELECT count(),sum(result_rows),sum(read_rows),max(memory_usage)
 		FROM system.query_log WHERE type='QueryFinish' AND log_comment=?`, comment))
-	require.EqualValues(t, 2, queries)
+	require.EqualValues(t, 1, queries)
 	require.EqualValues(t, len(want), resultRows, "irrelevant fan-out must be removed in storage, before transmission")
+	var referenceRows uint64
+	require.NoError(t, ch.Select(ctx, func(rows driver.Rows) error {
+		if !rows.Next() {
+			return fmt.Errorf("missing reference query telemetry")
+		}
+		return rows.Scan(&referenceRows)
+	}, `SELECT sum(read_rows) FROM system.query_log WHERE type='QueryFinish' AND log_comment=?`, referenceComment))
+	// Compare with the unfiltered walk so unrelated rows and bloom-filter
+	// false positives in a larger benchmark database do not set a fixed ceiling.
+	require.GreaterOrEqual(t, referenceRows, uint64(fanout))
+	require.Less(t, readRows, referenceRows-uint64(fanout/2), "combining directions must preserve pruning of irrelevant fan-out")
 	require.LessOrEqual(t, memory, uint64(128<<20))
 	t.Logf("fanout=%d returned=%d seconds=%.4f read_rows=%d max_query_memory=%d", fanout, resultRows, elapsed.Seconds(), readRows, memory)
 }

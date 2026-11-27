@@ -4,6 +4,7 @@ package jobs
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,6 +33,7 @@ import (
 	"github.com/vulngraph/vulngraph/internal/collect"
 	"github.com/vulngraph/vulngraph/internal/db"
 	"github.com/vulngraph/vulngraph/internal/testutil/benchconfig"
+	dbutil "github.com/vulngraph/vulngraph/pkg/db"
 )
 
 func TestPipelineSoak(t *testing.T) {
@@ -48,16 +50,18 @@ func TestPipelineSoak(t *testing.T) {
 	pool, err := db.NewPool(ctx, os.Getenv("PERF_POSTGRES_URL"), db.MaxConnsWorker)
 	require.NoError(t, err)
 	defer pool.Close()
-	ch, err := db.NewCH(ctx, os.Getenv("PERF_CLICKHOUSE_URL"), 4)
+	chConcurrency := benchconfig.SoakCHConcurrency(t)
+	ch, err := db.NewCH(ctx, os.Getenv("PERF_CLICKHOUSE_URL"), chConcurrency)
 	require.NoError(t, err)
 	defer ch.Close()
 	// Earlier insert-only measurements intentionally leave jobs unconsumed.
 	// Reset only before this run; no backlog is removed during the soak.
 	_, err = pool.Exec(ctx, "DELETE FROM river_job")
 	require.NoError(t, err)
-	r := &soakReport{Version: 1, FixtureVersion: 1, Commit: os.Getenv("PERF_COMMIT"), Platform: runtime.GOOS + "/" + runtime.GOARCH,
+	r := &soakReport{Version: 1, FixtureVersion: 3, Commit: os.Getenv("PERF_COMMIT"), Platform: runtime.GOOS + "/" + runtime.GOARCH,
 		GoVersion: runtime.Version(), GoMaxProcs: runtime.GOMAXPROCS(0), MinimumSeconds: seconds,
-		MaxPending: map[string]int{}, Deferred: map[string]int{}}
+		CHConcurrency: chConcurrency,
+		MaxPending:    map[string]int{}, Deferred: map[string]int{}}
 	t.Cleanup(func() { writeSoakReport(t, r) })
 	cipher, err := connector.NewCipher(testKey(t))
 	require.NoError(t, err)
@@ -107,21 +111,23 @@ func TestPipelineSoak(t *testing.T) {
 	})
 	// Local deterministic sources still perform real graph traversals and writes.
 	// External feeds, LLM decisions, registry pulls and disk scans are not consumed.
+	blast := &soakBlast{assets: inv, graph: graph}
 	enrichment := enrich.NewService(findings, enrich.NewSignalCHRepo(ch), []enrich.Source{
-		enrich.BaseSeverity{}, enrich.KEV{}, enrich.ExposureType{}, enrich.BlastRadius{Counter: graph, Provider: inv},
+		enrich.BaseSeverity{}, enrich.KEV{}, enrich.ExposureType{}, enrich.BlastRadius{Counter: blast, Provider: blast},
 	})
+	observed := &soakEnricher{service: enrichment, values: map[string]soakEnrichmentValue{}}
 	syncGraph := LadybugSyncFn(func(ctx context.Context) error { return graph.SyncFromSources(ctx, 0, inv, inv, signals) })
 	newClient := func() *river.Client[pgx.Tx] {
 		workers := river.NewWorkers()
 		river.AddWorker(workers, &SyncWorker{connectors: conns, registry: registry, assets: inv, findings: findings, checks: checks.Default()})
-		river.AddWorker(workers, &EnrichWorker{enrich: enrichment, findings: findings, cache: cache})
+		river.AddWorker(workers, &EnrichWorker{enrich: observed, findings: newEnrichFindingFetcher(findings), cache: cache})
 		river.AddWorker(workers, &EnrichSweepWorker{findings: findings})
 		river.AddWorker(workers, &CorrelateWorker{correlate: correlation, ladybug: syncGraph})
 		river.AddWorker(workers, &LadybugRebuildWorker{ladybug: syncGraph})
 		addRescueOnlyWorkers(workers)
 		queues := map[string]river.QueueConfig{}
 		for _, name := range soakQueues {
-			queues[name] = river.QueueConfig{MaxWorkers: queueWorkerCounts[name]}
+			queues[name] = queueConfig(name)
 		}
 		client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{Queues: queues, Workers: workers})
 		require.NoError(t, err)
@@ -131,7 +137,9 @@ func TestPipelineSoak(t *testing.T) {
 	plainCtx := ctx
 	comment := "pipeline-soak-" + uuid.NewString()
 	ctx = ch.WithQuerySettings(ctx, map[string]any{"log_comment": comment, "log_queries": 1, "log_queries_probability": 1})
-	require.NoError(t, client.Start(ctx))
+	riverCtx, cancelRiver := soakRiverContext(ctx)
+	defer cancelRiver()
+	require.NoError(t, client.Start(riverCtx))
 	defer func() {
 		stopCtx, stop := context.WithTimeout(context.Background(), 30*time.Second)
 		defer stop()
@@ -212,7 +220,7 @@ func TestPipelineSoak(t *testing.T) {
 			require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM river_job WHERE kind='sync_connector' AND state!='completed'").Scan(&pending))
 			require.Positive(t, pending, "cancelled in-flight work must remain durable")
 			client = newClient()
-			require.NoError(t, client.Start(ctx))
+			require.NoError(t, client.Start(riverCtx))
 		}
 		waitSoakQueues(t, ctx, pool, []string{queueSync}, r.MaxPending)
 		// Exercise the real coalescer after the writes, then the full sweep that
@@ -223,6 +231,7 @@ func TestPipelineSoak(t *testing.T) {
 		completed := waitSoakQueues(t, ctx, pool, soakQueues, r.MaxPending)
 		// A bounded ingest queue can legitimately defer findings to the sweep.
 		// An empty River queue alone must never masquerade as a drained backlog.
+		lastBacklog := 0
 		for {
 			counts, err := findings.UnenrichedCounts(ctx)
 			require.NoError(t, err)
@@ -230,9 +239,13 @@ func TestPipelineSoak(t *testing.T) {
 			for _, count := range counts {
 				remaining += count.N
 			}
+			if lastBacklog > 0 {
+				require.Less(t, remaining, lastBacklog, "a completed backfill tick made no progress on a stable finding set")
+			}
 			if remaining == 0 {
 				break
 			}
+			lastBacklog = remaining
 			r.BackfillTicks++
 			t.Logf("soak backfill: %d findings still lack enrichment", remaining)
 			_, err = client.Insert(ctx, EnrichSweepArgs{}, nil)
@@ -250,6 +263,8 @@ func TestPipelineSoak(t *testing.T) {
 	r.Seconds = time.Since(start).Seconds()
 	stopReads()
 	require.NoError(t, readers.Wait())
+	r.BlastFailures = blast.failures.Load()
+	require.Zero(t, r.BlastFailures, "a faster fallback after failed blast queries is not a throughput improvement")
 	require.NoError(t, ch.Exec(plainCtx, "SYSTEM FLUSH LOGS"))
 	require.NoError(t, ch.Select(plainCtx, func(rows driver.Rows) error {
 		if !rows.Next() {
@@ -258,6 +273,18 @@ func TestPipelineSoak(t *testing.T) {
 		return rows.Scan(&r.Queries, &r.ReadRows, &r.ReadBytes, &r.MaxQueryMemory)
 	}, `SELECT count(),sum(read_rows),sum(read_bytes),max(memory_usage) FROM system.query_log WHERE type='QueryFinish' AND log_comment=?`, comment))
 	require.Positive(t, r.Queries)
+	require.NoError(t, ch.Select(plainCtx, func(rows driver.Rows) error {
+		for rows.Next() {
+			var cost soakQueryCost
+			if err := rows.Scan(&cost.Query, &cost.Calls, &cost.Milliseconds, &cost.ReadRows, &cost.ReadBytes, &cost.MaxMemory); err != nil {
+				return err
+			}
+			r.QueryCosts = append(r.QueryCosts, cost)
+		}
+		return rows.Err()
+	}, `SELECT any(normalizeQuery(query)),count(),sum(query_duration_ms),sum(read_rows),sum(read_bytes),max(memory_usage)
+		FROM system.query_log WHERE type='QueryFinish' AND log_comment=?
+		GROUP BY normalized_query_hash ORDER BY sum(query_duration_ms) DESC LIMIT 25`, comment))
 	r.Reads = reads.report()
 	for name, latency := range r.Reads {
 		require.Positive(t, latency.Count, name)
@@ -267,7 +294,7 @@ func TestPipelineSoak(t *testing.T) {
 	assets, edges := soakExpected(t, producers)
 	verifySyncReadback(t, ctx, inv, assets, edges)
 	r.VerifiedAssets, r.VerifiedEdges = len(assets), len(edges)
-	verifySoakEnrichment(t, ctx, pool, findings)
+	verifySoakEnrichment(t, ctx, pool, ch, findings, observed, r)
 	require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM river_job WHERE attempt>1 AND state='completed'").Scan(&r.Retried))
 	require.GreaterOrEqual(t, r.Retried, 2, "transient failure and interrupted work must both recover")
 	rows, err := pool.Query(ctx, "SELECT kind,count(*) FROM river_job WHERE state!='completed' GROUP BY kind")
@@ -292,8 +319,16 @@ func TestPipelineSoak(t *testing.T) {
 	r.GraphRebuilt, r.Passed = true, true
 }
 
-func verifySoakEnrichment(t *testing.T, ctx context.Context, pool *pgxpool.Pool, findings *finding.Service) {
+func verifySoakEnrichment(t *testing.T, ctx context.Context, pool *pgxpool.Pool, ch *db.CH, findings *finding.Service, observed *soakEnricher, report *soakReport) {
 	t.Helper()
+	observed.mu.Lock()
+	defer observed.mu.Unlock()
+	for _, value := range observed.values {
+		if value.unmeasured > 0 {
+			report.Unmeasured++
+		}
+	}
+	require.Zero(t, report.Unmeasured, "completed runs must not hide degraded enrichment sources")
 	rows, err := pool.Query(ctx, "SELECT DISTINCT args->>'finding_id' FROM river_job WHERE kind='enrich' AND state='completed'")
 	require.NoError(t, err)
 	var ids []string
@@ -312,6 +347,25 @@ func verifySoakEnrichment(t *testing.T, ctx context.Context, pool *pgxpool.Pool,
 		require.Len(t, got, len(chunk))
 		for _, f := range got {
 			require.True(t, f.Resolved() || (f.Score > 0 && !f.EnrichedAt.IsZero()), "completed job lacks persisted enrichment: %s", f.ID)
+			if expected, ok := observed.values[f.ID]; ok {
+				require.Equal(t, expected.score, f.Score, f.ID)
+				require.Equal(t, expected.band, f.ScoreBand, f.ID)
+			}
 		}
+		keys, args := dbutil.CHIn(chunk)
+		require.NoError(t, ch.Select(ctx, func(rows driver.Rows) error {
+			for rows.Next() {
+				var id, factors string
+				if err := rows.Scan(&id, &factors); err != nil {
+					return err
+				}
+				if expected, ok := observed.values[id]; ok {
+					require.Equal(t, expected.factors, sha256.Sum256([]byte(factors)), id)
+					report.VerifiedScores++
+				}
+			}
+			return rows.Err()
+		}, fmt.Sprintf(`SELECT id,argMax(factors,synced_at) FROM signals WHERE id IN (%s) GROUP BY id`, keys), args...))
 	}
+	require.Equal(t, len(observed.values), report.VerifiedScores, "every observed enrichment must be stored with its factors")
 }

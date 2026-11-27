@@ -382,7 +382,7 @@ const alertStateRetention = 30 * 24 * time.Hour
 // backfillSeverities orders the never-enriched backfill most-severe-first so real
 // criticals stop hiding at score 0 within hours, not after the whole backlog drains.
 var backfillSeverities = []finding.Severity{
-	finding.SeverityCritical, finding.SeverityHigh, finding.SeverityMedium, finding.SeverityLow,
+	finding.SeverityCritical, finding.SeverityHigh, finding.SeverityMedium, finding.SeverityLow, finding.SeverityInfo,
 }
 
 // Timeout overrides River's 1-minute default. drain() paginates up to

@@ -1,6 +1,8 @@
 package jobs
 
 import (
+	"time"
+
 	"github.com/riverqueue/river"
 )
 
@@ -136,11 +138,22 @@ func consumedQueues(rescueOnly map[string]bool) map[string]river.QueueConfig {
 		if queue == "" || rescueOnly[kind] {
 			continue
 		}
-		workers, ok := queueWorkerCounts[queue]
-		if !ok {
-			workers = 1
-		}
-		out[queue] = river.QueueConfig{MaxWorkers: workers}
+		out[queue] = queueConfig(queue)
 	}
 	return out
+}
+
+func queueConfig(queue string) river.QueueConfig {
+	workers, ok := queueWorkerCounts[queue]
+	if !ok {
+		workers = 1
+	}
+	config := river.QueueConfig{MaxWorkers: workers}
+	if queue == queueEnrich {
+		// River's 100 ms default caps ten short-running workers at 100 jobs/s,
+		// even when storage is idle. Refill sooner without increasing concurrent
+		// jobs. The idle poll interval stays at River's one-second default.
+		config.FetchCooldown = 10 * time.Millisecond
+	}
+	return config
 }

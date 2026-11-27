@@ -35,6 +35,7 @@ type Repo interface {
 	PackageRunners(ctx context.Context, packageIDs []string) ([]PackageRunner, error)
 	CountPackages(ctx context.Context) (int64, error)
 	ByIDs(ctx context.Context, ids []string) ([]Asset, error)
+	AccountsByIDs(ctx context.Context, ids []string) (map[string]string, error)
 	ExistingIDs(ctx context.Context, ids []string) ([]string, error)
 	LiveIDs(ctx context.Context, ids []string) ([]string, error)
 	VerifyExpiredEphemeral(ctx context.Context, ids []string) (map[string]bool, error)
@@ -540,99 +541,6 @@ func ParseDirection(s string) Direction {
 // structural direction use BlastRadiusDir.
 func (s *Service) BlastRadius(ctx context.Context, seedID string, maxDepth int) (BlastRadius, error) {
 	return s.BlastRadiusDir(ctx, seedID, maxDepth, DirAttack)
-}
-
-// BlastRadiusDir performs a bounded BFS from seedID in the requested direction:
-// outgoing ("can reach"), incoming ("reached by"), or both. The far endpoint of
-// each hop becomes the next frontier.
-func (s *Service) BlastRadiusDir(ctx context.Context, seedID string, maxDepth int, dir Direction) (BlastRadius, error) {
-	if maxDepth <= 0 {
-		maxDepth = defaultMaxDepth
-	}
-	seed, err := s.repo.GetAsset(ctx, seedID)
-	if err != nil {
-		return BlastRadius{}, fmt.Errorf("BlastRadius: seed: %w", err)
-	}
-	result := BlastRadius{
-		SeedID:   seedID,
-		Assets:   []Asset{seed},
-		Edges:    nil,
-		MaxDepth: maxDepth,
-	}
-	seen := map[string]bool{seedID: true}
-	// A walk that follows edges both ways meets a two-way edge twice: out from
-	// one end on this hop, in from the other end on the next.
-	seenEdge := map[string]bool{}
-	frontier := []string{seedID}
-
-	for depth := 0; depth < maxDepth && len(frontier) > 0; depth++ {
-		hopEdges, err := s.hopEdges(ctx, frontier, dir)
-		if err != nil {
-			return result, fmt.Errorf("BlastRadius: depth %d: %w", depth, err)
-		}
-		for _, e := range hopEdges {
-			key := e.SrcID + "\x00" + e.DstID + "\x00" + e.EdgeType
-			if !seenEdge[key] {
-				seenEdge[key] = true
-				result.Edges = append(result.Edges, e)
-			}
-		}
-
-		// Collect unseen far endpoints for this hop, respecting the node budget.
-		var hopEndpoints []endpoint
-	endpoints:
-		for _, e := range hopEdges {
-			for _, to := range farEndpoints(e, frontier, dir, seen) {
-				if len(seen) >= maxNodeBudget {
-					result.Truncated = true
-					break endpoints
-				}
-				seen[to.id] = true
-				hopEndpoints = append(hopEndpoints, to)
-			}
-		}
-		if len(hopEndpoints) == 0 {
-			break
-		}
-
-		// Batch-fetch all new nodes in one query instead of one GetAsset per node.
-		ids := make([]string, len(hopEndpoints))
-		for i, ep := range hopEndpoints {
-			ids[i] = ep.id
-		}
-		// A hydration failure is NOT a degradation this walk may absorb. Falling
-		// back to stubs (Asset{ID, Type} — no Provider, no RiskScore, no LastSeen)
-		// kept the count right and made every derived fact wrong, with a nil error:
-		// summarizeBlast's ByType and topReachable render stubs as measurements to
-		// the LLM reasoner, and BlastRadius.Truncated stays false so the reason-cache
-		// fingerprint does not even change. Since the caller that matters
-		// (respond.blastRadiusFor) reports an errored walk as unmeasured, and
-		// the approver sees unmeasured rather than a small number, propagating is the
-		// fail-closed direction.
-		fetched, err := s.repo.ByIDs(ctx, ids)
-		if err != nil {
-			return result, fmt.Errorf("BlastRadius: depth %d: hydrate %d nodes: %w", depth, len(ids), err)
-		}
-		assetByID := make(map[string]Asset, len(fetched))
-		for _, a := range fetched {
-			assetByID[a.ID] = a
-		}
-
-		var next []string
-		for _, ep := range hopEndpoints {
-			a, ok := assetByID[ep.id]
-			if !ok {
-				a = Asset{ID: ep.id, Type: ep.typ}
-			}
-			result.Assets = append(result.Assets, a)
-			next = append(next, ep.id)
-		}
-		frontier = next
-		if result.Truncated {
-			break
-		}
-	}
-	return result, nil
 }
 
 // hopEdges fetches one frontier hop's edges in the requested direction(s).

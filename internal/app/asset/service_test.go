@@ -86,6 +86,19 @@ func (f *fakeRepo) ByIDs(_ context.Context, ids []string) ([]Asset, error) {
 	return out, nil
 }
 
+func (f *fakeRepo) AccountsByIDs(_ context.Context, ids []string) (map[string]string, error) {
+	if f.byIDsErr != nil {
+		return nil, f.byIDsErr
+	}
+	out := map[string]string{}
+	for _, id := range ids {
+		if a, ok := f.assets[id]; ok {
+			out[id] = a.AccountID
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeRepo) ExistingIDs(_ context.Context, ids []string) ([]string, error) {
 	var out []string
 	for _, id := range ids {

@@ -412,7 +412,7 @@ func registerRealWorkers(workers *river.Workers, pool *pgxpool.Pool, deps Deps) 
 	river.AddWorker(workers, &EnqueueWorker{connectors: deps.Connectors, baseSyncInterval: baseSyncInterval})
 	river.AddWorker(workers, &DiscoverAWSOrgsWorker{orgs: deps.Connectors})
 	river.AddWorker(workers, &EnrichWorker{
-		enrich: deps.Enrich, findings: deps.Findings, suppress: deps.Suppress,
+		enrich: deps.Enrich, findings: newEnrichFindingFetcher(deps.Findings), suppress: deps.Suppress,
 		cache: deps.EnrichCache, maxAge: deps.EnrichMaxAge,
 		graph: deps.GraphContext, now: time.Now, notify: noticeDeliverer(deps.Notify),
 		carriers: deps.AlertCarriers,

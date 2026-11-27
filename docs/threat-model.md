@@ -17,7 +17,7 @@ reviewed it or the code ([evaluating](evaluating.md#what-to-know-before-relying-
   [`hardened.yaml`](../deploy/helm-values/hardened.yaml) turns the checkable ones on.
 - **What it protects.** The credentials it holds to read (and optionally change) your cloud, the map of
   your estate it builds, and the rule that a person approves every state-changing action.
-- **Pre-1.0.** One maintainer, used internally before open sourcing, no independent security testing ([`SECURITY.md`](../SECURITY.md)).
+- **Pre-1.0.** One maintainer, used internally before open sourcing ([`SECURITY.md`](../SECURITY.md)).
 
 ## 2. Assets
 

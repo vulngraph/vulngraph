@@ -14,11 +14,16 @@ chart cannot do: backups, rotation, upgrades, monitoring and IAM.
 
 ## CPU architectures
 
-The Dockerfile supports Linux AMD64 and ARM64, and Compose builds for the host's
-native architecture. The release workflow targets both architectures for versioned
-release images. The rolling `edge` image currently targets AMD64 only; on ARM64
-nodes use a published multi-architecture release or build the image on ARM64 using
-[the build instructions](#building-the-image-yourself).
+Linux AMD64 and ARM64 use the same image name, version tag and Helm configuration.
+Every release image and the rolling `edge` image contains both architectures;
+Docker and Kubernetes select the matching build automatically. Compose source
+builds use the host's native architecture.
+
+CI builds and tests each architecture on a native runner. The release workflow
+combines the verified images into one signed multi-platform index only after both
+succeed. Pin that index's digest to keep the same release across a mixed-architecture
+cluster; a platform-specific child digest pins just that architecture. Other CPU
+architectures are not currently supported.
 
 Check the selected image's platforms before deploying it, replacing `<version>`
 with the published release you intend to install:
@@ -114,8 +119,8 @@ helm upgrade --install graph deploy/helm-chart/graph -n graph --create-namespace
 
 For a remote cluster, push the build to a registry it can pull from instead of
 `kind load`, and drop `pullPolicy=Never`. The workflow also pushes `edge`, the
-rolling build of `main` (linux/amd64 only), on every push to `main`: it is unversioned and has no
-upgrade guarantees from one build to the next, and with the default
+rolling build of `main` (Linux AMD64 and ARM64), when image inputs change: it is
+unversioned and has no upgrade guarantees from one build to the next. With the default
 `pullPolicy: IfNotPresent` pods on different nodes can run different builds of
 it, so pin it with `image.digest` if you run it at all.
 
@@ -124,8 +129,11 @@ it, so pin it with `image.digest` if you run it at all.
 Tag `vX.Y.Z` on a commit whose `deploy/helm-chart/graph/Chart.yaml` has
 `appVersion: "X.Y.Z"`; the release workflow refuses a tag that does not match.
 It pushes `vX.Y.Z`, `X.Y.Z` (what the chart pulls by default) and `latest`, and
-cuts a GitHub Release. GHCR creates a new package as private: right after the
-first release, open the package's settings on GitHub
+cuts a GitHub Release. Each tag contains the tested AMD64 and ARM64 images. The
+release includes a separate SPDX software inventory for each architecture
+(`graph-linux-amd64.spdx.json` and `graph-linux-arm64.spdx.json`) and their checksums.
+GHCR creates a new package as private: right after the first release, open the
+package's settings on GitHub
 (`github.com/orgs/<owner>/packages/container/<repo>/settings`) and change its
 visibility to public, once.
 

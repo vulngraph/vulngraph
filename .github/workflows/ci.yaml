@@ -1072,8 +1072,16 @@ jobs:
   # registry or cloud credentials required — layers are cached via the GitHub
   # Actions cache.
   docker-build:
-    name: docker image smoke test
-    runs-on: ubuntu-24.04
+    name: docker image smoke test (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     if: github.event_name == 'pull_request'
@@ -1088,16 +1096,20 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
+          platforms: linux/${{ matrix.arch }}
           push: false
           load: true
           tags: graph:ci-smoke
-          cache-from: type=gha
-          cache-to: type=gha,mode=min
+          cache-from: type=gha,scope=ci-image-${{ matrix.arch }}
+          cache-to: type=gha,scope=ci-image-${{ matrix.arch }},mode=min
 
       # `version` needs no database, so a non-zero exit here is a load failure
       # (a missing or mismatched shared library), not missing infrastructure.
       - name: Smoke test — shared libs load
+        env:
+          ARCH: ${{ matrix.arch }}
         run: |
+          test "$(docker image inspect graph:ci-smoke --format '{{.Architecture}}')" = "$ARCH"
           docker run --rm graph:ci-smoke version
           echo "OK: binary loads its shared libraries (graph version exited 0)"
 

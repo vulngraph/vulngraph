@@ -8,9 +8,9 @@ name: Release image
 #     appVersion resolves to) and `latest`, and cuts a GitHub Release with
 #     auto-generated notes. The release fails before building if
 #     Chart.yaml's appVersion is not X.Y.Z.
-#   - push to main → tags the image `edge` (a rolling "main branch" build). It
-#     is linux/amd64 only: the arm64 half is built under emulation and would make
-#     every push to main wait on it. Release tags build both.
+#   - push to main → tags the image `edge` (a rolling "main branch" build).
+# Both triggers build and smoke-test AMD64 and ARM64 natively, then publish one
+# signed multi-platform index. No public tag advances with only one architecture.
 # The chart's values.yaml defaults image.repository to the upstream image; a
 # fork's release lands under its own owner/repo and the fork overrides
 # image.repository to run it.
@@ -48,15 +48,13 @@ jobs:
     name: Verify release source
     uses: $/.github/workflows/ci.yaml
 
-  release:
+  prepare:
     needs: verified
-    name: Build + push graph
+    name: Prepare image metadata
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write # create the GitHub Release + upload assets
-      packages: write # push the image to GHCR
-      id-token: write # OIDC token for keyless cosign signing + attestations
-      attestations: write # store build-provenance attestations
+    outputs:
+      image: ${{ steps.metadata.outputs.image }}
+      version: ${{ steps.metadata.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -75,6 +73,40 @@ jobs:
             echo "::error::deploy/helm-chart/graph/Chart.yaml appVersion is '${app_version}' but the tag is '${TAG}'; bump appVersion to '${TAG#v}' and re-tag."
             exit 1
           fi
+
+      - name: Determine image and version
+        id: metadata
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            VERSION="$GITHUB_REF_NAME"
+          else
+            VERSION="edge-${GITHUB_SHA::12}"
+          fi
+          {
+            echo "image=$IMAGE"
+            echo "version=$VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    name: Build and test (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # BuildKit cache mounts do not survive an ephemeral runner, so the Go
       # compile of the dependency graph (about 9 of the ~11 minutes of a cold
@@ -104,10 +136,10 @@ jobs:
           path: |
             ${{ runner.temp }}/gocache
             ${{ runner.temp }}/gomod
-          key: release-go-${{ runner.os }}-${{ hashFiles('go.sum', 'internal/graphdb/ladybug/go.sum') }}-${{ github.sha }}
+          key: release-go-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('go.sum', 'internal/graphdb/ladybug/go.sum') }}-${{ github.sha }}
           restore-keys: |
-            release-go-${{ runner.os }}-${{ hashFiles('go.sum', 'internal/graphdb/ladybug/go.sum') }}-
-            release-go-${{ runner.os }}-
+            release-go-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('go.sum', 'internal/graphdb/ladybug/go.sum') }}-
+            release-go-${{ runner.os }}-${{ matrix.arch }}-
 
       # cgo's link check needs liblbug.so: the same pinned, sha256-verified
       # release the Dockerfile and CI use.
@@ -118,7 +150,7 @@ jobs:
           CGO_LDFLAGS: "-L/usr/local/lib -llbug -Wl,-rpath,/usr/local/lib"
         run: |
           set -euo pipefail
-          scripts/fetch-ladybug.sh --install-dir "$RUNNER_TEMP/ladybug" linux-amd64
+          scripts/fetch-ladybug.sh --install-dir "$RUNNER_TEMP/ladybug"
           sudo cp -P "$RUNNER_TEMP"/ladybug/liblbug.so* /usr/local/lib/ && sudo ldconfig
           go mod download
           go list -deps -f '{{if and (ne .Name "main") (ne .ImportPath "C")}}{{.ImportPath}}{{end}}' ./cmd/graph \
@@ -132,11 +164,6 @@ jobs:
             ${{ runner.temp }}/gomod
           key: ${{ steps.gocache.outputs.cache-primary-key }}
 
-      # arm64 runs under emulation for the cgo build and runtime stages only;
-      # the Dockerfile runs the library fetch and the frontend natively.
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        if: github.ref_type == 'tag'
-
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to GHCR
@@ -146,44 +173,98 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Determine tags
-        id: tags
-        run: |
-          # GHCR image names must be lowercase; github.repository keeps the
-          # owner's case.
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
-          TAGS="$IMAGE:${GITHUB_SHA}"
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            TAG="${GITHUB_REF_NAME}"
-            TAGS="$TAGS,$IMAGE:${TAG},$IMAGE:${TAG#v},$IMAGE:latest"
-            VERSION="$TAG"
-          else
-            TAGS="$TAGS,$IMAGE:edge"
-            VERSION="edge-${GITHUB_SHA::12}"
-          fi
-          {
-            echo "tags=$TAGS"
-            echo "image=$IMAGE"
-            echo "version=$VERSION"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Build and push
+      # Publish only by digest here. The shared tags are created by publish,
+      # after BOTH native images have started successfully and produced SBOMs.
+      - name: Build by digest
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           build-contexts: gocache=${{ runner.temp }}/gocache
-          platforms: ${{ github.ref_type == 'tag' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
-          push: true
-          tags: ${{ steps.tags.outputs.tags }}
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ needs.prepare.outputs.image }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
-            VERSION=${{ steps.tags.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max,compression=zstd
+            VERSION=${{ needs.prepare.outputs.version }}
+          cache-from: type=gha,scope=release-image-${{ matrix.arch }}
+          cache-to: type=gha,scope=release-image-${{ matrix.arch }},mode=max,compression=zstd
           # Supply chain: attach a max-detail SLSA provenance attestation and
           # an SBOM to the image manifest in the registry.
           provenance: mode=max
           sbom: true
+
+      - name: Smoke test the published digest natively
+        env:
+          IMAGE: ${{ needs.prepare.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          docker pull "$IMAGE@$DIGEST"
+          test "$(docker image inspect "$IMAGE@$DIGEST" --format '{{.Architecture}}')" = "$ARCH"
+          test "$(docker run --rm "$IMAGE@$DIGEST" version)" = "$VERSION"
+          mkdir -p "$RUNNER_TEMP/release-image"
+          printf '%s\n' "$DIGEST" > "$RUNNER_TEMP/release-image/$ARCH.digest"
+
+      - name: Generate platform SBOM (SPDX)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ needs.prepare.outputs.image }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: ${{ runner.temp }}/release-image/graph-linux-${{ matrix.arch }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Upload verified digest and SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-image-${{ matrix.arch }}
+          path: ${{ runner.temp }}/release-image/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [prepare, build]
+    name: Publish multi-platform image
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create the GitHub Release + upload assets
+      packages: write # combine image manifests in GHCR
+      id-token: write # keyless cosign signing + attestations
+      attestations: write
+    env:
+      IMAGE: ${{ needs.prepare.outputs.image }}
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-image-*
+          path: ${{ runner.temp }}/release-image
+          merge-multiple: true
+
+      - name: Combine and verify the platform manifests
+        id: index
+        working-directory: ${{ runner.temp }}/release-image
+        run: |
+          amd64=$(cat amd64.digest)
+          arm64=$(cat arm64.digest)
+          [[ "$amd64" =~ ^sha256:[a-f0-9]{64}$ && "$arm64" =~ ^sha256:[a-f0-9]{64}$ ]]
+          test "$amd64" != "$arm64"
+          # A run-specific staging tag keeps edge and version tags untouched
+          # until the index has been checked, signed and attested.
+          candidate="$IMAGE:build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          docker buildx imagetools create -t "$candidate" "$IMAGE@$amd64" "$IMAGE@$arm64"
+          docker buildx imagetools inspect "$candidate" --raw > index.json
+          jq -e '[.manifests[] | select(.platform.os != "unknown") | (.platform.os + "/" + .platform.architecture)] | sort == ["linux/amd64", "linux/arm64"]' index.json
+          digest=$(docker buildx imagetools inspect "$candidate" --format '{{.Manifest.Digest}}')
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       # Keyless signing: the signature is bound to this workflow's OIDC
       # identity (recorded in the Sigstore transparency log), so no long-lived
@@ -199,34 +280,40 @@ jobs:
       - name: Sign image (keyless)
         if: ${{ !github.event.repository.private }}
         env:
-          IMAGE: ${{ steps.tags.outputs.image }}
-          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST: ${{ steps.index.outputs.digest }}
         run: cosign sign --yes "${IMAGE}@${DIGEST}"
 
       - name: Attest build provenance (GitHub attestations)
         if: ${{ !github.event.repository.private }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-name: ${{ steps.tags.outputs.image }}
-          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-name: ${{ needs.prepare.outputs.image }}
+          subject-digest: ${{ steps.index.outputs.digest }}
           push-to-registry: true
 
-      # A standalone SPDX SBOM (also attached to tagged Releases below), so it
-      # can be inspected without pulling the image.
-      - name: Generate SBOM (SPDX)
-        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
-        with:
-          image: ${{ steps.tags.outputs.image }}@${{ steps.build.outputs.digest }}
-          format: spdx-json
-          output-file: graph-sbom.spdx.json
-          upload-artifact: true
-          upload-release-assets: false
+      - name: Publish shared tags
+        env:
+          DIGEST: ${{ steps.index.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tags=(-t "$IMAGE:$GITHUB_SHA")
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            tags+=(-t "$IMAGE:$GITHUB_REF_NAME" -t "$IMAGE:${GITHUB_REF_NAME#v}" -t "$IMAGE:latest")
+          elif [[ "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" == "$GITHUB_SHA" ]]; then
+            # A slow older build must not move edge behind a newer main commit.
+            tags+=(-t "$IMAGE:edge")
+          fi
+          docker buildx imagetools create "${tags[@]}" "$IMAGE@$DIGEST"
+          for ((i=1; i<${#tags[@]}; i+=2)); do
+            test "$(docker buildx imagetools inspect "${tags[$i]}" --format '{{.Manifest.Digest}}')" = "$DIGEST"
+          done
 
       # The release ships a container image, not binaries; the downloadable
       # assets are the SBOM, so publish checksums for those.
       - name: Checksum release assets
         if: github.ref_type == 'tag'
-        run: sha256sum graph-sbom.spdx.json > SHA256SUMS
+        working-directory: ${{ runner.temp }}/release-image
+        run: sha256sum graph-linux-amd64.spdx.json graph-linux-arm64.spdx.json > SHA256SUMS
 
       # Tagged releases also get a visible GitHub Release with auto-generated
       # notes (from merged PRs since the last tag) — the image push alone is
@@ -236,4 +323,5 @@ jobs:
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --generate-notes graph-sbom.spdx.json SHA256SUMS
+        working-directory: ${{ runner.temp }}/release-image
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes graph-linux-amd64.spdx.json graph-linux-arm64.spdx.json SHA256SUMS

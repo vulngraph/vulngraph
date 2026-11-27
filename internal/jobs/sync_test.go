@@ -310,9 +310,11 @@ func TestCoveredScopes(t *testing.T) {
 }
 
 func TestAuditedPodScopeCannotCoverSiblingCluster(t *testing.T) {
-	covered := coveredScopes([]collect.ScopeEnumeration{{Scope: "cluster-a/kubernetes:pods", Types: []string{"k8s_pod"}, Count: 1}})
-	require.True(t, isCovered(covered, "cluster-a", "k8s_pod"))
-	require.False(t, isCovered(covered, "cluster-b", "k8s_pod"))
-	require.False(t, isCovered(covered, "", "k8s_pod"))
-	require.False(t, isCovered(covered, "cluster-a", "container"))
+	for _, cluster := range []string{"cluster-a", "organization/cluster-a", "arn:aws:eks:eu-west-1:123456789012:cluster/production"} {
+		covered := coveredScopes([]collect.ScopeEnumeration{{Scope: cluster + "/kubernetes:pods", Types: []string{"k8s_pod"}, Count: 1}})
+		require.True(t, isCovered(covered, cluster, "k8s_pod"), cluster)
+		require.False(t, isCovered(covered, "cluster-b", "k8s_pod"))
+		require.False(t, isCovered(covered, "", "k8s_pod"))
+		require.False(t, isCovered(covered, cluster, "container"))
+	}
 }

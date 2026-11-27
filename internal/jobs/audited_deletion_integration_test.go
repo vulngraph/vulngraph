@@ -66,7 +66,7 @@ func TestAuditedFamiliesRetireOnlyProvenAbsence(t *testing.T) {
 	}{
 		{connector.TypeAzure, "azure_vm", "azure_sql_server", "subscription/compute:vms", "westeurope", map[string]string{"subscription_id": "subscription"}},
 		{connector.TypeGitHub, "github_repo", "package", "123/github:repos", "global", map[string]string{"app_id": "1", "installation_id": "123", "private_key_pem": "fixture"}},
-		{connector.TypeKubernetes, "k8s_pod", "container", "cluster-a/kubernetes:pods", "cluster-a", nil},
+		{connector.TypeKubernetes, "k8s_pod", "container", "organization/cluster-a/kubernetes:pods", "organization/cluster-a", nil},
 	} {
 		t.Run(string(tc.kind), func(t *testing.T) {
 			c, err := conns.Create(ctx, tc.kind, "audit-"+uuid.NewString(), tc.cfg, "")

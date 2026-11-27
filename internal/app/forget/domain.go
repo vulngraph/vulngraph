@@ -281,10 +281,14 @@ type Scope struct {
 // enforceable. A key that is not "<region>/<family>" is never enforceable:
 // the region component is half of how a population is selected.
 func ParseScope(key string) (Scope, bool) {
-	region, family, ok := strings.Cut(key, "/")
-	if !ok || region == "" || family == "" {
+	// The scope prefix is an opaque stored region/cluster identity. Kubernetes
+	// cluster names can themselves contain slashes; only the final delimiter
+	// separates the audited API family.
+	delimiter := strings.LastIndexByte(key, '/')
+	if delimiter <= 0 || delimiter == len(key)-1 {
 		return Scope{Key: key}, false
 	}
+	region, family := key[:delimiter], key[delimiter+1:]
 	f, ok := enforceableFamilies[family]
 	if !ok {
 		return Scope{Key: key}, false

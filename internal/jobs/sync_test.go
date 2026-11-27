@@ -308,3 +308,11 @@ func TestCoveredScopes(t *testing.T) {
 	require.True(t, isCovered(wildcard, "europe-west4", "gce_instance"))
 	require.True(t, isCovered(wildcard, "", "gce_instance"))
 }
+
+func TestAuditedPodScopeCannotCoverSiblingCluster(t *testing.T) {
+	covered := coveredScopes([]collect.ScopeEnumeration{{Scope: "cluster-a/kubernetes:pods", Types: []string{"k8s_pod"}, Count: 1}})
+	require.True(t, isCovered(covered, "cluster-a", "k8s_pod"))
+	require.False(t, isCovered(covered, "cluster-b", "k8s_pod"))
+	require.False(t, isCovered(covered, "", "k8s_pod"))
+	require.False(t, isCovered(covered, "cluster-a", "container"))
+}

@@ -43,7 +43,7 @@ func TestConnectorScale(t *testing.T) {
 					case path == "/installation/repositories":
 						page, _ := strconv.Atoi(req.URL.Query().Get("page"))
 						start := (page - 1) * perPage
-						var repos []map[string]any
+						repos := make([]map[string]any, 0)
 						for i := start; i < min(start+perPage, n); i++ {
 							repos = append(repos, map[string]any{"name": fmt.Sprintf("repo%d", i), "full_name": fmt.Sprintf("org/repo%d", i), "default_branch": "main", "visibility": "private", "language": "Go"})
 						}

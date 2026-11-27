@@ -113,7 +113,7 @@ fixtures. Optional per-request delay is simulated latency, not a live API result
 | AWS | Paginated EC2 collection through the real collector |
 | GCP | Compute inventory; unavailable auxiliary families explicitly mark the result partial |
 | Azure | ARM SDK VM pages, NIC reads, shared subnet enrichment |
-| Kubernetes | Namespaces, pods, application/sidecar/init containers and resolved images |
+| Kubernetes | Namespaces, pods, application/sidecar/init containers and resolved images; additional real SDK pod pagination with 1% wide annotations |
 | GitHub | Repository pagination, SBOM, branch protection, CODEOWNERS and empty trees; successful and denied GraphQL |
 | Okta | Users, factors, groups, membership and policy listings |
 | Google Workspace | OAuth signing, user pages and MFA metadata |
@@ -122,7 +122,9 @@ fixtures. Optional per-request delay is simulated latency, not a live API result
 
 Collection JSON records counts, allocations, elapsed time, request counts where
 instrumented, and partial status. Kubernetes uses a client-interface fixture, so
-its zero HTTP count is not a measurement of Kubernetes API requests.
+its zero HTTP count is not a measurement of Kubernetes API requests. The separate
+`kubernetes_paged` fixture counts real SDK requests against a synthetic HTTP
+transport and requires one request per 500 pods, including the final partial page.
 
 The largest successful fixture for each connector then runs through the real sync
 worker, checks, encrypted connector storage, Postgres hashes, ClickHouse writes and

@@ -461,8 +461,7 @@ func (w *SyncWorker) Work(ctx context.Context, job *river.Job[SyncConnectorArgs]
 				applyDeletions(ctx, w.connectors, w.findings, c.ID, deletedIDs[offset:min(offset+deletionCap, len(deletedIDs))], start)
 			}
 			// A connector whose collector declares no scope that forget's audited
-			// allow-list accepts (see coveredScopes; Azure, GitHub and Kubernetes
-			// declare scopes, but none is on that list)
+			// allow-list accepts (see coveredScopes)
 			// completes every sweep clean and yet reconciles nothing at all for
 			// the affected types: covered==nil (or missing the right (region,
 			// type) key) makes every candidate of that type "unscoped" forever.

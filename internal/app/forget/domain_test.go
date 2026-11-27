@@ -207,7 +207,7 @@ func TestForgetNeverActsWithoutProvenCompleteness(t *testing.T) {
 // far side of the seam, which no amount of running the code can do.
 func TestEnforceableFamiliesAreDeclaredByACollector(t *testing.T) {
 	sources := map[string]string{}
-	for _, f := range []string{"../../collect/aws/aws.go", "../../collect/gcp/gcp.go"} {
+	for _, f := range []string{"../../collect/aws/aws.go", "../../collect/gcp/gcp.go", "../../collect/azure/azure.go", "../../collect/github/github.go", "../../collect/kubernetes/kubernetes.go"} {
 		b, err := os.ReadFile(f)
 		require.NoError(t, err)
 		sources[f] = string(b)
@@ -228,7 +228,7 @@ func TestEnforceableFamiliesAreDeclaredByACollector(t *testing.T) {
 
 func TestEnforceableTypes(t *testing.T) {
 	require.Equal(t,
-		[]string{"ec2_instance", "elastic_ip", "gce_instance", "security_group", "subnet", "vpc"},
+		[]string{"azure_vm", "ec2_instance", "elastic_ip", "gce_instance", "github_repo", "k8s_pod", "security_group", "subnet", "vpc"},
 		EnforceableTypes(),
 		"the audited type set is a deliberate, reviewed list — widening it is a considered decision")
 }

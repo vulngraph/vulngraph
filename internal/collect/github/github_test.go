@@ -221,7 +221,7 @@ func TestCollect_FullRepoListing_MarksComplete(t *testing.T) {
 	require.False(t, res.Partial)
 
 	scopes := completedScopes(res)
-	se, ok := scopes["installation/67890:repos"]
+	se, ok := scopes["67890/github:repos"]
 	require.True(t, ok, "a fully-paged repo listing must be claimed complete")
 	require.Equal(t, []string{"github_repo"}, se.Types)
 	require.Equal(t, 150, se.Count)
@@ -262,7 +262,7 @@ func TestCollect_RepoListingPageFailure_NoCompletenessClaim(t *testing.T) {
 	require.True(t, res.Partial, "the un-fetched pages must mark the sweep partial")
 
 	scopes := completedScopes(res)
-	_, ok := scopes["installation/67890:repos"]
+	_, ok := scopes["67890/github:repos"]
 	require.False(t, ok, "a listing that failed mid-pagination must not be claimed complete")
 }
 
@@ -318,7 +318,7 @@ func TestCollect_NoRepos_MarksCompleteWithZeroCount(t *testing.T) {
 	require.False(t, res.Partial)
 
 	scopes := completedScopes(res)
-	se, ok := scopes["installation/67890:repos"]
+	se, ok := scopes["67890/github:repos"]
 	require.True(t, ok, "an empty but fully-enumerated installation is still a complete listing")
 	require.Equal(t, 0, se.Count)
 }

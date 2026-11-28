@@ -276,7 +276,7 @@ func (r *CHRepo) LoadViewForTypes(ctx context.Context, types []string) ([]asset.
 	defer cancel()
 
 	placeholders, typeArgs := dbutil.CHIn(types)
-	query := fmt.Sprintf(loadView, metadataKeyPlaceholders, placeholders)
+	query := fmt.Sprintf(loadViewForTypesQuery(types), metadataKeyPlaceholders, placeholders)
 	args := append(append(append([]any{}, metadataKeyArgs...), typeArgs...), correlationLimit)
 
 	assets, err := r.scanAssets(qCtx, query, args...)

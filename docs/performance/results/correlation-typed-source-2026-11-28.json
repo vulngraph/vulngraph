@@ -1,0 +1,172 @@
+{
+  "scope": "Typed EC2/GCE correlation source reads; no complete million-asset correlation or full-profile credit",
+  "baseline": "Projected tuple aggregation with unconditional annotation join",
+  "candidate": "Same typed reader without annotation join when requested types exclude declared_k8s_workload",
+  "clickhouse": "26.8.34.13, deployment XML, Linux ARM64",
+  "resources": {
+    "database_cpus": 2,
+    "database_server_bytes": 3221225472,
+    "query_memory_bytes": 2147483648,
+    "worker_cpus": 1,
+    "worker_ram_bytes": 4294967296,
+    "worker_swap_allowance_bytes": 4294967296
+  },
+  "unchanged_refusal_rows": 600000,
+  "unchanged_workload_query_budget_bytes": 536870912,
+  "unchanged_100k_query_guard_bytes": 234881024,
+  "runtime_sha256": {
+    "internal/app/correlate/repo.go": "fd6ccc5e2aad33824e8f0135fb4be922617da521ff7ed65c11d76521fa6842f7",
+    "internal/app/correlate/repo_view_query.go": "6a35112cf32d9e4def219f4f241f9405a06fdece8ad50177daa05e8517d814e0"
+  },
+  "full_profile_coverage_credit": 0,
+  "cohorts": [
+    {
+      "logical_assets": 5000,
+      "physical_assets": 10000,
+      "passed": true,
+      "expected_truncated": false,
+      "retained_result_limit": 600000,
+      "query_regression_ceiling_bytes": 234881024,
+      "raw_report_sha256": "6d8c6357891611cd6878cccb915146fed7c531e7cf92e7bd2459febdf4d151fd",
+      "variants": {
+        "baseline": {
+          "attempts": 3,
+          "errors": 0,
+          "query_peak_bytes": 30853532,
+          "sql_median_ms": 14,
+          "elapsed_with_oracle_median_seconds": 0.03336762,
+          "cpu_median_microseconds": 19122,
+          "read_rows": [
+            10000
+          ],
+          "logical_read_bytes": [
+            8961676
+          ],
+          "compressed_read_median_bytes": 892489,
+          "aggregation_spill_median_compressed_bytes": 0,
+          "go_allocated_median_bytes": 24352264
+        },
+        "production": {
+          "attempts": 3,
+          "errors": 0,
+          "query_peak_bytes": 25664731,
+          "sql_median_ms": 13,
+          "elapsed_with_oracle_median_seconds": 0.028049065,
+          "cpu_median_microseconds": 17172,
+          "read_rows": [
+            10000
+          ],
+          "logical_read_bytes": [
+            8961676
+          ],
+          "compressed_read_median_bytes": 872756,
+          "aggregation_spill_median_compressed_bytes": 0,
+          "go_allocated_median_bytes": 24352200
+        }
+      }
+    },
+    {
+      "logical_assets": 100000,
+      "physical_assets": 200000,
+      "passed": true,
+      "expected_truncated": false,
+      "retained_result_limit": 600000,
+      "query_regression_ceiling_bytes": 234881024,
+      "raw_report_sha256": "fe4563b2c922dc5e19aa084d5468a394e90cab01f795e01c9f465b111a8e08dc",
+      "variants": {
+        "baseline": {
+          "attempts": 3,
+          "errors": 0,
+          "query_peak_bytes": 178375587,
+          "sql_median_ms": 327,
+          "elapsed_with_oracle_median_seconds": 0.487606099,
+          "cpu_median_microseconds": 395356,
+          "read_rows": [
+            200000
+          ],
+          "logical_read_bytes": [
+            179446996
+          ],
+          "compressed_read_median_bytes": 19616389,
+          "aggregation_spill_median_compressed_bytes": 2480080,
+          "go_allocated_median_bytes": 529414864
+        },
+        "production": {
+          "attempts": 3,
+          "errors": 0,
+          "query_peak_bytes": 143443709,
+          "sql_median_ms": 234,
+          "elapsed_with_oracle_median_seconds": 0.376104724,
+          "cpu_median_microseconds": 218889,
+          "read_rows": [
+            200000
+          ],
+          "logical_read_bytes": [
+            179446996
+          ],
+          "compressed_read_median_bytes": 17115746,
+          "aggregation_spill_median_compressed_bytes": 0,
+          "go_allocated_median_bytes": 529425800
+        }
+      }
+    },
+    {
+      "logical_assets": 1000000,
+      "physical_assets": 2000000,
+      "passed": true,
+      "expected_truncated": true,
+      "retained_result_limit": 600000,
+      "query_regression_ceiling_bytes": 536870912,
+      "raw_report_sha256": "4ccb994d2ef13aa0478dadaba90caa6bcdba4b361df55a91162f7bc1e6243d28",
+      "variants": {
+        "baseline": {
+          "attempts": 3,
+          "errors": 0,
+          "query_peak_bytes": 197844830,
+          "sql_median_ms": 2867,
+          "elapsed_with_oracle_median_seconds": 3.59115204,
+          "cpu_median_microseconds": 4167795,
+          "read_rows": [
+            2000000
+          ],
+          "logical_read_bytes": [
+            1796511028
+          ],
+          "compressed_read_median_bytes": 193792836,
+          "aggregation_spill_median_compressed_bytes": 32938094,
+          "go_allocated_median_bytes": 3260007608
+        },
+        "production": {
+          "attempts": 3,
+          "errors": 0,
+          "query_peak_bytes": 245105329,
+          "sql_median_ms": 2838,
+          "elapsed_with_oracle_median_seconds": 3.470977051,
+          "cpu_median_microseconds": 4089062,
+          "read_rows": [
+            2000000
+          ],
+          "logical_read_bytes": [
+            1796511028
+          ],
+          "compressed_read_median_bytes": 196645091,
+          "aggregation_spill_median_compressed_bytes": 37983277,
+          "go_allocated_median_bytes": 3259999944
+        }
+      }
+    }
+  ],
+  "retained_native_failure": {
+    "architecture": "AMD64",
+    "query_peak_bytes": 235079131,
+    "guard_bytes": 234881024,
+    "cause": "Unconditional-join typed reader exceeded existing guard; similar prior passing runs varied in peak memory",
+    "guard_relaxed": false
+  },
+  "limits": [
+    "Full and mixed declaration views retain their annotation join and its cost.",
+    "Million-row input returns the existing 600k refusal; peak query memory increased versus the matched control.",
+    "Go allocations remain substantial because the result is retained.",
+    "Neither swap-free nor concurrent/native construction capacity is established."
+  ]
+}

@@ -57,3 +57,36 @@ and failed that guard; the restored reader passed all three attempts at 190.1 MB
 maximum. Larger source, mixed-load, swap-disabled and aged
 runs remain manual/scheduled work. All full-profile coverage credit remains zero.
 See the [compact measurements](results/correlation-source-2026-11-27.json).
+
+## Typed reads without declaration annotations
+
+A native AMD64 replay of the unchanged projected reader reached 235,079,131 bytes,
+exceeding its existing 224 MiB guard by 198,107 bytes. Prior passing replays of the
+same source, deployment settings and part counts varied from 170.8 to 220.8 MB.
+The failed run is retained; the guard and resource limits are unchanged.
+
+Type-scoped reads now omit the annotation join only when the requested types
+exclude `declared_k8s_workload`. Empty selections remain empty. Full views and
+mixed declaration views retain the join and exact annotation set, clear and
+changed-input behavior. This avoids buffering an unused overlay for the measured
+EC2/GCE inputs; it does not reduce every correlation query's memory.
+
+Three alternating matched pairs at each size use the same deployed configuration
+above. The control is the already-projected reader with its unconditional join,
+not the original wide aggregation. All 18 reads preserve exact returned fields,
+counts and refusal behavior. Both complete-view APIs and mixed declaration reads
+also pass the annotation replay.
+
+| Logical assets (physical versions) | Maximum query memory, joined → typed | SQL median, joined → typed | Elapsed median with oracle, joined → typed |
+|---|---|---|---|
+| 5,000 (10,000) | 30.85 → 25.66 MB | 14 → 13 ms | 33.37 → 28.05 ms |
+| 100,000 (200,000) | 178.38 → 143.44 MB | 327 → 234 ms | 487.61 → 376.10 ms |
+| 1,000,000 (2,000,000) | 197.84 → 245.11 MB | 2,867 → 2,838 ms | 3.591 → 3.471 s |
+
+Logical read rows and bytes are identical within each pair. At 100k, median
+compressed reads fall from 19.62 to 17.12 MB and aggregation spill from 2.48 MB
+to zero; at one million they rise from 193.79 to 196.65 MB and 32.94 to 37.98 MB.
+The million-input memory regression is explicit and still below the fixed 512 MiB
+workload ceiling. It returns the existing 600k refusal, not a successful full
+correlation sweep. Client allocations remain about 529 MB at 100k and 3.26 GB
+at one million. See the [typed-read measurements](results/correlation-typed-source-2026-11-28.json).

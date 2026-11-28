@@ -178,12 +178,26 @@ func TestEnrichWorker_EnrichError(t *testing.T) {
 // --- change-gate ---
 
 type fakeEnrichCache struct {
+	sweep       enrichcache.SweepProgress
 	entries     map[string]enrichcache.Entry
 	getErr      error
 	puts        int
 	invalidated []string
 	alerts      map[string]enrichcache.AlertState
 	alertErr    error
+}
+
+func (c *fakeEnrichCache) GetSweepProgress(context.Context) (enrichcache.SweepProgress, error) {
+	return c.sweep, nil
+}
+
+func (c *fakeEnrichCache) AdvanceSweepProgress(_ context.Context, revision int64, next enrichcache.SweepProgress) (bool, error) {
+	if c.sweep.Revision != revision {
+		return false, nil
+	}
+	next.Revision = revision + 1
+	c.sweep = next
+	return true, nil
 }
 
 func newFakeEnrichCache() *fakeEnrichCache {
@@ -669,7 +683,7 @@ func TestEnrichSweepWorker_Phase1CeilingIsHigherNotAbsent(t *testing.T) {
 	work := body[start : start+end]
 
 	p1 := strings.Index(work, "backfillSeverities")
-	p2 := strings.Index(work, "StaleFirst: true")
+	p2 := strings.Index(work, "w.drainDrift(ctx,")
 	require.Positive(t, p1)
 	require.Positive(t, p2)
 	require.Less(t, p1, p2, "Phase 1 must run before Phase 2")

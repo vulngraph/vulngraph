@@ -13,6 +13,7 @@ type Repo interface {
 	Upsert(ctx context.Context, findings []Finding) error
 	UpsertEnrichment(ctx context.Context, enrichments []Enrichment) error
 	List(ctx context.Context, f Filter) ([]Finding, error)
+	EnrichmentCandidates(ctx context.Context, f Filter) (EnrichmentPage, error)
 	Summary(ctx context.Context, f Filter) (Summary, error)
 	Clusters(ctx context.Context, f Filter) ([]Cluster, int, error)
 	RiskByResource(ctx context.Context, ids []string) (map[string]Risk, error)

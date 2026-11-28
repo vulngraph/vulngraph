@@ -289,10 +289,12 @@ type Filter struct {
 	// with no ordering hook restarts from the newest-detected finding every tick, so a
 	// corpus bigger than one tick's budget never has its tail re-enriched — a finding
 	// scored before a new enrich feature (e.g. must_fix_class) shipped stays on
-	// that stale classification forever. StaleFirst self-balances: re-enriching a finding
-	// refreshes its enriched_at, which pushes it to the back of the queue, so the sweep
-	// is guaranteed to reach every finding in bounded time.
+	// that stale classification indefinitely. Cache hits do not change enriched_at,
+	// so bounded sweeps must persist their enumeration cursor across ticks.
 	StaleFirst bool
+	// EnrichedBefore freezes an enrichment-time pass boundary. Rows rescored after
+	// the boundary are excluded from that pass, even when their sort keys move.
+	EnrichedBefore time.Time
 	// OldestFirst sorts by detected_at ASCENDING instead of the default descending.
 	// A sweep with a per-tick scan ceiling and a cursor that resets each tick can
 	// only ever see the newest N findings; if the backlog it exists to drain is
@@ -323,6 +325,13 @@ type Filter struct {
 	// gets their AND, which is likely not what either meant, but is not a
 	// data-safety issue either way.
 	CVEIn []string
+}
+
+// EnrichmentPage carries IDs and the original selection seek key. It is not a
+// hydrated finding page; its length and cursor come from one source statement.
+type EnrichmentPage struct {
+	IDs    []string
+	Cursor string
 }
 
 var ErrNotFound = errors.New("finding: not found")

@@ -29,6 +29,11 @@ func (s scopedBackfillFindings) List(ctx context.Context, filter finding.Filter)
 	return s.service.List(ctx, filter)
 }
 
+func (s scopedBackfillFindings) EnrichmentCandidates(ctx context.Context, filter finding.Filter) (finding.EnrichmentPage, error) {
+	filter.Source = s.source
+	return s.service.EnrichmentCandidates(ctx, filter)
+}
+
 func TestEnrichBackfillIncludesDeferredInformation(t *testing.T) {
 	if os.Getenv("TEST_DATABASE_URL") == "" || os.Getenv("TEST_CLICKHOUSE_URL") == "" {
 		t.Skip("requires isolated migrated databases")

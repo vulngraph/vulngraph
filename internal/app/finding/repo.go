@@ -291,8 +291,8 @@ func (r *CHRepo) Upsert(ctx context.Context, findings []Finding) error {
 // is returned with its phase-two state, and one that stops matching the filter
 // is dropped, so a page can come back shorter than the limit. Both are benign
 // here: findings are never deleted (resolved_at is stamped instead), the
-// handler treats a short page as the last one, and the enrich sweep's next tick
-// re-derives its own cursor from scratch.
+// handler treats a short page as the last one. Durable enrichment enumeration
+// uses EnrichmentCandidates instead, retaining phase one's key and row count.
 func (r *CHRepo) List(ctx context.Context, f Filter) ([]Finding, error) {
 	qCtx, cancel := context.WithTimeout(ctx, batchReadTimeout)
 	defer cancel()
@@ -342,6 +342,10 @@ func (r *CHRepo) List(ctx context.Context, f Filter) ([]Finding, error) {
 // function so the shape it emits — narrow column set, filters split correctly
 // across WHERE and HAVING — is directly testable without ClickHouse.
 func listKeysQuery(f Filter) (string, []any, error) {
+	return listKeyProjectionQuery(f, false)
+}
+
+func listKeyProjectionQuery(f Filter, enrichmentKey bool) (string, []any, error) {
 	// Pre-aggregation WHERE: source, resource_id and check_id are baked into a
 	// finding's deterministic ID (dbutil.DeterministicID, checks.eval) so they
 	// are identical across every ReplacingMergeTree version of a given id —
@@ -440,6 +444,10 @@ func listKeysQuery(f Filter) (string, []any, error) {
 		// only walks findings that HAVE been enriched at least once, oldest first.
 		havingConds = append(havingConds, "enriched_at >= toDateTime('2000-01-01 00:00:00')")
 	}
+	if !f.EnrichedBefore.IsZero() {
+		havingConds = append(havingConds, "enriched_at <= fromUnixTimestamp64Milli(toInt64(?))")
+		havingArgs = append(havingArgs, f.EnrichedBefore.UnixMilli())
+	}
 	if !f.IncludeResolved {
 		// Auto-resolved findings are hidden by default — a fixed issue
 		// must not linger in lists/worklists. resolved_at is zero while open.
@@ -505,7 +513,7 @@ func listKeysQuery(f Filter) (string, []any, error) {
 	inner, groupBy := selectFindingBaseKeys, "f.id"
 	args := append([]any{}, whereArgs...)
 	needsEnrichment := f.MinScore > 0 || f.SortByScore || f.SafeOnly || f.MustFixOnly ||
-		f.Unenriched || f.StaleFirst || feHaving != ""
+		f.Unenriched || f.StaleFirst || !f.EnrichedBefore.IsZero() || feHaving != ""
 	if needsEnrichment {
 		inner = fmt.Sprintf(selectFindingKeysArgMax, joinKind, feScope, feHaving)
 		groupBy = findingKeysGroupBy
@@ -537,10 +545,14 @@ func listKeysQuery(f Filter) (string, []any, error) {
 	args = append(args, limit)
 
 	// The ORDER BY / LIMIT sit OUTSIDE the aggregation so the sort runs over the
-	// rows the HAVING kept, not over one argMax state per id in the table. Only
-	// `id` is projected: the seven key columns exist to be filtered and sorted
-	// on, never to be returned — ByIDs returns the row.
-	return "SELECT id FROM (" + inner + ") ORDER BY " + orderCol + " " + orderDir +
+	// rows the HAVING kept, not over one argMax state per id in the table. List
+	// projects IDs for ByIDs hydration; durable enrichment paging also returns
+	// the original seek key from this same selection snapshot.
+	projection := "id"
+	if enrichmentKey {
+		projection += ", enriched_at"
+	}
+	return "SELECT " + projection + " FROM (" + inner + ") ORDER BY " + orderCol + " " + orderDir +
 		", id " + orderDir + " LIMIT ?", args, nil
 }
 

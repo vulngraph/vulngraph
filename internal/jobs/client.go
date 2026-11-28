@@ -417,7 +417,7 @@ func registerRealWorkers(workers *river.Workers, pool *pgxpool.Pool, deps Deps) 
 		graph: deps.GraphContext, now: time.Now, notify: noticeDeliverer(deps.Notify),
 		carriers: deps.AlertCarriers,
 	})
-	river.AddWorker(workers, &EnrichSweepWorker{findings: deps.Findings, alerts: alertStatePruner(deps.EnrichCache)})
+	river.AddWorker(workers, &EnrichSweepWorker{findings: deps.Findings, alerts: alertStatePruner(deps.EnrichCache), progress: deps.EnrichCache})
 	// metrics is not optional in practice: without it recordSweepPhase silently
 	// no-ops and the sweep-effectiveness signal — the whole point of which is that
 	// a sustained high scanned count with zero resolutions must be alertable

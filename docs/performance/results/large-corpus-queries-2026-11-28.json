@@ -1,0 +1,2034 @@
+{
+  "date": "2026-11-28",
+  "production_change": false,
+  "coverage_credit": false,
+  "decision": "Reject the low-memory preset for production: lower completed-read throughput in catch-up and higher CPU/latency in the settled control.",
+  "units": {
+    "memory": "bytes",
+    "latency": "seconds",
+    "cpu": "core-seconds",
+    "query_read_bytes": "logical bytes"
+  },
+  "isolated_runs": [
+    {
+      "artifact": "join-spill-stress-v1",
+      "report_sha256": "20b541db3e3dde04d7f18fc644299886f15cb7641013e1a34adb09e37ff087b3",
+      "source_patch_sha256": "deb472f89fb1e54e60d94709c57c4088b2187bb2a2a20f088510fdb25979cbdc",
+      "source_base": "78b30fd535c62d7a0963a92b2c6071c779dbca5a",
+      "experiment": "join_spill",
+      "resource_cohort": "deployed",
+      "platform": "darwin/arm64",
+      "go_version": "go1.26.11",
+      "settings": {
+        "max_bytes_before_external_join": 134217728
+      },
+      "settings_scope": "all finding queries",
+      "default_settings": null,
+      "logical_findings": 5000000,
+      "logical_enrichment": 25000000,
+      "inventory_counts": {
+        "logical_assets": 1000000,
+        "logical_edges": 102275000,
+        "physical_asset_rows": 1011000,
+        "physical_edge_rows": 123266003
+      },
+      "fixed_comparison_passed": false,
+      "operation_failures": {},
+      "groups": {
+        "findings-summary--baseline": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 3,
+          "successful_median_seconds": 3.991117,
+          "successful_peak_query_memory_bytes": 882351567,
+          "successful_query_read_rows": [
+            90491520,
+            90491520,
+            90491520
+          ],
+          "successful_query_logical_read_bytes": [
+            3398753732,
+            3398753732,
+            3398753732
+          ],
+          "successful_cpu_seconds": [
+            7.434437,
+            7.041555,
+            7.215057
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-summary--candidate": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 3,
+          "successful_median_seconds": 5.274708666,
+          "successful_peak_query_memory_bytes": 578391419,
+          "successful_query_read_rows": [
+            90491520,
+            90491520,
+            90491520
+          ],
+          "successful_query_logical_read_bytes": [
+            3398753732,
+            3398753732,
+            3398753732
+          ],
+          "successful_cpu_seconds": [
+            9.891389,
+            9.413514,
+            9.400175
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-clusters--baseline": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 3,
+          "successful_median_seconds": 4.123602625,
+          "successful_peak_query_memory_bytes": 1101093333,
+          "successful_query_read_rows": [
+            90491520,
+            90491520,
+            90491520
+          ],
+          "successful_query_logical_read_bytes": [
+            3568207849,
+            3568207849,
+            3568207849
+          ],
+          "successful_cpu_seconds": [
+            7.238129,
+            7.257017,
+            8.661245
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-clusters--candidate": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 3,
+          "successful_median_seconds": 6.160860959,
+          "successful_peak_query_memory_bytes": 649847011,
+          "successful_query_read_rows": [
+            90491520,
+            90491520,
+            90491520
+          ],
+          "successful_query_logical_read_bytes": [
+            3568207849,
+            3568207849,
+            3568207849
+          ],
+          "successful_cpu_seconds": [
+            10.024347,
+            9.68253,
+            10.123092
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-summary-sample-baseline": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 0.453519667,
+          "successful_peak_query_memory_bytes": 74057700,
+          "successful_query_read_rows": [
+            75256877,
+            75254400,
+            75254400
+          ],
+          "successful_query_logical_read_bytes": [
+            1905247384,
+            1905138396,
+            1905138396
+          ],
+          "successful_cpu_seconds": [
+            0.878781,
+            0.831736,
+            0.826542
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-summary-sample-candidate": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 0.423535959,
+          "successful_peak_query_memory_bytes": 69759797,
+          "successful_query_read_rows": [
+            75254400,
+            75254400,
+            75254400
+          ],
+          "successful_query_logical_read_bytes": [
+            1905138396,
+            1905138396,
+            1905138396
+          ],
+          "successful_cpu_seconds": [
+            0.815422,
+            0.876396,
+            0.827096
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-clusters-sample-baseline": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 0.396824167,
+          "successful_peak_query_memory_bytes": 93323542,
+          "successful_query_read_rows": [
+            75256877,
+            75254400,
+            75254400
+          ],
+          "successful_query_logical_read_bytes": [
+            1697074118,
+            1696804377,
+            1696804377
+          ],
+          "successful_cpu_seconds": [
+            0.766868,
+            0.776113,
+            0.76219
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-clusters-sample-candidate": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 0.394074958,
+          "successful_peak_query_memory_bytes": 93033455,
+          "successful_query_read_rows": [
+            75254400,
+            75254400,
+            75254400
+          ],
+          "successful_query_logical_read_bytes": [
+            1696804377,
+            1696804377,
+            1696804377
+          ],
+          "successful_cpu_seconds": [
+            0.782748,
+            0.760895,
+            0.767984
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 1.2136396249999999,
+          "successful_peak_query_memory_bytes": 56491458,
+          "successful_query_read_rows": [
+            121740848,
+            121740848,
+            121740848
+          ],
+          "successful_query_logical_read_bytes": [
+            6543532786,
+            6543532786,
+            6543532786
+          ],
+          "successful_cpu_seconds": [
+            2.314438,
+            2.230235,
+            2.215294
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "artifact": "merge-join-stress-v1",
+      "report_sha256": "fa45f7874689b1cbab2dcbcc2124790c4b0cf3fae6afe8ea6771f08ce1f74373",
+      "source_patch_sha256": "35f971040b4b4c06029671164b1a469796aa8139e38abdb879f5754b21d8deea",
+      "source_base": "78b30fd535c62d7a0963a92b2c6071c779dbca5a",
+      "experiment": "merge_join",
+      "resource_cohort": "deployed",
+      "platform": "darwin/arm64",
+      "go_version": "go1.26.11",
+      "settings": {
+        "join_algorithm": "full_sorting_merge",
+        "max_bytes_before_external_sort": 134217728
+      },
+      "settings_scope": "all finding queries",
+      "default_settings": null,
+      "logical_findings": 5000000,
+      "logical_enrichment": 25000000,
+      "inventory_counts": {
+        "logical_assets": 1000000,
+        "logical_edges": 102275000,
+        "physical_asset_rows": 1011000,
+        "physical_edge_rows": 123266003
+      },
+      "fixed_comparison_passed": false,
+      "operation_failures": {
+        "findings-clusters-sample-candidate-0": "measure findings-clusters-sample-candidate-0: Clusters: Select: scan: code: 241, message: (total) memory limit exceeded: would use 1.68 GiB (attempt to allocate chunk of 4.07 MiB), current RSS: 3.00 GiB, maximum: 3.00 GiB. OvercommitTracker decision: Query was selected to stop by OvercommitTracker. Untracked memory across all threads: -12.65 MiB: While executing AggregatingTransform",
+        "findings-clusters-sample-candidate-1": "measure findings-clusters-sample-candidate-1: Clusters: Select: scan: context deadline exceeded",
+        "findings-clusters-sample-candidate-2": "measure findings-clusters-sample-candidate-2: Clusters: Select: scan: context deadline exceeded",
+        "findings-summary-sample-candidate-0": "measure findings-summary-sample-candidate-0: Summary: Select: scan: context deadline exceeded",
+        "findings-summary-sample-candidate-1": "measure findings-summary-sample-candidate-1: Summary: Select: scan: code: 241, message: (total) memory limit exceeded: would use 489.59 MiB (attempt to allocate chunk of 4.04 MiB), current RSS: 3.00 GiB, maximum: 3.00 GiB. OvercommitTracker decision: Query was selected to stop by OvercommitTracker. Untracked memory across all threads: -9.86 MiB: While executing AggregatingTransform",
+        "findings-summary-sample-candidate-2": "measure findings-summary-sample-candidate-2: Summary: Select: scan: context deadline exceeded"
+      },
+      "groups": {
+        "findings-summary--baseline": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 3,
+          "successful_median_seconds": 3.969577292,
+          "successful_peak_query_memory_bytes": 882665647,
+          "successful_query_read_rows": [
+            90491520,
+            90491520,
+            90491520
+          ],
+          "successful_query_logical_read_bytes": [
+            3398753732,
+            3398753732,
+            3398753732
+          ],
+          "successful_cpu_seconds": [
+            7.547133,
+            7.10225,
+            7.020113
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-summary--candidate": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 3.8346929579999998,
+          "successful_peak_query_memory_bytes": 517421099,
+          "successful_query_read_rows": [
+            88471326,
+            88471326,
+            88471326
+          ],
+          "successful_query_logical_read_bytes": [
+            3305636015,
+            3305636015,
+            3305636015
+          ],
+          "successful_cpu_seconds": [
+            5.753622,
+            5.658024,
+            5.617422
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-clusters--baseline": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 3,
+          "successful_median_seconds": 4.108531958,
+          "successful_peak_query_memory_bytes": 1101920988,
+          "successful_query_read_rows": [
+            90491520,
+            90491520,
+            90491520
+          ],
+          "successful_query_logical_read_bytes": [
+            3568207849,
+            3568207849,
+            3568207849
+          ],
+          "successful_cpu_seconds": [
+            7.241571,
+            7.306595,
+            7.11404
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-clusters--candidate": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 3,
+          "successful_median_seconds": 3.2561204999999998,
+          "successful_peak_query_memory_bytes": 920497555,
+          "successful_query_read_rows": [
+            88987422,
+            88987422,
+            88987422
+          ],
+          "successful_query_logical_read_bytes": [
+            3513432811,
+            3513432811,
+            3513432811
+          ],
+          "successful_cpu_seconds": [
+            5.139797,
+            5.13482,
+            5.144364
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-summary-sample-baseline": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 0.422742667,
+          "successful_peak_query_memory_bytes": 69860321,
+          "successful_query_read_rows": [
+            75256877,
+            75254400,
+            75254400
+          ],
+          "successful_query_logical_read_bytes": [
+            1905247384,
+            1905138396,
+            1905138396
+          ],
+          "successful_cpu_seconds": [
+            0.815711,
+            0.811885,
+            0.814869
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-summary-sample-candidate": {
+          "attempts": 3,
+          "verified_outputs": 0,
+          "budget_failures": 2,
+          "successful_median_seconds": null,
+          "successful_peak_query_memory_bytes": null,
+          "successful_query_read_rows": [],
+          "successful_query_logical_read_bytes": [],
+          "successful_cpu_seconds": [],
+          "external_sort_compressed_bytes": []
+        },
+        "findings-clusters-sample-baseline": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 0.401297167,
+          "successful_peak_query_memory_bytes": 93323841,
+          "successful_query_read_rows": [
+            75256877,
+            75254400,
+            75254400
+          ],
+          "successful_query_logical_read_bytes": [
+            1697074118,
+            1696804377,
+            1696804377
+          ],
+          "successful_cpu_seconds": [
+            0.782425,
+            0.776269,
+            0.759744
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-clusters-sample-candidate": {
+          "attempts": 3,
+          "verified_outputs": 0,
+          "budget_failures": 3,
+          "successful_median_seconds": null,
+          "successful_peak_query_memory_bytes": null,
+          "successful_query_read_rows": [],
+          "successful_query_logical_read_bytes": [],
+          "successful_cpu_seconds": [],
+          "external_sort_compressed_bytes": []
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 1.155821292,
+          "successful_peak_query_memory_bytes": 59119368,
+          "successful_query_read_rows": [
+            121740848,
+            121740848,
+            121740848
+          ],
+          "successful_query_logical_read_bytes": [
+            6543532786,
+            6543532786,
+            6543532786
+          ],
+          "successful_cpu_seconds": [
+            2.518959,
+            2.209568,
+            2.182322
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "artifact": "bounded-merge-join-stress-v1",
+      "report_sha256": "b05a7af80835bb6b3434119ec3e481be5b7dbdc42424137729c1a94dc4782b94",
+      "source_patch_sha256": "18f03872e6ffe774b7a6ac1a007e634d03298bf862b97d957e0020ba6271cdcf",
+      "source_base": "78b30fd535c62d7a0963a92b2c6071c779dbca5a",
+      "experiment": "merge_join_bounded",
+      "resource_cohort": "deployed",
+      "platform": "darwin/arm64",
+      "go_version": "go1.26.11",
+      "settings": {
+        "join_algorithm": "full_sorting_merge",
+        "max_bytes_before_external_sort": 134217728,
+        "max_bytes_ratio_before_external_sort": 0
+      },
+      "settings_scope": "broad-only",
+      "default_settings": {
+        "join_algorithm": "direct,parallel_hash,hash,ie_join",
+        "max_bytes_before_external_sort": "0",
+        "max_bytes_ratio_before_external_sort": "0.5"
+      },
+      "logical_findings": 5000000,
+      "logical_enrichment": 25000000,
+      "inventory_counts": {
+        "logical_assets": 1000000,
+        "logical_edges": 102275000,
+        "physical_asset_rows": 1011000,
+        "physical_edge_rows": 123266003
+      },
+      "fixed_comparison_passed": false,
+      "operation_failures": {},
+      "groups": {
+        "findings-summary--baseline": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 3,
+          "successful_median_seconds": 3.82705275,
+          "successful_peak_query_memory_bytes": 880917489,
+          "successful_query_read_rows": [
+            90491520,
+            90491520,
+            90491520
+          ],
+          "successful_query_logical_read_bytes": [
+            3398753732,
+            3398753732,
+            3398753732
+          ],
+          "successful_cpu_seconds": [
+            6.920782,
+            7.927701,
+            6.925773
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-summary--candidate": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 3.83583275,
+          "successful_peak_query_memory_bytes": 519879548,
+          "successful_query_read_rows": [
+            88471326,
+            88471326,
+            88471326
+          ],
+          "successful_query_logical_read_bytes": [
+            3305636015,
+            3305636015,
+            3305636015
+          ],
+          "successful_cpu_seconds": [
+            5.669306,
+            5.818616,
+            5.620961
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-clusters--baseline": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 3,
+          "successful_median_seconds": 4.077787375,
+          "successful_peak_query_memory_bytes": 1101337898,
+          "successful_query_read_rows": [
+            90491520,
+            90491520,
+            90491520
+          ],
+          "successful_query_logical_read_bytes": [
+            3568207849,
+            3568207849,
+            3568207849
+          ],
+          "successful_cpu_seconds": [
+            7.351035,
+            7.286264,
+            7.162346
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-clusters--candidate": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 3,
+          "successful_median_seconds": 3.526210125,
+          "successful_peak_query_memory_bytes": 682088988,
+          "successful_query_read_rows": [
+            88987422,
+            88987422,
+            88987422
+          ],
+          "successful_query_logical_read_bytes": [
+            3513432811,
+            3513432811,
+            3513432811
+          ],
+          "successful_cpu_seconds": [
+            5.532177,
+            5.689195,
+            5.756102
+          ],
+          "external_sort_compressed_bytes": [
+            115569398,
+            115569398,
+            115569398
+          ]
+        },
+        "findings-summary-sample-baseline": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 0.467974542,
+          "successful_peak_query_memory_bytes": 74057812,
+          "successful_query_read_rows": [
+            75256877,
+            75254400,
+            75254400
+          ],
+          "successful_query_logical_read_bytes": [
+            1905247384,
+            1905138396,
+            1905138396
+          ],
+          "successful_cpu_seconds": [
+            0.916497,
+            0.82006,
+            0.833576
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-summary-sample-candidate": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 0.426291833,
+          "successful_peak_query_memory_bytes": 69754644,
+          "successful_query_read_rows": [
+            75254400,
+            75254400,
+            75254400
+          ],
+          "successful_query_logical_read_bytes": [
+            1905138396,
+            1905138396,
+            1905138396
+          ],
+          "successful_cpu_seconds": [
+            0.817086,
+            0.827098,
+            0.832764
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-clusters-sample-baseline": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 0.38690725,
+          "successful_peak_query_memory_bytes": 93324138,
+          "successful_query_read_rows": [
+            75256877,
+            75254400,
+            75254400
+          ],
+          "successful_query_logical_read_bytes": [
+            1697074118,
+            1696804377,
+            1696804377
+          ],
+          "successful_cpu_seconds": [
+            0.751715,
+            0.82119,
+            0.751696
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-clusters-sample-candidate": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 0.389165209,
+          "successful_peak_query_memory_bytes": 93353443,
+          "successful_query_read_rows": [
+            75254400,
+            75254400,
+            75254400
+          ],
+          "successful_query_logical_read_bytes": [
+            1696804377,
+            1696804377,
+            1696804377
+          ],
+          "successful_cpu_seconds": [
+            0.783748,
+            0.755696,
+            0.752866
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 1.2064602500000001,
+          "successful_peak_query_memory_bytes": 55827319,
+          "successful_query_read_rows": [
+            121740848,
+            121740848,
+            121740848
+          ],
+          "successful_query_logical_read_bytes": [
+            6543532786,
+            6543532786,
+            6543532786
+          ],
+          "successful_cpu_seconds": [
+            2.297334,
+            2.285385,
+            2.173105
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "artifact": "merge-blocks-stress-v1",
+      "report_sha256": "d38d9423367d1cf6939e68a0afdeddb0519fabd65a2b8d57d33405030f7bace5",
+      "source_patch_sha256": "53f40ab928d247c091f84d0e6b2eae583eb16afc296063e4e1abc1eddac68040",
+      "source_base": "78b30fd535c62d7a0963a92b2c6071c779dbca5a",
+      "experiment": "merge_join_blocks",
+      "resource_cohort": "deployed",
+      "platform": "darwin/arm64",
+      "go_version": "go1.26.11",
+      "settings": {
+        "join_algorithm": "full_sorting_merge",
+        "max_block_size": 4096,
+        "max_bytes_before_external_sort": 134217728,
+        "max_bytes_ratio_before_external_sort": 0
+      },
+      "settings_scope": "broad-only",
+      "default_settings": {
+        "join_algorithm": "direct,parallel_hash,hash,ie_join",
+        "max_block_size": "65409",
+        "max_bytes_before_external_sort": "0",
+        "max_bytes_ratio_before_external_sort": "0.5"
+      },
+      "logical_findings": 5000000,
+      "logical_enrichment": 25000000,
+      "inventory_counts": {
+        "logical_assets": 1000000,
+        "logical_edges": 102275000,
+        "physical_asset_rows": 1011000,
+        "physical_edge_rows": 123266003
+      },
+      "fixed_comparison_passed": true,
+      "operation_failures": {},
+      "groups": {
+        "findings-summary--baseline": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 3,
+          "successful_median_seconds": 3.9145005,
+          "successful_peak_query_memory_bytes": 880224378,
+          "successful_query_read_rows": [
+            90491520,
+            90491520,
+            90491520
+          ],
+          "successful_query_logical_read_bytes": [
+            3398753732,
+            3398753732,
+            3398753732
+          ],
+          "successful_cpu_seconds": [
+            7.101754,
+            7.036662,
+            7.01821
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-summary--candidate": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 4.003496625,
+          "successful_peak_query_memory_bytes": 349984782,
+          "successful_query_read_rows": [
+            87056832,
+            87056832,
+            87056832
+          ],
+          "successful_query_logical_read_bytes": [
+            3240071053,
+            3240071053,
+            3240071053
+          ],
+          "successful_cpu_seconds": [
+            6.274638,
+            6.445572,
+            6.364594
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-clusters--baseline": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 3,
+          "successful_median_seconds": 4.099245834,
+          "successful_peak_query_memory_bytes": 1098213066,
+          "successful_query_read_rows": [
+            90491520,
+            90491520,
+            90491520
+          ],
+          "successful_query_logical_read_bytes": [
+            3568207849,
+            3568207849,
+            3568207849
+          ],
+          "successful_cpu_seconds": [
+            7.605838,
+            7.261712,
+            7.238115
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-clusters--candidate": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 3.668334417,
+          "successful_peak_query_memory_bytes": 471945606,
+          "successful_query_read_rows": [
+            87056832,
+            87056832,
+            87056832
+          ],
+          "successful_query_logical_read_bytes": [
+            3442674091,
+            3442674091,
+            3442674091
+          ],
+          "successful_cpu_seconds": [
+            6.246198,
+            6.154869,
+            6.111661
+          ],
+          "external_sort_compressed_bytes": [
+            119137928,
+            119137928,
+            119137928
+          ]
+        },
+        "findings-summary-sample-baseline": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 0.500834041,
+          "successful_peak_query_memory_bytes": 74057690,
+          "successful_query_read_rows": [
+            75256877,
+            75254400,
+            75254400
+          ],
+          "successful_query_logical_read_bytes": [
+            1905247384,
+            1905138396,
+            1905138396
+          ],
+          "successful_cpu_seconds": [
+            0.826096,
+            0.967615,
+            1.103213
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-summary-sample-candidate": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 0.4231835,
+          "successful_peak_query_memory_bytes": 69754484,
+          "successful_query_read_rows": [
+            75254400,
+            75254400,
+            75254400
+          ],
+          "successful_query_logical_read_bytes": [
+            1905138396,
+            1905138396,
+            1905138396
+          ],
+          "successful_cpu_seconds": [
+            0.820156,
+            0.823365,
+            0.948018
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-clusters-sample-baseline": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 0.402806375,
+          "successful_peak_query_memory_bytes": 93324430,
+          "successful_query_read_rows": [
+            75256877,
+            75254400,
+            75254400
+          ],
+          "successful_query_logical_read_bytes": [
+            1697074118,
+            1696804377,
+            1696804377
+          ],
+          "successful_cpu_seconds": [
+            0.779392,
+            0.7604,
+            0.753803
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "findings-clusters-sample-candidate": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 0.391480459,
+          "successful_peak_query_memory_bytes": 91772014,
+          "successful_query_read_rows": [
+            75254400,
+            75254400,
+            75254400
+          ],
+          "successful_query_logical_read_bytes": [
+            1696804377,
+            1696804377,
+            1696804377
+          ],
+          "successful_cpu_seconds": [
+            0.755048,
+            0.761914,
+            0.759649
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        },
+        "correlation-package-risk": {
+          "attempts": 3,
+          "verified_outputs": 3,
+          "budget_failures": 0,
+          "successful_median_seconds": 1.195446542,
+          "successful_peak_query_memory_bytes": 56178118,
+          "successful_query_read_rows": [
+            121740848,
+            121740848,
+            121740848
+          ],
+          "successful_query_logical_read_bytes": [
+            6543532786,
+            6543532786,
+            6543532786
+          ],
+          "successful_cpu_seconds": [
+            2.401149,
+            2.220421,
+            2.192239
+          ],
+          "external_sort_compressed_bytes": [
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    }
+  ],
+  "mixed_runs": [
+    {
+      "run": "join-capacity-catchup-v1-r1-baseline",
+      "variant": "baseline",
+      "phase": "catchup",
+      "source_patch_sha256": "4ef47bd4d359674e91169a118c07af68794d8cf5537be14ceaf806faaf71ea95",
+      "resources": {
+        "cohort": "local16g",
+        "clickhouse_cpus": 8,
+        "server_memory_bytes": 12884901888,
+        "query_memory_bytes": 4294967296,
+        "per_query_threads": 2,
+        "fixed_comparison_query_budget_bytes": 536870912,
+        "docker": {
+          "cpus": 18,
+          "memory_bytes": 42057732096
+        },
+        "workspace_free_bytes": 1045487980544,
+        "limitation": "local cardinality/resource cohort, not the declared native 128 GiB stress host"
+      },
+      "correctness_and_terminal_accounting_passed": false,
+      "fixed_comparison_passed": false,
+      "completed_reads": 20,
+      "offered_reads": 30,
+      "observed_work_and_drain_seconds": 33.9020791053772,
+      "successful_reads_per_elapsed_second": 0.5899343204832475,
+      "success_read_p95_seconds": 11.906611204147339,
+      "success_read_p99_seconds": 12.405204057693481,
+      "all_attempt_p95_seconds": 12.405204,
+      "all_attempt_p99_seconds": 12.429424999999998,
+      "read_admission_wait_p99_seconds": 4.429425001144409,
+      "verified_ingestion_windows": 6,
+      "ingestion_windows": 6,
+      "verified_ingest_freshness_p95_seconds": 19.882195949554443,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211800950
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 733227365
+        }
+      },
+      "parts_at_arrival_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211800950
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 733227365
+        }
+      },
+      "terminal_queries": 66,
+      "query_read_rows": 2833461367,
+      "query_logical_read_bytes": 120262237615,
+      "query_memory_peak_bytes": 1588120460,
+      "stress_latency_reference_met": false,
+      "clickhouse": {
+        "sample_window_seconds": 33.831719160079956,
+        "maximum_boundary_offset_seconds": 0.05231499671936035,
+        "cpu_core_seconds": 269.880019,
+        "cgroup_peak_at": "2026-11-28T06:10:18.161105+00:00",
+        "cgroup_peak_bytes": 15063248896,
+        "process_rss_at_cgroup_peak_bytes": 12137144320,
+        "swap_at_cgroup_peak_bytes": 0,
+        "peak_process_rss_bytes": 12137144320,
+        "io_by_device": {
+          "254:16": {
+            "rbytes": 186990592,
+            "wbytes": 1393205248,
+            "rios": 273,
+            "wios": 1144,
+            "dbytes": 0,
+            "dios": 0
+          }
+        }
+      },
+      "report_sha256": "8fdc58e37e37cc42a060bd36f0f5d922b01af9631f185271306b7829aa63c338",
+      "resource_samples_sha256": "aa0df26b0b587b7c8fc4669ab4ade72e6f2ee3c1ece8ce9cbd9209c750242fe4",
+      "operation_error_count": 10,
+      "sql_exceptions": {
+        "Code: 236. DB::NetException: Client has dropped the connection, cancel the query. (ABORTED) (version 26.8.34.13 (official build))": 8,
+        "Code: 735. DB::Exception: Received 'Cancel' packet from the client, canceling the query. (QUERY_WAS_CANCELLED_BY_CLIENT) (version 26.8.34.13 (official build))": 2
+      },
+      "comparison_failure_counts": {
+        "query memory exceeds 512 MiB": 30,
+        "Code: 236. DB::NetException: Client has dropped the connection, cancel the query. (ABORTED) (version 26.8.34.13 (official build))": 8,
+        "Code: 735. DB::Exception: Received 'Cancel' packet from the client, canceling the query. (QUERY_WAS_CANCELLED_BY_CLIENT) (version 26.8.34.13 (official build))": 2,
+        "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)": 1
+      }
+    },
+    {
+      "run": "join-capacity-catchup-v1-r1-candidate",
+      "variant": "candidate",
+      "phase": "catchup",
+      "source_patch_sha256": "4ef47bd4d359674e91169a118c07af68794d8cf5537be14ceaf806faaf71ea95",
+      "resources": {
+        "cohort": "local16g",
+        "clickhouse_cpus": 8,
+        "server_memory_bytes": 12884901888,
+        "query_memory_bytes": 4294967296,
+        "per_query_threads": 2,
+        "fixed_comparison_query_budget_bytes": 536870912,
+        "docker": {
+          "cpus": 18,
+          "memory_bytes": 42057732096
+        },
+        "workspace_free_bytes": 1043844878336,
+        "limitation": "local cardinality/resource cohort, not the declared native 128 GiB stress host"
+      },
+      "correctness_and_terminal_accounting_passed": false,
+      "fixed_comparison_passed": false,
+      "completed_reads": 18,
+      "offered_reads": 30,
+      "observed_work_and_drain_seconds": 32.208735942840576,
+      "successful_reads_per_elapsed_second": 0.5588545924914224,
+      "success_read_p95_seconds": 11.994087934494019,
+      "success_read_p99_seconds": 11.994087934494019,
+      "all_attempt_p95_seconds": 12.001676,
+      "all_attempt_p99_seconds": 12.001777,
+      "read_admission_wait_p99_seconds": 4.0016770362854,
+      "verified_ingestion_windows": 6,
+      "ingestion_windows": 6,
+      "verified_ingest_freshness_p95_seconds": 15.78747296333313,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211766810
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 733280349
+        }
+      },
+      "parts_at_arrival_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211766810
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 733280349
+        }
+      },
+      "terminal_queries": 66,
+      "query_read_rows": 2400734857,
+      "query_logical_read_bytes": 103752134354,
+      "query_memory_peak_bytes": 471810187,
+      "stress_latency_reference_met": false,
+      "clickhouse": {
+        "sample_window_seconds": 32.15949606895447,
+        "maximum_boundary_offset_seconds": 0.10563111305236816,
+        "cpu_core_seconds": 254.525534,
+        "cgroup_peak_at": "2026-11-28T06:11:53.297151+00:00",
+        "cgroup_peak_bytes": 8283713536,
+        "process_rss_at_cgroup_peak_bytes": 5072486400,
+        "swap_at_cgroup_peak_bytes": 0,
+        "peak_process_rss_bytes": 5248339968,
+        "io_by_device": {
+          "254:16": {
+            "rbytes": 161304576,
+            "wbytes": 3053862912,
+            "rios": 630,
+            "wios": 2967,
+            "dbytes": 0,
+            "dios": 0
+          }
+        }
+      },
+      "report_sha256": "7f55c33feb8f01e0e148006fb24e36f4862f1190dda4f86ec641e7cf60a82b89",
+      "resource_samples_sha256": "5161cfd3c2fb0656316a9cd1567888fde2a9c3345be760bafca9ed361e921645",
+      "operation_error_count": 12,
+      "sql_exceptions": {
+        "Code: 236. DB::NetException: Client has dropped the connection, cancel the query. (ABORTED) (version 26.8.34.13 (official build))": 9,
+        "Code: 735. DB::Exception: Received 'Cancel' packet from the client, canceling the query. (QUERY_WAS_CANCELLED_BY_CLIENT) (version 26.8.34.13 (official build))": 3
+      },
+      "comparison_failure_counts": {
+        "Code: 236. DB::NetException: Client has dropped the connection, cancel the query. (ABORTED) (version 26.8.34.13 (official build))": 9,
+        "Code: 735. DB::Exception: Received 'Cancel' packet from the client, canceling the query. (QUERY_WAS_CANCELLED_BY_CLIENT) (version 26.8.34.13 (official build))": 3,
+        "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)": 1
+      }
+    },
+    {
+      "run": "join-capacity-catchup-v1-r2-baseline",
+      "variant": "baseline",
+      "phase": "catchup",
+      "source_patch_sha256": "4ef47bd4d359674e91169a118c07af68794d8cf5537be14ceaf806faaf71ea95",
+      "resources": {
+        "cohort": "local16g",
+        "clickhouse_cpus": 8,
+        "server_memory_bytes": 12884901888,
+        "query_memory_bytes": 4294967296,
+        "per_query_threads": 2,
+        "fixed_comparison_query_budget_bytes": 536870912,
+        "docker": {
+          "cpus": 18,
+          "memory_bytes": 42057732096
+        },
+        "workspace_free_bytes": 1045560242176,
+        "limitation": "local cardinality/resource cohort, not the declared native 128 GiB stress host"
+      },
+      "correctness_and_terminal_accounting_passed": false,
+      "fixed_comparison_passed": false,
+      "completed_reads": 22,
+      "offered_reads": 30,
+      "observed_work_and_drain_seconds": 33.55354714393616,
+      "successful_reads_per_elapsed_second": 0.6556683830065898,
+      "success_read_p95_seconds": 11.251137971878052,
+      "success_read_p99_seconds": 11.979249954223633,
+      "all_attempt_p95_seconds": 12.001657999999999,
+      "all_attempt_p99_seconds": 13.557433000000001,
+      "read_admission_wait_p99_seconds": 4.001658916473389,
+      "verified_ingestion_windows": 6,
+      "ingestion_windows": 6,
+      "verified_ingest_freshness_p95_seconds": 19.356268882751465,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211796180
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 732810206
+        }
+      },
+      "parts_at_arrival_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211796180
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 732810206
+        }
+      },
+      "terminal_queries": 66,
+      "query_read_rows": 2851812014,
+      "query_logical_read_bytes": 124609241690,
+      "query_memory_peak_bytes": 1584656941,
+      "stress_latency_reference_met": false,
+      "clickhouse": {
+        "sample_window_seconds": 33.408928871154785,
+        "maximum_boundary_offset_seconds": 0.10322403907775879,
+        "cpu_core_seconds": 265.339342,
+        "cgroup_peak_at": "2026-11-28T06:15:25.543145+00:00",
+        "cgroup_peak_bytes": 15530020864,
+        "process_rss_at_cgroup_peak_bytes": 12169859072,
+        "swap_at_cgroup_peak_bytes": 0,
+        "peak_process_rss_bytes": 12233707520,
+        "io_by_device": {
+          "254:16": {
+            "rbytes": 33247232,
+            "wbytes": 1015635968,
+            "rios": 98,
+            "wios": 537,
+            "dbytes": 0,
+            "dios": 0
+          }
+        }
+      },
+      "report_sha256": "d0ec028999e13f4f7ba71036e3c9a0bbad714f6748fcbcd3d546ed46b4f337b1",
+      "resource_samples_sha256": "835860dea5799b7826bce22cd6a6974319bdafc37ad1b8d1dedddf2954e72b20",
+      "operation_error_count": 8,
+      "sql_exceptions": {
+        "Code: 735. DB::Exception: Received 'Cancel' packet from the client, canceling the query. (QUERY_WAS_CANCELLED_BY_CLIENT) (version 26.8.34.13 (official build))": 3,
+        "Code: 236. DB::NetException: Client has dropped the connection, cancel the query. (ABORTED) (version 26.8.34.13 (official build))": 5
+      },
+      "comparison_failure_counts": {
+        "query memory exceeds 512 MiB": 30,
+        "Code: 735. DB::Exception: Received 'Cancel' packet from the client, canceling the query. (QUERY_WAS_CANCELLED_BY_CLIENT) (version 26.8.34.13 (official build))": 3,
+        "Code: 236. DB::NetException: Client has dropped the connection, cancel the query. (ABORTED) (version 26.8.34.13 (official build))": 5,
+        "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)": 1
+      }
+    },
+    {
+      "run": "join-capacity-catchup-v1-r2-candidate",
+      "variant": "candidate",
+      "phase": "catchup",
+      "source_patch_sha256": "4ef47bd4d359674e91169a118c07af68794d8cf5537be14ceaf806faaf71ea95",
+      "resources": {
+        "cohort": "local16g",
+        "clickhouse_cpus": 8,
+        "server_memory_bytes": 12884901888,
+        "query_memory_bytes": 4294967296,
+        "per_query_threads": 2,
+        "fixed_comparison_query_budget_bytes": 536870912,
+        "docker": {
+          "cpus": 18,
+          "memory_bytes": 42057732096
+        },
+        "workspace_free_bytes": 1045735223296,
+        "limitation": "local cardinality/resource cohort, not the declared native 128 GiB stress host"
+      },
+      "correctness_and_terminal_accounting_passed": false,
+      "fixed_comparison_passed": false,
+      "completed_reads": 16,
+      "offered_reads": 30,
+      "observed_work_and_drain_seconds": 32.04784393310547,
+      "successful_reads_per_elapsed_second": 0.49925355457288584,
+      "success_read_p95_seconds": 11.604104995727539,
+      "success_read_p99_seconds": 11.604104995727539,
+      "all_attempt_p95_seconds": 12.001493,
+      "all_attempt_p99_seconds": 12.009566000000001,
+      "read_admission_wait_p99_seconds": 4.001476049423218,
+      "verified_ingestion_windows": 6,
+      "ingestion_windows": 6,
+      "verified_ingest_freshness_p95_seconds": 14.799624919891357,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211777538
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 733270210
+        }
+      },
+      "parts_at_arrival_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211777538
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 733270210
+        }
+      },
+      "terminal_queries": 66,
+      "query_read_rows": 2433595027,
+      "query_logical_read_bytes": 104901662628,
+      "query_memory_peak_bytes": 471756865,
+      "stress_latency_reference_met": false,
+      "clickhouse": {
+        "sample_window_seconds": 32.03385305404663,
+        "maximum_boundary_offset_seconds": 0.04094195365905762,
+        "cpu_core_seconds": 252.213931,
+        "cgroup_peak_at": "2026-11-28T06:13:35.451749+00:00",
+        "cgroup_peak_bytes": 8067272704,
+        "process_rss_at_cgroup_peak_bytes": 4978446336,
+        "swap_at_cgroup_peak_bytes": 0,
+        "peak_process_rss_bytes": 4978446336,
+        "io_by_device": {
+          "254:16": {
+            "rbytes": 1204604928,
+            "wbytes": 2297909248,
+            "rios": 2175,
+            "wios": 3041,
+            "dbytes": 0,
+            "dios": 0
+          }
+        }
+      },
+      "report_sha256": "3d12c7dfa1d459f4be0f3132350714f888e55c5d294879f9678f6d52d00c4385",
+      "resource_samples_sha256": "7b736964691110736511c150429c4e4dbbad67b9f81c934074e78466182aaa8a",
+      "operation_error_count": 14,
+      "sql_exceptions": {
+        "Code: 236. DB::NetException: Client has dropped the connection, cancel the query. (ABORTED) (version 26.8.34.13 (official build))": 9,
+        "Code: 735. DB::Exception: Received 'Cancel' packet from the client, canceling the query. (QUERY_WAS_CANCELLED_BY_CLIENT) (version 26.8.34.13 (official build))": 4
+      },
+      "comparison_failure_counts": {
+        "Code: 236. DB::NetException: Client has dropped the connection, cancel the query. (ABORTED) (version 26.8.34.13 (official build))": 9,
+        "Code: 735. DB::Exception: Received 'Cancel' packet from the client, canceling the query. (QUERY_WAS_CANCELLED_BY_CLIENT) (version 26.8.34.13 (official build))": 4,
+        "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)": 1
+      }
+    },
+    {
+      "run": "join-capacity-catchup-v1-r3-baseline",
+      "variant": "baseline",
+      "phase": "catchup",
+      "source_patch_sha256": "4ef47bd4d359674e91169a118c07af68794d8cf5537be14ceaf806faaf71ea95",
+      "resources": {
+        "cohort": "local16g",
+        "clickhouse_cpus": 8,
+        "server_memory_bytes": 12884901888,
+        "query_memory_bytes": 4294967296,
+        "per_query_threads": 2,
+        "fixed_comparison_query_budget_bytes": 536870912,
+        "docker": {
+          "cpus": 18,
+          "memory_bytes": 42057732096
+        },
+        "workspace_free_bytes": 1042157117440,
+        "limitation": "local cardinality/resource cohort, not the declared native 128 GiB stress host"
+      },
+      "correctness_and_terminal_accounting_passed": false,
+      "fixed_comparison_passed": false,
+      "completed_reads": 27,
+      "offered_reads": 30,
+      "observed_work_and_drain_seconds": 32.38813900947571,
+      "successful_reads_per_elapsed_second": 0.8336385116817204,
+      "success_read_p95_seconds": 10.099662065505981,
+      "success_read_p99_seconds": 11.048035144805908,
+      "all_attempt_p95_seconds": 10.980685,
+      "all_attempt_p99_seconds": 11.048035,
+      "read_admission_wait_p99_seconds": 2.9806859493255615,
+      "verified_ingestion_windows": 6,
+      "ingestion_windows": 6,
+      "verified_ingest_freshness_p95_seconds": 17.656829118728638,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211780208
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 733574217
+        }
+      },
+      "parts_at_arrival_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211780208
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 733574217
+        }
+      },
+      "terminal_queries": 66,
+      "query_read_rows": 2876027184,
+      "query_logical_read_bytes": 125519053539,
+      "query_memory_peak_bytes": 1583259402,
+      "stress_latency_reference_met": false,
+      "clickhouse": {
+        "sample_window_seconds": 32.438218116760254,
+        "maximum_boundary_offset_seconds": 0.0455169677734375,
+        "cpu_core_seconds": 257.408822,
+        "cgroup_peak_at": "2026-11-28T06:17:06.550952+00:00",
+        "cgroup_peak_bytes": 15827681280,
+        "process_rss_at_cgroup_peak_bytes": 12124905472,
+        "swap_at_cgroup_peak_bytes": 0,
+        "peak_process_rss_bytes": 12124905472,
+        "io_by_device": {
+          "254:16": {
+            "rbytes": 642203648,
+            "wbytes": 2744578048,
+            "rios": 759,
+            "wios": 2617,
+            "dbytes": 0,
+            "dios": 0
+          }
+        }
+      },
+      "report_sha256": "d64660b9fb81da30cbb5eefbb4455cb5ed18af1ccca669edd2216dbd1af7902a",
+      "resource_samples_sha256": "b5f3ee3c88a9ed1309dc220edcdcf582620c703a5a32d7741895d63971e758d4",
+      "operation_error_count": 3,
+      "sql_exceptions": {
+        "Code: 735. DB::Exception: Received 'Cancel' packet from the client, canceling the query. (QUERY_WAS_CANCELLED_BY_CLIENT) (version 26.8.34.13 (official build))": 2,
+        "Code: 236. DB::NetException: Client has dropped the connection, cancel the query. (ABORTED) (version 26.8.34.13 (official build))": 1
+      },
+      "comparison_failure_counts": {
+        "query memory exceeds 512 MiB": 30,
+        "Code: 735. DB::Exception: Received 'Cancel' packet from the client, canceling the query. (QUERY_WAS_CANCELLED_BY_CLIENT) (version 26.8.34.13 (official build))": 2,
+        "Code: 236. DB::NetException: Client has dropped the connection, cancel the query. (ABORTED) (version 26.8.34.13 (official build))": 1,
+        "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)": 1
+      }
+    },
+    {
+      "run": "join-capacity-catchup-v1-r3-candidate",
+      "variant": "candidate",
+      "phase": "catchup",
+      "source_patch_sha256": "4ef47bd4d359674e91169a118c07af68794d8cf5537be14ceaf806faaf71ea95",
+      "resources": {
+        "cohort": "local16g",
+        "clickhouse_cpus": 8,
+        "server_memory_bytes": 12884901888,
+        "query_memory_bytes": 4294967296,
+        "per_query_threads": 2,
+        "fixed_comparison_query_budget_bytes": 536870912,
+        "docker": {
+          "cpus": 18,
+          "memory_bytes": 42057732096
+        },
+        "workspace_free_bytes": 1044011012096,
+        "limitation": "local cardinality/resource cohort, not the declared native 128 GiB stress host"
+      },
+      "correctness_and_terminal_accounting_passed": false,
+      "fixed_comparison_passed": false,
+      "completed_reads": 18,
+      "offered_reads": 30,
+      "observed_work_and_drain_seconds": 32.21268916130066,
+      "successful_reads_per_elapsed_second": 0.5587860085156954,
+      "success_read_p95_seconds": 11.867614984512329,
+      "success_read_p99_seconds": 11.867614984512329,
+      "all_attempt_p95_seconds": 12.001493,
+      "all_attempt_p99_seconds": 12.00153,
+      "read_admission_wait_p99_seconds": 4.001492977142334,
+      "verified_ingestion_windows": 6,
+      "ingestion_windows": 6,
+      "verified_ingest_freshness_p95_seconds": 14.745014905929565,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211767080
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 733421758
+        }
+      },
+      "parts_at_arrival_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211767080
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 733421758
+        }
+      },
+      "terminal_queries": 66,
+      "query_read_rows": 2549492811,
+      "query_logical_read_bytes": 114453617378,
+      "query_memory_peak_bytes": 471518827,
+      "stress_latency_reference_met": false,
+      "clickhouse": {
+        "sample_window_seconds": 32.367825984954834,
+        "maximum_boundary_offset_seconds": 0.0796809196472168,
+        "cpu_core_seconds": 254.17117000000002,
+        "cgroup_peak_at": "2026-11-28T06:18:38.649872+00:00",
+        "cgroup_peak_bytes": 8122572800,
+        "process_rss_at_cgroup_peak_bytes": 4723175424,
+        "swap_at_cgroup_peak_bytes": 0,
+        "peak_process_rss_bytes": 5087076352,
+        "io_by_device": {
+          "254:16": {
+            "rbytes": 220426240,
+            "wbytes": 2646323200,
+            "rios": 1029,
+            "wios": 2303,
+            "dbytes": 0,
+            "dios": 0
+          }
+        }
+      },
+      "report_sha256": "10f0988747a7a66ac9a9dc0807dc67fa0d064d3877c57dc54be101895c6b6c92",
+      "resource_samples_sha256": "ede9888fb2c0fb79377cbe76299c8bc0c66c9eea97c74585e3827e09524f5511",
+      "operation_error_count": 12,
+      "sql_exceptions": {
+        "Code: 236. DB::NetException: Client has dropped the connection, cancel the query. (ABORTED) (version 26.8.34.13 (official build))": 9,
+        "Code: 735. DB::Exception: Received 'Cancel' packet from the client, canceling the query. (QUERY_WAS_CANCELLED_BY_CLIENT) (version 26.8.34.13 (official build))": 3
+      },
+      "comparison_failure_counts": {
+        "Code: 236. DB::NetException: Client has dropped the connection, cancel the query. (ABORTED) (version 26.8.34.13 (official build))": 9,
+        "Code: 735. DB::Exception: Received 'Cancel' packet from the client, canceling the query. (QUERY_WAS_CANCELLED_BY_CLIENT) (version 26.8.34.13 (official build))": 3,
+        "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)": 1
+      }
+    },
+    {
+      "run": "join-capacity-settled-v1-r1-baseline",
+      "variant": "baseline",
+      "phase": "settled",
+      "source_patch_sha256": "4ef47bd4d359674e91169a118c07af68794d8cf5537be14ceaf806faaf71ea95",
+      "resources": {
+        "cohort": "local16g",
+        "clickhouse_cpus": 8,
+        "server_memory_bytes": 12884901888,
+        "query_memory_bytes": 4294967296,
+        "per_query_threads": 2,
+        "fixed_comparison_query_budget_bytes": 536870912,
+        "docker": {
+          "cpus": 18,
+          "memory_bytes": 42057732096
+        },
+        "workspace_free_bytes": 1045368406016,
+        "limitation": "local cardinality/resource cohort, not the declared native 128 GiB stress host"
+      },
+      "correctness_and_terminal_accounting_passed": true,
+      "fixed_comparison_passed": false,
+      "completed_reads": 30,
+      "offered_reads": 30,
+      "observed_work_and_drain_seconds": 30.35738492012024,
+      "successful_reads_per_elapsed_second": 0.9882274141510993,
+      "success_read_p95_seconds": 1.57887601852417,
+      "success_read_p99_seconds": 1.6142029762268066,
+      "all_attempt_p95_seconds": 1.578876,
+      "all_attempt_p99_seconds": 1.614203,
+      "read_admission_wait_p99_seconds": 0.010974884033203125,
+      "verified_ingestion_windows": 6,
+      "ingestion_windows": 6,
+      "verified_ingest_freshness_p95_seconds": 5.686644077301025,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211788542
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 732966900
+        }
+      },
+      "parts_at_arrival_start": {
+        "assets": {
+          "parts": 2,
+          "physical_rows": 1000000,
+          "bytes_on_disk": 9350336
+        },
+        "finding_enrichment": {
+          "parts": 3,
+          "physical_rows": 26648987,
+          "bytes_on_disk": 192130800
+        },
+        "findings": {
+          "parts": 3,
+          "physical_rows": 9425728,
+          "bytes_on_disk": 773440033
+        },
+        "graph_edges": {
+          "parts": 9,
+          "physical_rows": 115252409,
+          "bytes_on_disk": 424700797
+        }
+      },
+      "terminal_queries": 66,
+      "query_read_rows": 1817157970,
+      "query_logical_read_bytes": 89211577298,
+      "query_memory_peak_bytes": 1304373406,
+      "stress_latency_reference_met": true,
+      "clickhouse": {
+        "sample_window_seconds": 30.40432620048523,
+        "maximum_boundary_offset_seconds": 0.07155418395996094,
+        "cpu_core_seconds": 97.50543299999998,
+        "cgroup_peak_at": "2026-11-28T06:21:34.636467+00:00",
+        "cgroup_peak_bytes": 8276262912,
+        "process_rss_at_cgroup_peak_bytes": 4959444992,
+        "swap_at_cgroup_peak_bytes": 0,
+        "peak_process_rss_bytes": 5027397632,
+        "io_by_device": {
+          "254:16": {
+            "rbytes": 115912704,
+            "wbytes": 1505693696,
+            "rios": 388,
+            "wios": 1047,
+            "dbytes": 0,
+            "dios": 0
+          }
+        }
+      },
+      "report_sha256": "4fd8054ecf2ce45431688adce4d40247509d00f661d56cd2110da91120f5d9a3",
+      "resource_samples_sha256": "2db7a2da6cc77cf089db5de171d19d8fbc9e4cc89594b53c33ffc47de1383e00",
+      "operation_error_count": 0,
+      "sql_exceptions": {},
+      "comparison_failure_counts": {
+        "query memory exceeds 512 MiB": 30,
+        "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)": 1
+      }
+    },
+    {
+      "run": "join-capacity-settled-v1-r1-candidate",
+      "variant": "candidate",
+      "phase": "settled",
+      "source_patch_sha256": "4ef47bd4d359674e91169a118c07af68794d8cf5537be14ceaf806faaf71ea95",
+      "resources": {
+        "cohort": "local16g",
+        "clickhouse_cpus": 8,
+        "server_memory_bytes": 12884901888,
+        "query_memory_bytes": 4294967296,
+        "per_query_threads": 2,
+        "fixed_comparison_query_budget_bytes": 536870912,
+        "docker": {
+          "cpus": 18,
+          "memory_bytes": 42057732096
+        },
+        "workspace_free_bytes": 1045808926720,
+        "limitation": "local cardinality/resource cohort, not the declared native 128 GiB stress host"
+      },
+      "correctness_and_terminal_accounting_passed": true,
+      "fixed_comparison_passed": false,
+      "completed_reads": 30,
+      "offered_reads": 30,
+      "observed_work_and_drain_seconds": 30.8176691532135,
+      "successful_reads_per_elapsed_second": 0.9734675212084222,
+      "success_read_p95_seconds": 2.219856023788452,
+      "success_read_p99_seconds": 2.3702409267425537,
+      "all_attempt_p95_seconds": 2.219856,
+      "all_attempt_p99_seconds": 2.370241,
+      "read_admission_wait_p99_seconds": 0.0021970272064208984,
+      "verified_ingestion_windows": 6,
+      "ingestion_windows": 6,
+      "verified_ingest_freshness_p95_seconds": 5.841955900192261,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211786040
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 732545768
+        }
+      },
+      "parts_at_arrival_start": {
+        "assets": {
+          "parts": 2,
+          "physical_rows": 1000000,
+          "bytes_on_disk": 9350336
+        },
+        "finding_enrichment": {
+          "parts": 4,
+          "physical_rows": 27760940,
+          "bytes_on_disk": 198328457
+        },
+        "findings": {
+          "parts": 3,
+          "physical_rows": 9425728,
+          "bytes_on_disk": 773414657
+        },
+        "graph_edges": {
+          "parts": 8,
+          "physical_rows": 115252573,
+          "bytes_on_disk": 424345492
+        }
+      },
+      "terminal_queries": 66,
+      "query_read_rows": 1802607526,
+      "query_logical_read_bytes": 88214767439,
+      "query_memory_peak_bytes": 228330662,
+      "stress_latency_reference_met": true,
+      "clickhouse": {
+        "sample_window_seconds": 30.692794799804688,
+        "maximum_boundary_offset_seconds": 0.08582019805908203,
+        "cpu_core_seconds": 121.01567299999999,
+        "cgroup_peak_at": "2026-11-28T06:23:50.421199+00:00",
+        "cgroup_peak_bytes": 5503709184,
+        "process_rss_at_cgroup_peak_bytes": 2189254656,
+        "swap_at_cgroup_peak_bytes": 0,
+        "peak_process_rss_bytes": 2243395584,
+        "io_by_device": {
+          "254:16": {
+            "rbytes": 93167616,
+            "wbytes": 1465483264,
+            "rios": 231,
+            "wios": 696,
+            "dbytes": 0,
+            "dios": 0
+          }
+        }
+      },
+      "report_sha256": "9984cf0817aead2e50dec50effb3030019d0ca1d3b3c763352b3e5beaea3aebc",
+      "resource_samples_sha256": "46f88b73a7c7ff1b6484182252f6d73a1a6e36979f566cbf80ba23387d7e9b24",
+      "operation_error_count": 0,
+      "sql_exceptions": {},
+      "comparison_failure_counts": {
+        "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)": 1
+      }
+    }
+  ],
+  "qualifications": [
+    "Local16g query/ingestion cohort, not the declared128GiB stress profile or whole application pipeline.",
+    "Original512MiB and1500/3000ms comparison guards remain unchanged; their failures are not automatically capacity failures.",
+    "5000/10000ms stress latency targets are a reference only, not native-profile acceptance.",
+    "Successful-read throughput includes workload drain; failed request durations are reported separately.",
+    "CH cgroup memory includes file cache; observed process RSS and swap are separate. Client Go and complete PG resources are not included in that CH value.",
+    "DB resource samples cover arrival start through tagged request drain; seed/oracle setup is excluded. IO remains perdevice, not summed across storage layers.",
+    "One read persecond and200 finding observations persecond are this probe's arrivals, not the full stress profile's80HTTP arrivals/second.",
+    "Three catch-up pairs; one settled diagnostic pair. Normal merges leave different physical part/row counts, retained per run.",
+    "Full5m-finding/100m-membership pipeline, native128GiB profile and24h soak remain unaccepted.",
+    "No deadline failure counts as a successful fast response."
+  ],
+  "terminal_guard_regression_proof": {
+    "original_source_sha256": "0a31cfa6681791e56c7b78f76ed1717df9b646206823fc72b9847262f8ac4ea8",
+    "restored_identically": true,
+    "runs": [
+      {
+        "scenario": "missing-terminal",
+        "go_test_exit": 1,
+        "correctness_claimed": false,
+        "expected_terminal_rows": 11,
+        "actual_terminal_rows": 10,
+        "rejected_by_independent_terminal_gate": true
+      },
+      {
+        "scenario": "old-budget-gated-count",
+        "go_test_exit": 1,
+        "correctness_claimed": true,
+        "expected_terminal_rows": 11,
+        "actual_terminal_rows": 10,
+        "rejected_by_independent_terminal_gate": false
+      }
+    ]
+  }
+}

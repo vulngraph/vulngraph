@@ -248,6 +248,15 @@ cardinality budgets still fail. These are partial repository-level results, not
 HTTP/browser or full deployment-profile coverage. The remaining worklist stays
 open, including native/version cohorts, broader state/update scenarios and recovery.
 
+[Large-corpus capacity comparisons](performance/large-corpus-query-costs.md) now
+retain five-million-finding / 100-million-membership query experiments and three
+matched local16g catch-up pairs. A lower-memory preset completes fewer reads and
+is rejected for production. One settled control returns every read correctly
+with the current query; merge catch-up remains a distinct failure scenario.
+The fixed 512 MiB comparison guard is not a universal capacity limit. These
+repository measurements do not close the full-corpus concurrent pipeline or add
+weighted coverage; the indexed-Postgres control and remaining profiles stay open.
+
 PERF-03 also tracks [derived-state inventory page costs](specs/asset-derived-state.md#inventory-page-costs).
 Version-key hydration passes the measured 100,000-asset query budgets, but an
 empty selective page still reads 5,002 rows versus its 2,002-row joined baseline.

@@ -39,6 +39,9 @@ type joinOperation struct {
 
 type concurrentJoinReport struct {
 	Experiment         string                    `json:"experiment"`
+	BaselineQueryShape string                    `json:"baseline_query_shape"`
+	BudgetScope        string                    `json:"budget_scope"`
+	CorrectnessPassed  bool                      `json:"correctness_and_terminal_accounting_passed"`
 	FixtureVersion     int                       `json:"fixture_version"`
 	Phase              string                    `json:"merge_phase"`
 	IngestMode         string                    `json:"ingest_mode"`
@@ -125,7 +128,7 @@ func joinWriteBatch(wave int, stamp int64) ([]finding.Finding, []finding.Enrichm
 	return findings, enrichments
 }
 
-func runConcurrentJoins(t *testing.T, ctx context.Context, admin, app *db.CH, p profile, n uint64, stamp int64, settings map[string]any, experiment string) {
+func runConcurrentJoins(t *testing.T, ctx context.Context, admin, app *db.CH, p profile, n uint64, stamp int64, settings map[string]any, experiment string, currentProduction bool) {
 	t.Helper()
 	seconds, err := strconv.Atoi(os.Getenv("PERF_JOIN_MIXED_SECONDS"))
 	require.NoError(t, err)
@@ -141,6 +144,11 @@ func runConcurrentJoins(t *testing.T, ctx context.Context, admin, app *db.CH, p 
 		MutationScope: "100 existing findings and 94 matching enrichments per wave; latest descriptions/provenance change, summary/cluster values stay invariant; merges enabled"}
 	report.FixtureVersion = 2
 	report.Experiment = experiment
+	report.BaselineQueryShape = "historical-argmax"
+	if currentProduction {
+		report.BaselineQueryShape = "current-production"
+	}
+	report.BudgetScope = "fixed comparison targets (512 MiB query, 1500/3000 ms p95/p99); not deployment capacity acceptance"
 	report.Phase = os.Getenv("PERF_JOIN_PHASE")
 	if report.Phase == "" {
 		report.Phase = "catchup"
@@ -246,8 +254,8 @@ func runConcurrentJoins(t *testing.T, ctx context.Context, admin, app *db.CH, p 
 				var e error
 				if op.Kind == "summary" {
 					var got finding.Summary
-					if variant == "candidate" && experiment == "latest_rows" {
-						got, e = readJoinSummaryCandidate(callCtx, app, "", experiment)
+					if currentProduction || (variant == "candidate" && experiment == "latest_rows") {
+						got, e = repo.Summary(callCtx, finding.Filter{})
 					} else {
 						got, e = readJoinSummaryCandidate(callCtx, app, "", "baseline_rows")
 					}
@@ -257,8 +265,8 @@ func runConcurrentJoins(t *testing.T, ctx context.Context, admin, app *db.CH, p 
 				} else {
 					var got []finding.Cluster
 					var total int
-					if variant == "candidate" && experiment == "latest_rows" {
-						got, total, e = readJoinClustersCandidate(callCtx, app, "", experiment)
+					if currentProduction || (variant == "candidate" && experiment == "latest_rows") {
+						got, total, e = repo.Clusters(callCtx, finding.Filter{})
 					} else {
 						got, total, e = readJoinClustersCandidate(callCtx, app, "", "baseline_rows")
 					}
@@ -376,8 +384,10 @@ func runConcurrentJoins(t *testing.T, ctx context.Context, admin, app *db.CH, p 
 		return rows.Err()
 	}, strings.Replace(largeJoinCosts, "log_comment=?", "startsWith(log_comment,?)", 1), prefix))
 	var latencies []float64
+	correct := true
 	for _, op := range report.Operations {
 		if op.Error != "" {
+			correct = false
 			t.Errorf("%s: %s", op.Kind, op.Error)
 		}
 		if op.Kind == "summary" || op.Kind == "clusters" {
@@ -393,6 +403,7 @@ func runConcurrentJoins(t *testing.T, ctx context.Context, admin, app *db.CH, p 
 			report.BudgetFailures = append(report.BudgetFailures, "query memory exceeds 512 MiB")
 		}
 		if q.Exception != "" {
+			correct = false
 			report.BudgetFailures = append(report.BudgetFailures, q.Exception)
 		}
 	}
@@ -400,8 +411,9 @@ func runConcurrentJoins(t *testing.T, ctx context.Context, admin, app *db.CH, p 
 		report.BudgetFailures = append(report.BudgetFailures, "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)")
 	}
 	require.Len(t, report.Operations, seconds*rate+waves+(seconds+4)/5)
-	if len(report.BudgetFailures) == 0 {
+	if correct {
 		require.Len(t, report.QueryCosts, seconds*rate+queriesPerWave*waves+(seconds+4)/5, "all reads, native chunks and exact write readback must be measured")
 	}
+	report.CorrectnessPassed = correct
 	require.Empty(t, report.BudgetFailures)
 }

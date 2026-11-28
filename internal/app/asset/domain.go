@@ -222,7 +222,8 @@ type Asset struct {
 // The zero value means "everything", so a reader that has not thought about projection
 // keeps today's behaviour.
 type SyncProjection struct {
-	// MetadataKeys narrows Metadata to these keys. Empty means every key.
+	// MetadataKeys narrows Metadata to these keys before graph-source aggregation
+	// and transport. Empty means every key.
 	MetadataKeys []string
 	// EdgePropertyKeys narrows each Edge's Properties to these keys. Empty means
 	// every key.

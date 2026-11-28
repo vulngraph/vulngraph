@@ -893,6 +893,7 @@ func (r *CHRepo) List(ctx context.Context, f Filter) ([]Asset, error) {
 func (r *CHRepo) ListAllForSync(ctx context.Context, proj SyncProjection) (AssetSyncResult, error) {
 	qCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
+	query, args := syncAssetQuery(proj)
 	var keep map[string]struct{}
 	if len(proj.MetadataKeys) > 0 {
 		keep = make(map[string]struct{}, len(proj.MetadataKeys))
@@ -910,7 +911,7 @@ func (r *CHRepo) ListAllForSync(ctx context.Context, proj SyncProjection) (Asset
 			assets = append(assets, a)
 		}
 		return nil
-	}, listAllForSyncQ)
+	}, query, args...)
 	if err != nil {
 		return AssetSyncResult{}, fmt.Errorf("ListAllForSync: %w", err)
 	}

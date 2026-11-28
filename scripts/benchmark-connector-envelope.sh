@@ -162,6 +162,7 @@ bounded 3500 docker run --name "$worker" --network "$suffix" --cpus "$worker_cpu
  -e PERF_ENVELOPE_CONNECTORS="$connectors" -e PERF_ENVELOPE_ASSETS="$assets" -e PERF_COMMIT="$PERF_COMMIT" \
  -e PERF_ENVELOPE_SCOPE_COUNTS="${PERF_ENVELOPE_SCOPE_COUNTS:-}" \
  -e PERF_ENVELOPE_COLLECT_HOLD_MS="${PERF_ENVELOPE_COLLECT_HOLD_MS:-500}" \
+ -e PERF_GRAPH_WIRE_VARIANT="${PERF_GRAPH_WIRE_VARIANT:-}" -e PERF_GRAPH_WIRE_SECONDS="${PERF_GRAPH_WIRE_SECONDS:-30}" \
  -e PERF_ENVELOPE_REPRODUCE_HISTORICAL_LOST_UPDATE="${PERF_ENVELOPE_REPRODUCE_HISTORICAL_LOST_UPDATE:-0}" \
  -e PERF_POSTGRES_URL="postgres://bench:$password@$pg:5432/vg_query_perf?sslmode=disable" \
  -e PERF_APP_CLICKHOUSE_URL="clickhouse://graph:$app_password@$ch:9000/vg_query_perf" \

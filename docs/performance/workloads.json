@@ -5509,6 +5509,7 @@
         "module:internal/app/asset/repo_package_runners.go",
         "module:internal/app/asset/repo_packages.go",
         "module:internal/app/asset/repo_retirement.go",
+        "module:internal/app/asset/repo_sync_projection.go",
         "module:internal/app/asset/repo_write_size.go",
         "module:internal/app/asset/search.go",
         "module:internal/app/asset/service.go",

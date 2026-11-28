@@ -76,7 +76,13 @@ func TestEnvelopeCachedPrefixDoesNotStarveChangedFinding(t *testing.T) {
 	for pass := range 2 {
 		// A new service/worker instance must resume the persisted checkpoint.
 		sweep := &EnrichSweepWorker{findings: scopedBackfillFindings{findings, prefix}, progress: enrichcache.NewService(enrichcache.NewPGRepo(pool))}
-		require.NoError(t, sweep.Work(ctx, &river.Job[EnrichSweepArgs]{}))
+		err = sweep.Work(ctx, &river.Job[EnrichSweepArgs]{})
+		if pass == 0 {
+			var snooze *river.JobSnoozeError
+			require.ErrorAs(t, err, &snooze, "the full prefix page must continue the same pass")
+		} else {
+			require.NoError(t, err)
+		}
 		selected, err := pool.Query(ctx, "SELECT args->>'finding_id' FROM river_job WHERE kind='enrich' AND state='available' AND starts_with(args->>'finding_id',$1) ORDER BY id", prefix)
 		require.NoError(t, err)
 		var ids []string

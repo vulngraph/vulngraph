@@ -18,10 +18,10 @@ import (
 // enrichSweepLimit is the page size for each ClickHouse query in the sweep.
 const enrichSweepLimit = finding.DefaultLimit
 
-// enrichSweepMax caps the total findings enqueued per sweep tick, sized to drain
+// enrichSweepMax caps the total findings enqueued per execution, sized to drain
 // the never-enriched backfill (Phase 1) in bounded batches and then return to
 // drift correction (Phase 2). The enrichQueueMax backpressure guard skips the
-// tick when the queue is already deep, so the burst self-throttles.
+// slice when the queue is already deep, so the burst self-throttles.
 const enrichSweepMax = 2500
 
 // defaultEnrichMaxAge is the freshness backstop: even an unchanged finding is
@@ -339,10 +339,10 @@ func (EnrichSweepArgs) Kind() string { return "enrich_sweep" }
 // enrichSweepMaxAttempts is 2, not River's library default of 25, for the same
 // reason correlate carries 2 (internal/jobs/correlate.go).
 //
-// A sweep tick holds its pagination cursor in a stack local (see drain), so a
-// retry does not resume — it restarts phase 1 from page 1 and re-walks the
-// identical pages against the identical data. A failure that is a property of
-// the query rather than of the moment reproduces on every attempt, and River's
+// Backfill retries restart from page one. Drift resumes its durable enumeration
+// checkpoint; normal continuation uses snooze and does not consume attempts.
+// A failure tied to the query rather than the moment can reproduce on every
+// attempt, and River's
 // default backoff policy would schedule the next one a day and a half out; worse,
 // wedged retryable rows suppress the fresh periodic ticks that would have
 // succeeded, and they still count toward queue-depth backpressure as if they
@@ -375,6 +375,12 @@ type EnrichSweepWorker struct {
 	progress SweepProgressStore
 }
 
+// newEnrichSweepWorker shares cache/progress/pruning wiring between production
+// and complete pipeline fixtures. Fault-injection tests may construct directly.
+func newEnrichSweepWorker(findings FindingLister, cache EnrichCache) *EnrichSweepWorker {
+	return &EnrichSweepWorker{findings: findings, alerts: alertStatePruner(cache), progress: cache}
+}
+
 // AlertStatePruner drops alert state for findings gone without a resolve.
 // enrichcache.Service implements it.
 type AlertStatePruner interface {
@@ -405,8 +411,16 @@ func (EnrichSweepWorker) Timeout(_ *river.Job[EnrichSweepArgs]) time.Duration {
 
 func (w *EnrichSweepWorker) Work(ctx context.Context, job *river.Job[EnrichSweepArgs]) error {
 	backfillOnly := job != nil && job.Args.BackfillOnly
+	var continuing bool
+	if !backfillOnly {
+		var err error
+		continuing, err = w.driftPassActive(ctx)
+		if err != nil {
+			return fmt.Errorf("Work: %w", err)
+		}
+	}
 	var total int
-	if !backfillOnly && w.alerts != nil {
+	if !backfillOnly && !continuing && w.alerts != nil {
 		if n, err := w.alerts.PruneAlertStates(ctx, time.Now().Add(-alertStateRetention)); err != nil {
 			log.FromContext(ctx).Warn().Err(err).Msg("enrich sweep: alert-state prune failed")
 		} else if n > 0 {
@@ -423,33 +437,38 @@ func (w *EnrichSweepWorker) Work(ctx context.Context, job *river.Job[EnrichSweep
 	// and removing the gate entirely lets the accumulated queue grow without
 	// limit across ticks and OOM the worker. So repair gets priority over drift,
 	// but not immunity from backpressure.
-	if !sweepHasCapacity(ctx, backfillQueueCeiling) {
-		if backfillOnly {
-			return river.JobSnooze(enrichBackfillDelay)
+	// Continuations only finish the existing drift pass. Demand-driven backfill
+	// remains a separate higher-priority singleton; avoid repeating its five
+	// source probes and alert pruning every time drift yields to queue pressure.
+	if !continuing {
+		if !sweepHasCapacity(ctx, backfillQueueCeiling) {
+			if backfillOnly {
+				return river.JobSnooze(enrichBackfillDelay)
+			}
+			enqueueDeferredBackfill(ctx)
+			return nil
 		}
-		enqueueDeferredBackfill(ctx)
-		return nil
-	}
-	for _, sev := range backfillSeverities {
-		if total >= enrichSweepMax {
-			break
+		for _, sev := range backfillSeverities {
+			if total >= enrichSweepMax {
+				break
+			}
+			n, err := w.drain(ctx, finding.Filter{Unenriched: true, Severity: sev},
+				enrichSweepMax-total, river.PriorityDefault)
+			if err != nil {
+				return fmt.Errorf("Work: backfill %s: %w", sev, err)
+			}
+			total += n
 		}
-		n, err := w.drain(ctx, finding.Filter{Unenriched: true, Severity: sev},
-			enrichSweepMax-total, river.PriorityDefault)
-		if err != nil {
-			return fmt.Errorf("Work: backfill %s: %w", sev, err)
-		}
-		total += n
-	}
 
-	if backfillOnly {
-		if total > 0 {
-			return river.JobSnooze(enrichBackfillDelay)
+		if backfillOnly {
+			if total > 0 {
+				return river.JobSnooze(enrichBackfillDelay)
+			}
+			return nil
 		}
-		return nil
-	}
-	if total > 0 {
-		enqueueDeferredBackfill(ctx)
+		if total > 0 {
+			enqueueDeferredBackfill(ctx)
+		}
 	}
 
 	// Phase 2 — drift re-enrichment: re-score findings whose graph context (blast
@@ -467,14 +486,21 @@ func (w *EnrichSweepWorker) Work(ctx context.Context, job *river.Job[EnrichSweep
 	// deep queue. It also stays at enrichSweepPriority so it can never outrank a new
 	// detection or a KEV escalation.
 	if total < enrichSweepMax && sweepHasCapacity(ctx, enrichQueueMax) {
-		n, err := w.drainDrift(ctx, enrichSweepMax-total)
+		budget := enrichSweepMax - total
+		n, err := w.drainDrift(ctx, budget)
 		if err != nil {
 			return fmt.Errorf("Work: drift pass: %w", err)
 		}
 		total += n
+		// A short page committed EOF. Do not reread progress and accidentally
+		// adopt another execution's new pass after this one completed.
+		continuing = w.progress != nil && n == budget
 	}
 
 	log.FromContext(ctx).Info().Int("findings", total).Msg("enrich sweep enqueued")
+	if continuing {
+		return river.JobSnooze(enrichSweepContinuationDelay)
+	}
 	return nil
 }
 

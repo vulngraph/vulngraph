@@ -137,7 +137,7 @@ jobs:
       - name: Check enrichment sweep progress and replay
         timeout-minutes: 8
         env:
-          PERF_ENVELOPE_TEST: '^TestEnvelope(AlreadyEnrichedDriftRecovery|EnrichmentCommittedQueueReplay|CachedPrefixDoesNotStarveChangedFinding)$'
+          PERF_ENVELOPE_TEST: '^(TestEnvelope(AlreadyEnrichedDriftRecovery|EnrichmentCommittedQueueReplay|CachedPrefixDoesNotStarveChangedFinding)|TestEnrichmentContinuationRecoversAndEndsAtPassBoundary)$'
           GOMAXPROCS: "4"
         run: |
           PERF_LINUX_GO_CACHE="$(go env GOCACHE)"

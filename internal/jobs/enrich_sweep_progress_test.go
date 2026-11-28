@@ -187,3 +187,22 @@ func TestEnrichSweepProgressFailuresDoNotSkipAdmission(t *testing.T) {
 		})
 	}
 }
+
+func TestEnrichSweepUnreadableProgressCannotCompletePass(t *testing.T) {
+	want := errors.New("progress unavailable")
+	worker := &EnrichSweepWorker{progress: &progressMemoryStore{readErr: want}}
+	_, err := worker.driftPassActive(t.Context())
+	require.ErrorIs(t, err, want,
+		"an unreadable checkpoint is not evidence that the enumeration finished")
+}
+
+func TestEnrichSweepContinuationSkipsRepeatedMaintenance(t *testing.T) {
+	pruner := &backfillPruner{}
+	lister := &recordingLister{}
+	worker := &EnrichSweepWorker{progress: &progressMemoryStore{state: enrichcache.SweepProgress{Before: time.Now()}}, findings: lister, alerts: pruner}
+	// With no River client, drift cannot enqueue; maintenance must still have
+	// been skipped rather than repeating before that error.
+	require.ErrorContains(t, worker.Work(t.Context(), &river.Job[EnrichSweepArgs]{}), "drainDrift: client")
+	require.Zero(t, pruner.calls)
+	require.Empty(t, lister.seen)
+}

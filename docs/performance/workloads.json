@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "revision": "2026-11-27.2",
+  "revision": "2026-11-28.1",
   "issue": "https://github.com/vulngraph/vulngraph/issues/19",
   "source_baseline": "476ec5bdab5dfe4ffb073dc99e719dc46afa5f0c",
   "profiles": [
@@ -4834,7 +4834,7 @@
         "worker:DriftSweepWorker",
         "worker:EPSSWorker",
         "worker:EnqueueWorker",
-        "worker:EnrichSweepWorker",
+        "worker:newEnrichSweepWorker",
         "worker:EnrichWorker",
         "worker:ImageVulnWorker",
         "worker:InventoryRetirementWorker",

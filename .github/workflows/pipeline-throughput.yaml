@@ -107,6 +107,16 @@ jobs:
           PERF_LINUX_GO_CACHE="$(go env GOCACHE)"
           export PERF_LINUX_GO_CACHE
           bash scripts/benchmark-connector-envelope.sh target "$RUNNER_TEMP/critical-edge-throughput"
+      - name: Check projected graph assets and lifecycle parity
+        timeout-minutes: 8
+        env:
+          PERF_ENVELOPE_PACKAGE: ./internal/app/asset
+          PERF_ENVELOPE_SWAP: equal
+        run: |
+          PERF_LINUX_GO_CACHE="$(go env GOCACHE)"
+          export PERF_LINUX_GO_CACHE
+          PERF_ENVELOPE_TEST='^TestGraphSourceProjectionSemantics$' bash scripts/benchmark-connector-envelope.sh smoke "$RUNNER_TEMP/graph-projection-lifecycle"
+          PERF_ENVELOPE_TEST='^TestGraphSourceWireProjectionCosts$' bash scripts/benchmark-connector-envelope.sh target "$RUNNER_TEMP/graph-projection-costs"
       - name: Check latest-row joins and lifecycle parity
         timeout-minutes: 15
         env:
@@ -158,6 +168,10 @@ jobs:
             !${{ runner.temp }}/correlation-source-throughput/envelope.test
             ${{ runner.temp }}/critical-edge-throughput/
             !${{ runner.temp }}/critical-edge-throughput/envelope.test
+            ${{ runner.temp }}/graph-projection-lifecycle/
+            !${{ runner.temp }}/graph-projection-lifecycle/envelope.test
+            ${{ runner.temp }}/graph-projection-costs/
+            !${{ runner.temp }}/graph-projection-costs/envelope.test
             ${{ runner.temp }}/enrichment-progress/
             !${{ runner.temp }}/enrichment-progress/envelope.test
           retention-days: 14

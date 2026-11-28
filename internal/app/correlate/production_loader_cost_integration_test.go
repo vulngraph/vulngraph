@@ -62,10 +62,17 @@ func TestProductionCorrelationLoaderCosts(t *testing.T) {
 	require.Equal(t, uint64(2*n), physical)
 	access := perfassurance.QueryLogAccess{Flush: func(ctx context.Context) error { return admin.Exec(ctx, "SYSTEM FLUSH LOGS") }, Select: `SELECT query,query_duration_ms,read_rows,read_bytes,memory_usage,exception,Settings['max_threads'],Settings['max_block_size'],ProfileEvents FROM system.query_log WHERE log_comment=? AND type IN ('QueryFinish','ExceptionWhileProcessing','ExceptionBeforeStart') ORDER BY event_time_microseconds,query_id`}
 	repo := NewCHRepo(app)
+	for _, empty := range [][]string{nil, {}} {
+		rows, truncated, emptyErr := repo.LoadViewForTypes(ctx, empty)
+		require.NoError(t, emptyErr)
+		require.Empty(t, rows)
+		require.False(t, truncated, "empty type selection is an empty result, not all types")
+	}
 	types := []string{"ec2_instance", "gce_instance"}
 	typePlaceholders, typeArgs := dbutil.CHIn(types)
 	baseline := fmt.Sprintf(loadLegacyViewSource, metadataKeyPlaceholders, typePlaceholders) + " LIMIT ?"
 	args := append(append(append([]any{}, metadataKeyArgs...), typeArgs...), correlationLimit)
+	joinProbe := os.Getenv("PERF_CORRELATION_JOIN_PROBE") == "1"
 	var samples []perfassurance.QuerySample
 	// The fixed workload ceiling remains 512 MiB. At the 100k CI fixture,
 	// a tighter measured regression guard catches a return to wide aggregation.
@@ -74,6 +81,9 @@ func TestProductionCorrelationLoaderCosts(t *testing.T) {
 		regressionCeiling = 224 << 20
 	}
 	report := map[string]any{"source": os.Getenv("PERF_COMMIT"), "logical_assets": n, "physical_assets": physical, "go_memory_budget": budget, "source_query_memory_budget_bytes": 512 << 20, "query_regression_ceiling_bytes": regressionCeiling, "retained_result_limit": correlationLimit, "expected_truncated": n >= correlationLimit, "scope": "actual production loader and retained asset slice; fixed refusal threshold; one query, not mixed or complete million-asset analysis"}
+	if joinProbe {
+		report["comparison"] = "current projected loader with unconditional annotation join versus type-scoped annotation join"
+	}
 	defer func() {
 		report["passed"] = !t.Failed()
 		report["samples"] = samples
@@ -93,6 +103,9 @@ func TestProductionCorrelationLoaderCosts(t *testing.T) {
 				var readErr error
 				if variant == "production" {
 					rows, truncated, readErr = repo.LoadViewForTypes(ctx, types)
+				} else if joinProbe {
+					rows, readErr = repo.scanAssets(ctx, fmt.Sprintf(loadView, metadataKeyPlaceholders, typePlaceholders), args...)
+					truncated = len(rows) >= correlationLimit
 				} else {
 					queryCtx := app.WithQuerySettings(ctx, map[string]any{"max_bytes_before_external_group_by": 1 << 30})
 					readErr = app.Select(queryCtx, func(result driver.Rows) error {
@@ -141,6 +154,9 @@ func TestProductionCorrelationLoaderCosts(t *testing.T) {
 				sample.Error = e.Error()
 			}
 			samples = append(samples, sample)
+			if joinProbe {
+				require.NoError(t, e)
+			}
 			if variant == "production" {
 				require.NoError(t, e)
 				require.Len(t, sample.Queries, 1)
@@ -159,6 +175,39 @@ func TestProductionCorrelationLoaderCosts(t *testing.T) {
 		require.False(t, truncated)
 		require.Len(t, rows, 1)
 		require.Equal(t, want, rows[0].Metadata["drift"])
+		mixed, mixedTruncated, e := repo.LoadViewForTypes(ctx, []string{manifest.Type, "ec2_instance"})
+		require.NoError(t, e)
+		require.False(t, mixedTruncated)
+		require.Len(t, mixed, (n+1)/2+1)
+		found := 0
+		for _, a := range mixed {
+			if a.ID == manifest.ID {
+				found++
+				require.Equal(t, want, a.Metadata["drift"])
+			}
+		}
+		require.Equal(t, 1, found, "mixed type reads must retain the current declaration overlay")
+		if n < correlationLimit-1 {
+			for _, all := range []bool{false, true} {
+				var complete []asset.Asset
+				if all {
+					complete, mixedTruncated, e = repo.LoadView(ctx)
+				} else {
+					complete, mixedTruncated, e = repo.LoadViewForTypes(ctx, correlationTypes)
+				}
+				require.NoError(t, e)
+				require.False(t, mixedTruncated)
+				require.Len(t, complete, n+1)
+				matched := 0
+				for _, a := range complete {
+					if a.ID == manifest.ID {
+						matched++
+						require.Equal(t, want, a.Metadata["drift"])
+					}
+				}
+				require.Equal(t, 1, matched, "both complete-view APIs retain the declaration overlay")
+			}
+		}
 	}
 	check("old")
 	version, err := inv.BeginDerivedUpdate(ctx)

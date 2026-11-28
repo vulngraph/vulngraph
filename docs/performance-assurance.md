@@ -300,3 +300,9 @@ committed-enqueue/lost-checkpoint replay preserves pending work. These are bound
 correctness and restart checks, not elapsed scheduling or large-backlog freshness
 acceptance. The fixed sweep budget, queue admission and periodic cadence remain
 part of the mixed-load measurements, with no full-profile coverage credit.
+
+### Graph source projection measurement
+
+PERF-05/PERF-11 now retain [production graph-source projection measurements](performance/graph-projection-measurements.md): exact 5k/100k/1m asset reads, all projection modes and lifecycle replay, and three matched concurrent source/read/ingestion pairs. Query memory and worker allocations fall; isolated reads slow down and ClickHouse CPU rises. The fixed-rate mixed workload improves memory and read tails. Native construction, aged integration, saturation and full-profile acceptance remain open; this adds no workload coverage credit.
+
+PERF-07 also retains the [typed correlation source comparison](performance/source-read-measurements.md#typed-reads-without-declaration-annotations): omitting an unused annotation join restores headroom at the 100k native guard, while the million-input memory regression and unchanged 600k refusal remain explicit. Full and mixed declaration views retain their annotation semantics and cost; no full-profile credit is added.

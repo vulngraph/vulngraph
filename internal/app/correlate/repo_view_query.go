@@ -1,6 +1,10 @@
 package correlate
 
-import "github.com/vulngraph/vulngraph/internal/app/asset"
+import (
+	"slices"
+
+	"github.com/vulngraph/vulngraph/internal/app/asset"
+)
 
 // Correlation reads no finding-risk column. Preserve its owned drift overlay
 // without joining every observed version to a complete finding-risk generation.
@@ -29,12 +33,23 @@ const correlationObservations = `SELECT a.id AS id, a.name AS name, a.type AS ty
 const projectedCorrelationTuple = `tuple(name,type,account_id,public_ip,private_ip,domain,tags,
   toJSONString(mapFilter((k,v) -> k IN (%s), JSONExtract(metadata, 'Map(String,String)'))))`
 
-const loadViewSource = `SELECT id,row.1 AS name,row.2 AS type,row.3 AS account_id,
+const loadViewSelect = `SELECT id,row.1 AS name,row.2 AS type,row.3 AS account_id,
  row.4 AS public_ip,row.5 AS private_ip,row.6 AS domain,row.7 AS tags,row.8 AS metadata
  FROM (
  SELECT id,argMax(` + projectedCorrelationTuple + `,synced_at) AS row
- FROM (` + correlationObservations + `)
- WHERE type IN (%s) AND ` + asset.EphemeralLivenessCond + `
+ FROM `
+const loadViewFilter = ` WHERE type IN (%s) AND ` + asset.EphemeralLivenessCond + `
  GROUP BY id)`
+const loadViewSource = loadViewSelect + `(` + correlationObservations + `)` + loadViewFilter
+const loadViewWithoutAnnotations = loadViewSelect + `assets` + loadViewFilter + ` LIMIT ?` + loadViewSettings
+
+// Only manifest declarations can consume this overlay. Other type-scoped reads
+// preserve the same observed rows without building or buffering an unused join.
+func loadViewForTypesQuery(types []string) string {
+	if slices.Contains(types, "declared_k8s_workload") {
+		return loadView
+	}
+	return loadViewWithoutAnnotations
+}
 
 const loadViewSettings = ` SETTINGS query_plan_join_swap_table='false'`

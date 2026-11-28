@@ -115,8 +115,19 @@ replay and required native CI validate the committed setting before merge.
 
 ## Remaining scope
 
-The stable workload is `graph.refresh`; PERF-05/11 still require integrated native
-builds, concurrent ingestion, freshness, recovery and whole-process resource
-budgets. This change does not enable staged correlation, change the 600,000
-relevant-asset refusal or establish full-profile coverage. Asset-source memory,
-Go allocation/GC cost and production periodic enrichment coverage remain open.
+`graph.refresh` is the tracked graph workload; this report measures its critical
+edge reader. Subsequent production changes [project graph asset fields before
+aggregation and transport](graph-projection-measurements.md), reducing measured
+asset-source query memory and Go allocations. [Durable enrichment progress and
+continuations](../specs/enrichment-sweep-progress.md) address cached-prefix
+starvation and waiting between incomplete passes. These fixes are shipped and
+have component correctness/cost evidence; they are not wholly unaddressed work.
+
+PERF-05/11 still require sustained integrated native builds, concurrent collection
+and ingestion, complete score freshness, recovery and whole-process resource
+budgets at the declared estate sizes. The default correlation path still refuses
+600,000 or more relevant assets; experimental staged correlation is not enabled.
+The [successful large-join resource cohort](catchup-capacity.md) measures database
+queries and writes, not removal of this correlation limit or acceptance of the
+complete pipeline. Full-profile coverage and the 24-hour soak remain open; see
+[current sizing evidence and limits](sizing.md).

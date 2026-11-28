@@ -286,3 +286,9 @@ analysis batches, narrow SQL seed pages and explicit busy-lane admission.
 The 100,000-row query has a measured latency cost. Whole-system million-asset
 acceptance, transient rule-output bounds and swap-disabled capacity remain open;
 these focused improvements earn no full-profile coverage credit.
+
+PERF-05 also tracks [critical-edge source measurements](performance/critical-edge-measurements.md).
+Ordered aggregation with bounded blocks passes the isolated 5,000/100,000/million-edge
+query budgets and exact-output checks, with smaller-input latency costs retained.
+Concurrent retained-result replay passes; whole-pipeline freshness, resource and
+recovery acceptance remains open, with no full-profile coverage credit.

@@ -97,6 +97,16 @@ jobs:
           PERF_LINUX_GO_CACHE="$(go env GOCACHE)"
           export PERF_LINUX_GO_CACHE
           bash scripts/benchmark-connector-envelope.sh target "$RUNNER_TEMP/correlation-source-throughput"
+      - name: Check critical graph-edge source costs
+        timeout-minutes: 8
+        env:
+          PERF_ENVELOPE_PACKAGE: ./internal/app/asset
+          PERF_ENVELOPE_TEST: ^TestCriticalEdgeSourceBudget$
+          PERF_ENVELOPE_SWAP: equal
+        run: |
+          PERF_LINUX_GO_CACHE="$(go env GOCACHE)"
+          export PERF_LINUX_GO_CACHE
+          bash scripts/benchmark-connector-envelope.sh target "$RUNNER_TEMP/critical-edge-throughput"
       - name: Check latest-row joins and lifecycle parity
         timeout-minutes: 15
         env:
@@ -137,4 +147,6 @@ jobs:
             !${{ runner.temp }}/derived-throughput/envelope.test
             ${{ runner.temp }}/correlation-source-throughput/
             !${{ runner.temp }}/correlation-source-throughput/envelope.test
+            ${{ runner.temp }}/critical-edge-throughput/
+            !${{ runner.temp }}/critical-edge-throughput/envelope.test
           retention-days: 14

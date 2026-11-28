@@ -147,3 +147,6 @@ families separate where their pagination, grant membership and fan-out differ.
 [Correlation and graph source measurements](source-read-measurements.md) record
 query-memory improvements, the selective latency tradeoff, unchanged correlation
 refusal, bounded invalidation admission and remaining mixed-capacity gaps.
+
+[Critical-edge source measurements](critical-edge-measurements.md) record bounded
+ordered aggregation, exact version/property checks and the smaller-input tradeoff.

@@ -1,0 +1,98 @@
+{
+  "scope": "isolated production critical-edge reader; no mixed pipeline acceptance",
+  "datasets": [
+    {
+      "logical_edges": 5000,
+      "physical_edges": 10003,
+      "passed": true,
+      "sha256": "b13045fde32fb869f567dace212f1b7e340c8e6165f3a481cf0e12c02844c4f4",
+      "memory_budget_bytes": 67108864,
+      "baseline": {
+        "successful_repeats": 3,
+        "query_peak_bytes": 8616142,
+        "query_median_ms": 4,
+        "elapsed_median_seconds": 0.012605988,
+        "logical_read_rows": [
+          10005
+        ],
+        "logical_read_bytes": [
+          1223165
+        ]
+      },
+      "production": {
+        "successful_repeats": 3,
+        "query_peak_bytes": 9441206,
+        "query_median_ms": 7,
+        "elapsed_median_seconds": 0.016169841,
+        "logical_read_rows": [
+          10005
+        ],
+        "logical_read_bytes": [
+          1223165
+        ]
+      }
+    },
+    {
+      "logical_edges": 100000,
+      "physical_edges": 200003,
+      "passed": true,
+      "sha256": "89d44877ab87391bdc1ac7f1f1cac5ab26b168280a5c9e4cd32bd1a21a5867e4",
+      "memory_budget_bytes": 67108864,
+      "baseline": {
+        "successful_repeats": 3,
+        "query_peak_bytes": 91906637,
+        "query_median_ms": 33,
+        "elapsed_median_seconds": 0.150301181,
+        "logical_read_rows": [
+          200005
+        ],
+        "logical_read_bytes": [
+          24677985
+        ]
+      },
+      "production": {
+        "successful_repeats": 3,
+        "query_peak_bytes": 65527575,
+        "query_median_ms": 78,
+        "elapsed_median_seconds": 0.160369863,
+        "logical_read_rows": [
+          200005
+        ],
+        "logical_read_bytes": [
+          24677985
+        ]
+      }
+    },
+    {
+      "logical_edges": 1000000,
+      "physical_edges": 2000003,
+      "passed": true,
+      "sha256": "1bbe52b72419a10228a54902b0040b725413c1ff8fe8be24049e37c9e85c3b8c",
+      "memory_budget_bytes": 536870912,
+      "baseline": {
+        "successful_repeats": 3,
+        "query_peak_bytes": 1082023897,
+        "query_median_ms": 1335,
+        "elapsed_median_seconds": 1.476551788,
+        "logical_read_rows": [
+          2000005
+        ],
+        "logical_read_bytes": [
+          248775681
+        ]
+      },
+      "production": {
+        "successful_repeats": 3,
+        "query_peak_bytes": 88217828,
+        "query_median_ms": 1159,
+        "elapsed_median_seconds": 1.401515364,
+        "logical_read_rows": [
+          2000005
+        ],
+        "logical_read_bytes": [
+          248775681
+        ]
+      }
+    }
+  ]
+}

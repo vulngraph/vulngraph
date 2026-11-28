@@ -41,8 +41,12 @@ func latestLifecycleOracle(current []finding.Finding, enrichment map[string]find
 	return s, clusters
 }
 
-func checkLatestRowLifecycle(t *testing.T, ctx context.Context, admin, app *db.CH) []string {
+func checkLatestRowLifecycle(t *testing.T, ctx context.Context, admin, app *db.CH, experiment string) []string {
 	t.Helper()
+	candidateMode := "latest_rows"
+	if experiment == "latest_enrichment_keys" {
+		candidateMode = experiment
+	}
 	var count uint64
 	require.NoError(t, admin.Select(ctx, func(rows driver.Rows) error { require.True(t, rows.Next()); return rows.Scan(&count) }, `SELECT (SELECT count() FROM findings)+(SELECT count() FROM finding_enrichment)`))
 	require.Zero(t, count, "lifecycle fixture requires the fresh isolated benchmark database")
@@ -78,14 +82,14 @@ func checkLatestRowLifecycle(t *testing.T, ctx context.Context, admin, app *db.C
 			var total int
 			var err error
 			if candidate {
-				s, err = readJoinSummaryCandidate(ctx, app, "", "latest_rows")
+				s, err = readJoinSummaryCandidate(ctx, app, "", candidateMode)
 			} else {
 				s, err = readJoinSummaryCandidate(ctx, app, "", "baseline_rows")
 			}
 			require.NoError(t, err, name)
 			require.Equal(t, wantSummary, s, name)
 			if candidate {
-				c, total, err = readJoinClustersCandidate(ctx, app, "", "latest_rows")
+				c, total, err = readJoinClustersCandidate(ctx, app, "", candidateMode)
 			} else {
 				c, total, err = readJoinClustersCandidate(ctx, app, "", "baseline_rows")
 			}

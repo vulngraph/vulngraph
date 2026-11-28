@@ -47,6 +47,12 @@ const boundedEnrichmentClusters = openJoinIDs + `SELECT check_id,
  ) GROUP BY check_id ORDER BY max(score) DESC,count() DESC LIMIT 500`
 
 func joinCandidateSQL(kind, source, experiment string) (string, []any) {
+	if experiment == "latest_enrichment_keys" && source == "" {
+		if kind == "summary" {
+			return scopedSummaryLatestRows, nil
+		}
+		return scopedClustersLatestRows, nil
+	}
 	if experiment == "baseline_rows" {
 		where := ""
 		var args []any
@@ -74,7 +80,7 @@ func joinCandidateSQL(kind, source, experiment string) (string, []any) {
 	return fmt.Sprintf(query, where, where), args
 }
 func readJoinSummaryCandidate(ctx context.Context, ch *db.CH, source, experiment string) (finding.Summary, error) {
-	if experiment == "latest_rows" {
+	if experiment == "latest_rows" || (experiment == "latest_enrichment_keys" && source != "") {
 		return finding.NewCHRepo(ch).Summary(ctx, finding.Filter{Source: source})
 	}
 	out := finding.Summary{BySeverity: map[finding.Severity]int{}, ByBand: map[string]int{}, ByOwner: map[string]int{}, ByEnvironment: map[string]int{}}
@@ -99,7 +105,7 @@ func readJoinSummaryCandidate(ctx context.Context, ch *db.CH, source, experiment
 	return out, err
 }
 func readJoinClustersCandidate(ctx context.Context, ch *db.CH, source, experiment string) ([]finding.Cluster, int, error) {
-	if experiment == "latest_rows" {
+	if experiment == "latest_rows" || (experiment == "latest_enrichment_keys" && source != "") {
 		return finding.NewCHRepo(ch).Clusters(ctx, finding.Filter{Source: source})
 	}
 	var out []finding.Cluster

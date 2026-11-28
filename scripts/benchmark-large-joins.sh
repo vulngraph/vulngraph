@@ -10,9 +10,14 @@ case "$resources" in
  deployed) ch_cpus=2; ch_memory=4g; server_memory=3221225472; query_memory=2147483648;;
  local16g)
   ch_cpus=8; ch_memory=16g; server_memory=12884901888; query_memory=4294967296;;
- *) echo 'expected deployed or local16g resources' >&2; exit 2;;
+ local32g)
+  ch_cpus=16; ch_memory=32g; server_memory=25769803776; query_memory=4294967296;;
+ *) echo 'expected deployed, local16g or local32g resources' >&2; exit 2;;
 esac
-helm_limits=(--set-string "clickhouse.tuning.maxServerMemoryBytes=$server_memory" --set-string "clickhouse.tuning.maxMemoryBytes=$query_memory")
+merge_threads="${PERF_JOIN_MERGE_THREADS:-16}"
+case "$merge_threads" in 4|16) ;; *) echo 'expected 4 or 16 merge threads' >&2; exit 2;; esac
+merge_ratio=$((32 / merge_threads))
+helm_limits=(--set-string "clickhouse.tuning.backgroundPoolSize=$merge_threads" --set-string "clickhouse.tuning.maxServerMemoryBytes=$server_memory" --set-string "clickhouse.tuning.maxMemoryBytes=$query_memory")
 output="${2:?choose a fresh output directory}"
 mkdir -p "$output"
 output="$(cd "$output" && pwd)"
@@ -46,14 +51,17 @@ cd "$root"
 helm template graph deploy/helm-chart/graph --set secret.create=false --show-only templates/clickhouse-config.yaml > "$output/deployed-config.yaml"
 helm template graph deploy/helm-chart/graph --set secret.create=false "${helm_limits[@]}" --show-only templates/clickhouse-config.yaml > "$output/effective-config.yaml"
 cp deploy/helm-chart/graph/values.yaml "$output/deployed-values.yaml"
-python3 - "$output" "$resources" "$ch_cpus" "$server_memory" "$query_memory" <<'PY'
+python3 - "$output" "$resources" "$ch_cpus" "$server_memory" "$query_memory" "$merge_threads" "$merge_ratio" <<'PY'
 import json,pathlib,re,shutil,subprocess,sys
 root=pathlib.Path(sys.argv[1]);src=(root/'effective-config.yaml').read_text()
+src=src.replace('<background_merges_mutations_concurrency_ratio>2</background_merges_mutations_concurrency_ratio>','<background_merges_mutations_concurrency_ratio>'+sys.argv[7]+'</background_merges_mutations_concurrency_ratio>')
+(root/'effective-config.yaml').write_text(src)
 host=json.loads(subprocess.check_output(['docker','info','--format','{"cpus":{{.NCPU}},"memory_bytes":{{.MemTotal}}}']))
 free=shutil.disk_usage(root).free
 if free<40*1024**3:raise SystemExit('less than 40 GiB free workspace disk')
 if sys.argv[2]=='local16g' and (host['memory_bytes']<24*1024**3 or host['cpus']<8):raise SystemExit('local16g requires at least 24 GiB Docker memory and 8 CPUs')
-(root/'resource-profile.json').write_text(json.dumps({'cohort':sys.argv[2],'clickhouse_cpus':int(sys.argv[3]),'server_memory_bytes':int(sys.argv[4]),'query_memory_bytes':int(sys.argv[5]),'per_query_threads':2,'fixed_comparison_query_budget_bytes':512*1024**2,'docker':host,'workspace_free_bytes':free,'limitation':'local cardinality/resource cohort, not the declared native 128 GiB stress host'},indent=2)+'\n')
+if sys.argv[2]=='local32g' and (host['memory_bytes']<38*1024**3 or host['cpus']<16):raise SystemExit('local32g requires at least 38 GiB Docker memory and 16 CPUs')
+(root/'resource-profile.json').write_text(json.dumps({'cohort':sys.argv[2],'clickhouse_cpus':int(sys.argv[3]),'server_memory_bytes':int(sys.argv[4]),'query_memory_bytes':int(sys.argv[5]),'per_query_threads':2,'background_pool_size':int(sys.argv[6]),'background_merges_mutations_concurrency_ratio':int(sys.argv[7]),'fixed_comparison_query_budget_bytes':512*1024**2,'docker':host,'workspace_free_bytes':free,'limitation':'local cardinality/resource cohort, not the declared native 128 GiB stress host'},indent=2)+'\n')
 for name in ['config.xml','users.xml','graph-users.xml']:
  m=re.search(r'^  '+re.escape(name)+r': \|\n((?:    .*\n|\n)+)',src,re.M)
  if not m: raise SystemExit('missing rendered '+name)
@@ -72,10 +80,10 @@ XML
 printf "stage=database-start time=%s\n" "$(date -u +%FT%TZ)"
 password="$(openssl rand -hex 16)"
 app_password="$(openssl rand -hex 16)"
-bounded 180 docker run -d --name "$pg" --cpus 2 --memory 4g \
+bounded 180 docker run -d --name "$pg" --cpus 2 --memory 4g --memory-swap 4g \
  -e POSTGRES_USER=bench -e "POSTGRES_PASSWORD=$password" -e POSTGRES_DB=vg_query_perf \
  -p 127.0.0.1::5432 "$pg_image" > /dev/null
-bounded 180 docker run -d --name "$ch" --cpus "$ch_cpus" --memory "$ch_memory" \
+bounded 180 docker run -d --name "$ch" --cpus "$ch_cpus" --memory "$ch_memory" --memory-swap "$ch_memory" \
  -e CLICKHOUSE_SKIP_USER_SETUP=1 -e CLICKHOUSE_USER=bench -e "CLICKHOUSE_PASSWORD=$password" -e CLICKHOUSE_DB=vg_query_perf \
  -e "GRAPH_CH_APP_PASSWORD=$app_password" -e "GRAPH_CH_MIGRATE_PASSWORD=$password" -e "GRAPH_CH_SCANNER_PASSWORD=$password" \
  -v "$output/config.xml:/etc/clickhouse-server/config.d/zz-fixture.xml:ro" \
@@ -103,7 +111,7 @@ export PERF_CLICKHOUSE_URL="clickhouse://bench:$password@127.0.0.1:$ch_port/vg_q
 export PERF_APP_CLICKHOUSE_URL="clickhouse://graph:$app_password@127.0.0.1:$ch_port/vg_query_perf"
 helm version --short > "$output/helm-version.txt"
 python3 scripts/performance_trend.py environment "$pg" "$ch" > "$output/environment.json"
-bounded 10 docker inspect --format '{{.Name}} image={{.Image}} memory={{.HostConfig.Memory}} nanocpus={{.HostConfig.NanoCpus}}' "$pg" "$ch" > "$output/environment.txt"
+bounded 10 docker inspect --format '{{.Name}} image={{.Image}} memory={{.HostConfig.Memory}} memoryswap={{.HostConfig.MemorySwap}} nanocpus={{.HostConfig.NanoCpus}}' "$pg" "$ch" > "$output/environment.txt"
 git ls-files -z --cached --others --exclude-standard | xargs -0 shasum -a 256 > "$output/source-files.sha256"
 GIT_INDEX_FILE="$tmp/source-index" git read-tree HEAD
 GIT_INDEX_FILE="$tmp/source-index" git add -A

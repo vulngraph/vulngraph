@@ -43,6 +43,24 @@ type Mutation struct {
 // still applied and verified independently.
 var mutations = []Mutation{
 	{
+		Guard: "TestCompactFrameKeepsOriginalContextAdmissionCharge", Pkg: "./internal/app/correlate",
+		File: "internal/app/correlate/service_staged.go",
+		Old:  "PageRows: 2000", New: "PageRows: 2048",
+		Why: "splits each correlation publication page into two database writes instead of matching the writer row bound",
+	},
+	{
+		Guard: "TestStagedReplayDoesNotCopyTheRowIndex", Pkg: "./internal/app/correlate",
+		File: "internal/app/correlate/repo_staged_refs.go",
+		Old:  "stagedCursor{refs: refs}", New: "stagedCursor{refs: append([]stagedInputRef(nil), refs...)}",
+		Why: "copies the whole selected row index before delivering a bounded page",
+	},
+	{
+		Guard: "TestEveryStagedRuleHasProducerStopBoundary", Pkg: "./internal/app/correlate",
+		File: "internal/app/correlate/correlation_types_test.go",
+		Old:  "\tDNSPointsTo{},\n", New: "\tcountingRule{},\n",
+		Why: "registers a slice-only producer that cannot stop before accumulating its output", MutatesTest: true,
+	},
+	{
 		Guard: "TestInventoryReconcilesShippedWorkloads", Pkg: "./internal/perfassurance",
 		File: "docs/performance/workloads.json",
 		Old:  `"mcp:get_disk_scan_status"`, New: `"mcp:missing_disk_scan_status"`,
@@ -4745,8 +4763,8 @@ var mutations = []Mutation{
 	{
 		Guard: "TestK8sServiceTargets_SourceRestrictedServiceIsPossible", Pkg: "./internal/app/correlate",
 		File: "internal/app/correlate/k8s.go",
-		Old:  "\t\tcase betterExposure(e, edges[i]):\n",
-		New:  "\t\tcase i < 0 && betterExposure(e, edges[i]):\n",
+		Old:  "\t\t\tcase betterExposure(e, current):\n",
+		New:  "\t\t\tcase false && betterExposure(e, current):\n",
 		Why:  "a workload a world-open and a restricted LoadBalancer both select keeps whichever exposure edge was read first, so it can persist as possible and flap between sweeps",
 	},
 	// ── VM disk scan (agentless, opt-in snapshot reads) ─────────────────
@@ -5282,9 +5300,11 @@ var mutations = []Mutation{
 // Keep it truthful. A harness claiming full coverage while actually testing
 // half is the same class of lie as the guards it audits.
 var exempt = map[string]string{
-	"TestGitHubVisibilityFixtureReplay": "reads measured collector fixture JSON to exercise correlation and native graph loading, not repository source; behavioral performance replay",
-	"TestPipelineSoak":                  "reads collected API fixture JSON to exercise real workers, queues and databases, not repository source; behavioral integration test",
-	"TestConnectorSyncThroughput":       "reads measured API fixture JSON to exercise real storage, not repository source; behavioral database test",
+	"TestBoundedCorrelationCosts":                                     "reads process/cgroup telemetry for a real-database performance fixture, not repository source",
+	"TestEnvelopeTempUsageIncludesUnlinkedFilesWithoutDoubleCounting": "enumerates its own temporary files and process descriptors to verify disk accounting, not repository source",
+	"TestGitHubVisibilityFixtureReplay":                               "reads measured collector fixture JSON to exercise correlation and native graph loading, not repository source; behavioral performance replay",
+	"TestPipelineSoak":                                                "reads collected API fixture JSON to exercise real workers, queues and databases, not repository source; behavioral integration test",
+	"TestConnectorSyncThroughput":                                     "reads measured API fixture JSON to exercise real storage, not repository source; behavioral database test",
 	// Asserts go.mod text. The only mutation that would make it fail is deleting
 	// the ldapserver replace, which changes module resolution for the whole build
 	// (go.sum carries no hash for the upstream GPL module), so the harness would
@@ -5345,6 +5365,7 @@ var exempt = map[string]string{
 // a guard that reads source only through another package's function
 // (keyscan.Scan) is invisible to it too and belongs here.
 var extraGuards = []string{
+	"TestEveryStagedRuleHasProducerStopBoundary",
 	"TestInventoryReconcilesShippedWorkloads",
 	"TestQueryCostBudgetsRejectEachRegression",
 	"TestRegistryConsistency",

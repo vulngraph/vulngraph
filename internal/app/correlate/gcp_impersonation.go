@@ -1,6 +1,7 @@
 package correlate
 
 import (
+	"iter"
 	"slices"
 	"strings"
 
@@ -47,62 +48,66 @@ func (GCPImpersonation) InterestedIn() []string {
 	return []string{"gcp_service_account"}
 }
 
-func (GCPImpersonation) Correlate(g Graph) []asset.Edge {
-	sas := g.GCPServiceAccounts()
-	if len(sas) < 2 {
-		return nil // impersonation needs a source and a distinct target
-	}
+func (r GCPImpersonation) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
 
-	// Group SAs by project so a project-level grant only reaches same-project SAs.
-	// An SA with an unknown project (empty AccountID) is NEVER bucketed: doing so
-	// would collapse every such SA into one "" bucket and fan a project-level
-	// grant out across ALL projects. Fail-safe: no edge beats a cross-project edge.
-	byProject := map[string][]asset.Asset{}
-	for _, sa := range sas {
-		if sa.AccountID == "" {
-			continue
+func (GCPImpersonation) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+		sas := g.GCPServiceAccounts()
+		if len(sas) < 2 {
+			return // impersonation needs a source and a distinct target
 		}
-		byProject[sa.AccountID] = append(byProject[sa.AccountID], sa)
-	}
 
-	// Sort each oversized project once. Sorting and copying its entire account
-	// set for every privileged source defeats the otherwise bounded fan-out.
-	for _, project := range byProject {
-		if len(project) > maxImpersonationTargetsPerSA+1 {
-			slices.SortFunc(project, func(a, b asset.Asset) int { return strings.Compare(a.ID, b.ID) })
-		}
-	}
-
-	var edges []asset.Edge
-	for _, src := range sas {
-		if src.AccountID == "" || !canImpersonate(src.Metadata["permissions"]) {
-			continue
-		}
-		technique := impersonationTechnique(src.Metadata["permissions"])
-
-		count := 0
-		for _, dst := range byProject[src.AccountID] {
-			if dst.ID == src.ID {
+		// Group SAs by project so a project-level grant only reaches same-project SAs.
+		// An SA with an unknown project (empty AccountID) is NEVER bucketed: doing so
+		// would collapse every such SA into one "" bucket and fan a project-level
+		// grant out across ALL projects. Fail-safe: no edge beats a cross-project edge.
+		byProject := map[string][]asset.Asset{}
+		for _, sa := range sas {
+			if sa.AccountID == "" {
 				continue
 			}
-			if count >= maxImpersonationTargetsPerSA {
-				break
+			byProject[sa.AccountID] = append(byProject[sa.AccountID], sa)
+		}
+
+		// Sort each oversized project once. Sorting and copying its entire account
+		// set for every privileged source defeats the otherwise bounded fan-out.
+		for _, project := range byProject {
+			if len(project) > maxImpersonationTargetsPerSA+1 {
+				slices.SortFunc(project, func(a, b asset.Asset) int { return strings.Compare(a.ID, b.ID) })
 			}
-			count++
-			edges = append(edges, asset.Edge{
-				SrcID: src.ID, SrcType: "gcp_service_account",
-				DstID: dst.ID, DstType: "gcp_service_account",
-				EdgeType: EdgeCanAssume,
-				Properties: map[string]string{
-					"origin":    edgeOrigin,
-					"rule":      "gcp_impersonation",
-					"technique": technique,
-					"scope":     "project",
-				},
-			})
+		}
+
+		for _, src := range sas {
+			if src.AccountID == "" || !canImpersonate(src.Metadata["permissions"]) {
+				continue
+			}
+			technique := impersonationTechnique(src.Metadata["permissions"])
+
+			count := 0
+			for _, dst := range byProject[src.AccountID] {
+				if dst.ID == src.ID {
+					continue
+				}
+				if count >= maxImpersonationTargetsPerSA {
+					break
+				}
+				count++
+				if !yield(asset.Edge{
+					SrcID: src.ID, SrcType: "gcp_service_account",
+					DstID: dst.ID, DstType: "gcp_service_account",
+					EdgeType: EdgeCanAssume,
+					Properties: map[string]string{
+						"origin":    edgeOrigin,
+						"rule":      "gcp_impersonation",
+						"technique": technique,
+						"scope":     "project",
+					},
+				}) {
+					return
+				}
+			}
 		}
 	}
-	return edges
 }
 
 // canImpersonate reports whether a permissions CSV grants any impersonation or

@@ -1,6 +1,7 @@
 package correlate
 
 import (
+	"iter"
 	"slices"
 	"strings"
 
@@ -64,51 +65,55 @@ func (IRSATrust) InterestedIn() []string {
 	return []string{"iam_role", "k8s_service_account", "eks_cluster"}
 }
 
-func (IRSATrust) Correlate(g Graph) []asset.Edge {
-	saBySuffix := serviceAccountsBySuffix(g.K8sServiceAccounts())
-	if len(saBySuffix) == 0 {
-		return nil
-	}
-	clusterByProvider := eksClusterNamesByProvider(g.EKSClusters())
+func (r IRSATrust) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
 
-	var edges []asset.Edge
-	for _, role := range g.IAMRoles() {
-		provider := role.Metadata["federated_provider"]
-		if provider == "" {
-			continue
+func (IRSATrust) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+		saBySuffix := serviceAccountsBySuffix(g.K8sServiceAccounts())
+		if len(saBySuffix) == 0 {
+			return
 		}
-		cluster, isEKS := clusterByProvider[provider]
-		if !isEKS {
-			continue
-		}
-		linked := map[string]bool{}
-		for _, grant := range irsaGrants(role, provider) {
-			for _, sub := range grant.subjects {
-				var matched []asset.Asset
-				if strings.ContainsAny(sub, "*?") {
-					// A StringLike wildcard ("prod:*", "*") trusts every SA it matches
-					// in the issuing cluster — each of them really can assume the role.
-					matched = serviceAccountsMatching(g.K8sServiceAccounts(), cluster, sub)
-				} else {
-					ns, name, ok := strings.Cut(sub, ":")
-					if !ok || ns == "" || name == "" {
-						continue
+		clusterByProvider := eksClusterNamesByProvider(g.EKSClusters())
+
+		for _, role := range g.IAMRoles() {
+			provider := role.Metadata["federated_provider"]
+			if provider == "" {
+				continue
+			}
+			cluster, isEKS := clusterByProvider[provider]
+			if !isEKS {
+				continue
+			}
+			linked := map[string]bool{}
+			for _, grant := range irsaGrants(role, provider) {
+				for _, sub := range grant.subjects {
+					var matched []asset.Asset
+					if strings.ContainsAny(sub, "*?") {
+						// A StringLike wildcard ("prod:*", "*") trusts every SA it matches
+						// in the issuing cluster — each of them really can assume the role.
+						matched = serviceAccountsMatching(g.K8sServiceAccounts(), cluster, sub)
+					} else {
+						ns, name, ok := strings.Cut(sub, ":")
+						if !ok || ns == "" || name == "" {
+							continue
+						}
+						if sa, ok := resolveServiceAccount(saBySuffix, cluster, ns, name); ok {
+							matched = append(matched, sa)
+						}
 					}
-					if sa, ok := resolveServiceAccount(saBySuffix, cluster, ns, name); ok {
-						matched = append(matched, sa)
+					for _, sa := range matched {
+						if linked[sa.ID] || grant.excludes(sa) {
+							continue
+						}
+						linked[sa.ID] = true
+						if !yield(irsaEdge(sa, role, sub)) {
+							return
+						}
 					}
-				}
-				for _, sa := range matched {
-					if linked[sa.ID] || grant.excludes(sa) {
-						continue
-					}
-					linked[sa.ID] = true
-					edges = append(edges, irsaEdge(sa, role, sub))
 				}
 			}
 		}
 	}
-	return edges
 }
 
 // irsaEdge builds the SA → role federated_access edge for one trust subject.

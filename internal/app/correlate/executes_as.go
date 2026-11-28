@@ -1,6 +1,9 @@
 package correlate
 
 import (
+	"iter"
+	"slices"
+
 	"github.com/vulngraph/vulngraph/internal/app/asset"
 )
 
@@ -25,29 +28,34 @@ func (ExecutesAs) InterestedIn() []string {
 		"cloudrun_service", // Cloud Run — exec_role populated by the collector
 		// k8s_service_account carries its IRSA role annotation as exec_role
 		// (collect/kubernetes/rbac.go), so an annotation change must recompute.
-		"k8s_pod", "k8s_deployment", "k8s_service_account", "azure_webapp", "azure_function",
+		"k8s_pod", "k8s_deployment", "k8s_service_account", "azure_webapp", "azure_function", "azure_vm",
 		"iam_role", "gcp_service_account", "azure_service_principal", "azure_managed_identity",
 	}
 }
 
-func (ExecutesAs) Correlate(g Graph) []asset.Edge {
-	var edges []asset.Edge
-	for _, w := range g.ExecWorkloads() {
-		target := w.Metadata["exec_role"]
-		if target == "" || target == w.ID || !g.IsPrincipal(target) {
-			continue
+func (r ExecutesAs) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
+
+func (ExecutesAs) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+
+		for _, w := range g.ExecWorkloads() {
+			target := w.Metadata["exec_role"]
+			if target == "" || target == w.ID || !g.IsPrincipal(target) {
+				continue
+			}
+			if !yield(asset.Edge{
+				SrcID: w.ID, SrcType: w.Type,
+				DstID: target, DstType: principalDstType(target),
+				EdgeType: EdgeExecutesAs,
+				Properties: map[string]string{
+					"origin": edgeOrigin,
+					"rule":   "executes_as",
+				},
+			}) {
+				return
+			}
 		}
-		edges = append(edges, asset.Edge{
-			SrcID: w.ID, SrcType: w.Type,
-			DstID: target, DstType: principalDstType(target),
-			EdgeType: EdgeExecutesAs,
-			Properties: map[string]string{
-				"origin": edgeOrigin,
-				"rule":   "executes_as",
-			},
-		})
 	}
-	return edges
 }
 
 // principalDstType labels the edge's destination. GCP service-account node IDs

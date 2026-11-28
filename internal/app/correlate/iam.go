@@ -2,6 +2,8 @@ package correlate
 
 import (
 	"encoding/json"
+	"iter"
+	"slices"
 	"strings"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
@@ -25,34 +27,39 @@ func (IAMCanAssume) InterestedIn() []string {
 	return []string{"iam_role", "iam_user"}
 }
 
-func (IAMCanAssume) Correlate(g Graph) []asset.Edge {
-	var edges []asset.Edge
-	for _, role := range g.IAMRoles() {
-		// Single-sided: every emitted edge derives entirely from role's OWN
-		// trust document (principalARN is a raw string extracted from it, never
-		// looked up elsewhere in g), so an unchanged role produces the same
-		// edges it already has. Safe to skip on a partial run regardless of
-		// which OTHER iam_role/iam_user triggered this rule to activate — see
-		// IAMEffectivePermissions for the cost this avoids.
-		if !g.NeedsRecompute(role.ID) {
-			continue
-		}
-		for _, principalARN := range trustPrincipals(role.Metadata["policies"]) {
-			if principalARN == role.ID {
+func (r IAMCanAssume) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
+
+func (IAMCanAssume) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+
+		for _, role := range g.IAMRoles() {
+			// Single-sided: every emitted edge derives entirely from role's OWN
+			// trust document (principalARN is a raw string extracted from it, never
+			// looked up elsewhere in g), so an unchanged role produces the same
+			// edges it already has. Safe to skip on a partial run regardless of
+			// which OTHER iam_role/iam_user triggered this rule to activate — see
+			// IAMEffectivePermissions for the cost this avoids.
+			if !g.NeedsRecompute(role.ID) {
 				continue
 			}
-			edges = append(edges, asset.Edge{
-				SrcID: principalARN, SrcType: principalType(principalARN),
-				DstID: role.ID, DstType: "iam_role",
-				EdgeType: EdgeCanAssume,
-				Properties: map[string]string{
-					"origin": edgeOrigin,
-					"rule":   "can_assume",
-				},
-			})
+			for _, principalARN := range trustPrincipals(role.Metadata["policies"]) {
+				if principalARN == role.ID {
+					continue
+				}
+				if !yield(asset.Edge{
+					SrcID: principalARN, SrcType: principalType(principalARN),
+					DstID: role.ID, DstType: "iam_role",
+					EdgeType: EdgeCanAssume,
+					Properties: map[string]string{
+						"origin": edgeOrigin,
+						"rule":   "can_assume",
+					},
+				}) {
+					return
+				}
+			}
 		}
 	}
-	return edges
 }
 
 // trustPrincipals extracts the concrete IAM principal ARNs that may assume the

@@ -1,6 +1,8 @@
 package correlate
 
 import (
+	"iter"
+	"slices"
 	"strings"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
@@ -32,71 +34,82 @@ func (DeploysTo) InterestedIn() []string {
 	}
 }
 
-func (DeploysTo) Correlate(g Graph) []asset.Edge {
-	var edges []asset.Edge
-	for _, w := range g.Workloads() {
-		// One repo links to a workload at most once, and a high-confidence image
-		// match wins over a medium-confidence label match for the same repo.
-		seen := map[string]bool{}
+func (r DeploysTo) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
 
-		for _, img := range splitValues(w.Metadata["images"]) {
-			// High confidence: ghcr.io/org/repo — namespace IS the GitHub full name.
-			if full, ok := ghcrRepo(img); ok {
-				if repo, ok := g.RepoByFullName(full); ok && !seen[repo.ID] {
-					seen[repo.ID] = true
-					edges = append(edges, deploysEdge(repo, w, "ghcr_image", "high"))
+func (DeploysTo) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+
+		for _, w := range g.Workloads() {
+			// One repo links to a workload at most once, and a high-confidence image
+			// match wins over a medium-confidence label match for the same repo.
+			seen := map[string]bool{}
+
+			for _, img := range splitValues(w.Metadata["images"]) {
+				// High confidence: ghcr.io/org/repo — namespace IS the GitHub full name.
+				if full, ok := ghcrRepo(img); ok {
+					if repo, ok := g.RepoByFullName(full); ok && !seen[repo.ID] {
+						seen[repo.ID] = true
+						if !yield(deploysEdge(repo, w, "ghcr_image", "high")) {
+							return
+						}
+					}
+					continue
 				}
-				continue
+				// Medium confidence: GCR/ECR — extract the image name (last path segment
+				// before the tag/digest) and match it against known repo short names.
+				// Covers eu.gcr.io/<project>/<service>[:tag] where <service> == repo short name.
+				if name := cloudImageName(img); name != "" {
+					for _, repo := range g.ReposByName(name) {
+						if seen[repo.ID] {
+							continue
+						}
+						seen[repo.ID] = true
+						if !yield(deploysEdge(repo, w, imageMatchVia(repo, name), "medium")) {
+							return
+						}
+					}
+				}
 			}
-			// Medium confidence: GCR/ECR — extract the image name (last path segment
-			// before the tag/digest) and match it against known repo short names.
-			// Covers eu.gcr.io/<project>/<service>[:tag] where <service> == repo short name.
-			if name := cloudImageName(img); name != "" {
+
+			// Medium confidence: standard k8s app labels. Add your own org's service-
+			// registry label here too if you have one (e.g. "example.com/service-name") —
+			// it's an additional signal alongside these, not a replacement for them.
+			for _, label := range []string{
+				"app.kubernetes.io/name",
+				"app.kubernetes.io/part-of",
+			} {
+				name := w.Tags[label]
+				if name == "" {
+					continue
+				}
 				for _, repo := range g.ReposByName(name) {
 					if seen[repo.ID] {
 						continue
 					}
 					seen[repo.ID] = true
-					edges = append(edges, deploysEdge(repo, w, imageMatchVia(repo, name), "medium"))
+					if !yield(deploysEdge(repo, w, "label", "medium")) {
+						return
+					}
 				}
 			}
 		}
-
-		// Medium confidence: standard k8s app labels. Add your own org's service-
-		// registry label here too if you have one (e.g. "example.com/service-name") —
-		// it's an additional signal alongside these, not a replacement for them.
-		for _, label := range []string{
-			"app.kubernetes.io/name",
-			"app.kubernetes.io/part-of",
-		} {
-			name := w.Tags[label]
-			if name == "" {
-				continue
-			}
-			for _, repo := range g.ReposByName(name) {
+		// Compute services (ECS, Lambda, Cloud Run, Azure Web Apps):
+		// match by service/function name = repo short name. No image metadata
+		// available for most; name is the only reliable signal.
+		for _, svc := range g.ComputeServices() {
+			seen := map[string]bool{}
+			for _, repo := range g.ReposByName(svc.Name) {
 				if seen[repo.ID] {
 					continue
 				}
 				seen[repo.ID] = true
-				edges = append(edges, deploysEdge(repo, w, "label", "medium"))
+				if !yield(deploysEdge(repo, svc, "service_name", "medium")) {
+					return
+				}
 			}
 		}
-	}
-	// Compute services (ECS, Lambda, Cloud Run, Azure Web Apps):
-	// match by service/function name = repo short name. No image metadata
-	// available for most; name is the only reliable signal.
-	for _, svc := range g.ComputeServices() {
-		seen := map[string]bool{}
-		for _, repo := range g.ReposByName(svc.Name) {
-			if seen[repo.ID] {
-				continue
-			}
-			seen[repo.ID] = true
-			edges = append(edges, deploysEdge(repo, svc, "service_name", "medium"))
-		}
-	}
 
-	return edges
+	}
 }
 
 // imageMatchVia records HOW a cloud-registry image name matched a repo, so the

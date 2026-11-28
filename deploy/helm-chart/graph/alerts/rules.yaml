@@ -1345,16 +1345,16 @@ groups:
             stalled job does not just leave things stale, it will eventually start
             silently deleting real connections between resources.
 
-      # The view limit is a fail-closed circuit breaker (correlate.ErrViewTruncated),
-      # so the useful signal is the headroom trend, not the trip. This may fire on
-      # first deploy on a large estate — that is correct and means a metadata-key
-      # projection is due, not that the threshold needs tuning.
+      # Legacy readers retain a row breaker; staged readers report limit=0 and
+      # export the logical byte budgets below instead.
       - alert: GraphCorrelateViewNearLimit
         expr: |-
           max by (namespace) (max_over_time(graph_correlate_view_rows{namespace="__NAMESPACE__", component="worker"}[10m]))
             /
           max by (namespace) (max_over_time(graph_correlate_view_limit{namespace="__NAMESPACE__", component="worker"}[10m]))
             > 0.8
+          and on (namespace)
+          max by (namespace) (graph_correlate_view_limit{namespace="__NAMESPACE__", component="worker"}) > 0
         for: 1h
         labels:
           severity: warning
@@ -1363,11 +1363,26 @@ groups:
           description: >-
             The dataset used to re-link resources into the graph is approaching a hard
             row-count limit. Crossing that limit makes every graph-relinking pass fail
-            outright (a deliberate safety mechanism, not a bug) until the limit is
-            raised. The limit itself is sized against the worker's available memory, so
-            simply raising it risks trading a clean failure for an out-of-memory crash
-            instead — better to shrink what is being fetched (two metadata fields,
-            permissions and policies, account for a large share of this dataset's size).
+            outright. This is a legacy count-based guard, not a measured memory
+            budget. Check source width and worker memory before changing it; the
+            staged reader uses bounded replay and explicit byte budgets instead.
+
+      - alert: GraphCorrelateBufferNearLimit
+        expr: |-
+          max by (namespace, buffer) (max_over_time(graph_correlate_buffer_bytes{namespace="__NAMESPACE__", component="worker"}[10m]))
+            /
+          max by (namespace, buffer) (graph_correlate_buffer_limit_bytes{namespace="__NAMESPACE__", component="worker"})
+            > 0.8
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "graph: correlation {{ $labels.buffer }} is at {{ $value | humanizePercentage }} of its byte budget"
+          description: >-
+            The staged correlator is approaching its configured index, spool or
+            output ceiling. Exceeding a budget fails the pass visibly. These
+            charges describe serialized data and index accounting, not process
+            RSS; inspect worker memory and temporary-disk headroom separately.
 
       # Degradation before staleness. GraphCorrelateFullSweepStale catches "no sweep
       # completed in 90m", but a sweep failing 2 attempts in 3 still lands a success

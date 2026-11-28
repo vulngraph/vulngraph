@@ -1,6 +1,8 @@
 package correlate
 
 import (
+	"iter"
+	"slices"
 	"sort"
 	"strings"
 
@@ -216,31 +218,36 @@ func (DataClassification) InterestedIn() []string {
 	}
 }
 
-func (DataClassification) Correlate(g Graph) []asset.Edge {
-	var edges []asset.Edge
-	// Iterate all assets and classify storage/database types.
-	for _, a := range g.storageAssets() {
-		for _, c := range classifyAsset(a) {
-			edges = append(edges, asset.Edge{
-				SrcID:    a.ID,
-				SrcType:  a.Type,
-				DstID:    c.class,
-				DstType:  "data_class",
-				EdgeType: EdgeContainsData,
-				Properties: map[string]string{
-					// origin/rule as every other correlation rule stamps them —
-					// see the same note on iam_effective_permissions.
-					"origin":         edgeOrigin,
-					"rule":           "data_classification",
-					"classification": strings.TrimPrefix(c.class, dataClassSentinelPrefix),
-					"confidence":     c.confidence,
-					"source":         c.source,
-					"asset_name":     a.Name,
-				},
-			})
+func (r DataClassification) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
+
+func (DataClassification) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+
+		// Iterate all assets and classify storage/database types.
+		for _, a := range g.storageAssets() {
+			for _, c := range classifyAsset(a) {
+				if !yield(asset.Edge{
+					SrcID:    a.ID,
+					SrcType:  a.Type,
+					DstID:    c.class,
+					DstType:  "data_class",
+					EdgeType: EdgeContainsData,
+					Properties: map[string]string{
+						// origin/rule as every other correlation rule stamps them —
+						// see the same note on iam_effective_permissions.
+						"origin":         edgeOrigin,
+						"rule":           "data_classification",
+						"classification": strings.TrimPrefix(c.class, dataClassSentinelPrefix),
+						"confidence":     c.confidence,
+						"source":         c.source,
+						"asset_name":     a.Name,
+					},
+				}) {
+					return
+				}
+			}
 		}
 	}
-	return edges
 }
 
 // classification is one inferred DataClass plus how confidently it was inferred

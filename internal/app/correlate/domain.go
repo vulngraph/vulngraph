@@ -26,6 +26,9 @@ import (
 // sweep. Refusal does not extend prior edges beyond their freshness window.
 var ErrViewTruncated = errors.New("correlate: inventory view truncated at limit")
 
+// ErrStagedBudget refuses incomplete analysis when a staging resource limit is reached.
+var ErrStagedBudget = errors.New("correlate: staged snapshot resource budget exceeded")
+
 // EdgeType values produced by correlation rules.
 const (
 	EdgeDNSPointsTo       = "dns_points_to"

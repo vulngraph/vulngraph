@@ -53,3 +53,11 @@ func loadViewForTypesQuery(types []string) string {
 }
 
 const loadViewSettings = ` SETTINGS query_plan_join_swap_table='false'`
+const loadStagedView = loadViewSource + loadViewSettings
+
+func loadStagedForTypesQuery(types []string) string {
+	if slices.Contains(types, "declared_k8s_workload") {
+		return loadStagedView
+	}
+	return loadViewSelect + `assets` + loadViewFilter + loadViewSettings
+}

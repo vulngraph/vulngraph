@@ -1,8 +1,10 @@
 package correlate
 
 import (
+	"iter"
 	"maps"
 	"net/netip"
+	"slices"
 	"strconv"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
@@ -59,25 +61,22 @@ func (InternetReachability) InterestedIn() []string {
 	}
 }
 
-func (r InternetReachability) Correlate(g Graph) []asset.Edge {
-	edges, _ := r.evaluate(g)
-	return edges
+func (r InternetReachability) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
+
+func (r InternetReachability) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) { r.visit(g, yield, func(Demotion) bool { return true }) }
 }
 
-// Demotions reports the assets that would have been exposed but for a
-// route-table observation that their subnet is private (see routeBasis). The
-// service logs them, so a demotion is never an edge that silently stopped
-// appearing.
+// Demotions reports observations that prevent an otherwise public exposure.
 func (r InternetReachability) Demotions(g Graph) []Demotion {
-	_, demoted := r.evaluate(g)
-	return demoted
+	return slices.Collect(r.DemotionEvents(g))
 }
 
-func (InternetReachability) evaluate(g Graph) ([]asset.Edge, []Demotion) {
-	var (
-		edges   []asset.Edge
-		demoted []Demotion
-	)
+func (r InternetReachability) DemotionEvents(g Graph) iter.Seq[Demotion] {
+	return func(yield func(Demotion) bool) { r.visit(g, func(asset.Edge) bool { return true }, yield) }
+}
+
+func (InternetReachability) visit(g Graph, emitEdge func(asset.Edge) bool, emitDemotion func(Demotion) bool) {
 
 	// AWS EC2: each address family is its own entry point. A public IPv4
 	// address is opened only by a rule spanning the IPv4 internet and put on
@@ -89,9 +88,13 @@ func (InternetReachability) evaluate(g Graph) ([]asset.Edge, []Demotion) {
 		edge, demotion, ok := ec2Exposure(g, inst)
 		switch {
 		case ok:
-			edges = append(edges, edge)
+			if !emitEdge(edge) {
+				return
+			}
 		case demotion:
-			demoted = append(demoted, Demotion{AssetID: inst.ID, AssetType: inst.Type, Reason: demotedPrivateSubnet})
+			if !emitDemotion(Demotion{AssetID: inst.ID, AssetType: inst.Type, Reason: demotedPrivateSubnet}) {
+				return
+			}
 		}
 	}
 
@@ -100,7 +103,9 @@ func (InternetReachability) evaluate(g Graph) ([]asset.Edge, []Demotion) {
 	// family in priority order (gcp_firewall_exposure.go).
 	for _, inst := range g.GCEInstances() {
 		if edge, ok := gceExposure(g, inst); ok {
-			edges = append(edges, edge)
+			if !emitEdge(edge) {
+				return
+			}
 		}
 	}
 
@@ -116,7 +121,9 @@ func (InternetReachability) evaluate(g Graph) ([]asset.Edge, []Demotion) {
 				if e.possiblePorts != "" {
 					props["possible_ports"] = e.possiblePorts
 				}
-				edges = append(edges, exposureEdge(inst, e.via, e.tier, props))
+				if !emitEdge(exposureEdge(inst, e.via, e.tier, props)) {
+					return
+				}
 			}
 		}
 	}
@@ -124,7 +131,9 @@ func (InternetReachability) evaluate(g Graph) ([]asset.Edge, []Demotion) {
 	// Managed services with public=true are intrinsically internet-reachable —
 	// no SG/firewall hop to evaluate.
 	for _, a := range g.PublicManaged() {
-		edges = append(edges, exposureEdge(a, "managed_public", managedTier(a), nil))
+		if !emitEdge(exposureEdge(a, "managed_public", managedTier(a), nil)) {
+			return
+		}
 	}
 
 	// A publicly-accessible RDS instance is network-reachable from the internet
@@ -139,12 +148,16 @@ func (InternetReachability) evaluate(g Graph) ([]asset.Edge, []Demotion) {
 	for _, a := range g.PublicRDSInstances() {
 		basis, private := routeBasis(a, false)
 		if private {
-			demoted = append(demoted, Demotion{AssetID: a.ID, AssetType: a.Type, Reason: demotedPrivateSubnet})
+			if !emitDemotion(Demotion{AssetID: a.ID, AssetType: a.Type, Reason: demotedPrivateSubnet}) {
+				return
+			}
 			continue
 		}
-		edges = append(edges, exposureEdge(a, "rds_publicly_accessible", asset.PublicAccessPossible, map[string]string{
+		if !emitEdge(exposureEdge(a, "rds_publicly_accessible", asset.PublicAccessPossible, map[string]string{
 			"exposure_basis": basis,
-		}))
+		})) {
+			return
+		}
 	}
 
 	// A leaked resource policy (KMS key/ECR repo/SQS queue/SNS topic) that
@@ -152,17 +165,20 @@ func (InternetReachability) evaluate(g Graph) ([]asset.Edge, []Demotion) {
 	// condition that pins the caller — is unauthenticated access, full stop —
 	// there is no credential to check, unlike the RDS case above.
 	for _, a := range g.PublicResourcePolicies() {
-		edges = append(edges, exposureEdge(a, "resource_policy_public", asset.PublicAccessConfirmed, nil))
+		if !emitEdge(exposureEdge(a, "resource_policy_public", asset.PublicAccessConfirmed, nil)) {
+			return
+		}
 	}
 
 	// A public snapshot/image/disk is directly copyable by anyone with no
 	// credential — confirmed-tier, same reasoning as the resource-policy leaks
 	// above.
 	for _, a := range g.PublicSnapshots() {
-		edges = append(edges, exposureEdge(a, "snapshot_public", asset.PublicAccessConfirmed, nil))
+		if !emitEdge(exposureEdge(a, "snapshot_public", asset.PublicAccessConfirmed, nil)) {
+			return
+		}
 	}
 
-	return edges, demoted
 }
 
 // ec2Exposure evaluates an EC2 instance's public IPv4 address, then its global

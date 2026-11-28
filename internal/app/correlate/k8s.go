@@ -2,6 +2,8 @@ package correlate
 
 import (
 	"fmt"
+	"iter"
+	"slices"
 	"strings"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
@@ -39,66 +41,78 @@ func (K8sServiceTargets) InterestedIn() []string {
 	return []string{"k8s_service", "k8s_pod", "k8s_deployment"}
 }
 
-func (K8sServiceTargets) Correlate(g Graph) []asset.Edge {
-	var edges []asset.Edge
-	workloads := g.Workloads()
-	index := newWorkloadSelectorIndex(workloads, g.K8sServices())
-	// Workload ID → index of its one exposure edge in edges, so the surviving
-	// edge does not depend on the order Services and workloads are read in.
-	exposed := map[string]int{}
-	addExposure := func(e asset.Edge) {
-		i, seen := exposed[e.SrcID]
-		switch {
-		case !seen:
-			exposed[e.SrcID] = len(edges)
-			edges = append(edges, e)
-		case betterExposure(e, edges[i]):
-			edges[i] = e
-		}
-	}
-	for _, svc := range g.K8sServices() {
-		selector := parseSelector(svc.Metadata["selector"])
-		if len(selector) == 0 {
-			continue // a selector-less service (e.g. ExternalName) targets nothing
-		}
-		ns := svc.Metadata["namespace"]
-		cluster, ok := namespacedClusterOf(svc.ID)
-		if !ok {
-			continue // cannot tell which cluster's pods it selects
-		}
-		public := svc.PublicIP != "" && svc.Metadata["type"] == "LoadBalancer"
-		tier := k8sServiceTier(svc)
-		targetedOwners := map[string]bool{} // owner IDs already given a targets edge from THIS service
+func (r K8sServiceTargets) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
 
-		for _, i := range index.candidates(cluster, ns, selector) {
-			w := workloads[i]
-			if !labelsMatch(w.Tags, selector) {
-				continue
+func (K8sServiceTargets) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+		workloads := g.Workloads()
+		index := newWorkloadSelectorIndex(workloads, g.K8sServices())
+		// Retain one winner per workload, bounded by the input context rather than
+		// service/workload fanout. Targets are emitted before this map can grow.
+		exposed := map[string]asset.Edge{}
+		var exposureOrder []string
+		addExposure := func(e asset.Edge) {
+			current, seen := exposed[e.SrcID]
+			switch {
+			case !seen:
+				exposureOrder = append(exposureOrder, e.SrcID)
+				exposed[e.SrcID] = e
+			case betterExposure(e, current):
+				exposed[e.SrcID] = e
 			}
-			edges = append(edges, targetsEdge(svc.ID, w.ID, w.Type))
-			if public {
-				addExposure(exposureEdge(w, "k8s_public_service", tier, map[string]string{
-					"service": svc.ID,
-				}))
+		}
+		for _, svc := range g.K8sServices() {
+			selector := parseSelector(svc.Metadata["selector"])
+			if len(selector) == 0 {
+				continue // a selector-less service (e.g. ExternalName) targets nothing
 			}
-
-			ownerID, ownerType, ok := ownerWorkloadRef(w)
+			ns := svc.Metadata["namespace"]
+			cluster, ok := namespacedClusterOf(svc.ID)
 			if !ok {
-				continue // not a pod, or owner not collected as a workload asset
+				continue // cannot tell which cluster's pods it selects
 			}
-			if !targetedOwners[ownerID] {
-				targetedOwners[ownerID] = true
-				edges = append(edges, targetsEdge(svc.ID, ownerID, ownerType))
+			public := svc.PublicIP != "" && svc.Metadata["type"] == "LoadBalancer"
+			tier := k8sServiceTier(svc)
+			targetedOwners := map[string]bool{} // owner IDs already given a targets edge from THIS service
+
+			for _, i := range index.candidates(cluster, ns, selector) {
+				w := workloads[i]
+				if !labelsMatch(w.Tags, selector) {
+					continue
+				}
+				if !yield(targetsEdge(svc.ID, w.ID, w.Type)) {
+					return
+				}
+				if public {
+					addExposure(exposureEdge(w, "k8s_public_service", tier, map[string]string{
+						"service": svc.ID,
+					}))
+				}
+
+				ownerID, ownerType, ok := ownerWorkloadRef(w)
+				if !ok {
+					continue // not a pod, or owner not collected as a workload asset
+				}
+				if !targetedOwners[ownerID] {
+					targetedOwners[ownerID] = true
+					if !yield(targetsEdge(svc.ID, ownerID, ownerType)) {
+						return
+					}
+				}
+				if public {
+					addExposure(exposureEdge(asset.Asset{ID: ownerID, Type: ownerType}, "k8s_public_service", tier, map[string]string{
+						"service": svc.ID,
+						"via_pod": w.ID,
+					}))
+				}
 			}
-			if public {
-				addExposure(exposureEdge(asset.Asset{ID: ownerID, Type: ownerType}, "k8s_public_service", tier, map[string]string{
-					"service": svc.ID,
-					"via_pod": w.ID,
-				}))
+		}
+		for _, id := range exposureOrder {
+			if !yield(exposed[id]) {
+				return
 			}
 		}
 	}
-	return edges
 }
 
 // k8sServiceTier grades a public LoadBalancer Service's exposure. It is

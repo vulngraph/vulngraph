@@ -2,6 +2,8 @@ package correlate
 
 import (
 	"encoding/json"
+	"iter"
+	"slices"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
 	"github.com/vulngraph/vulngraph/internal/app/ciem"
@@ -39,91 +41,97 @@ func (SecretAccess) InterestedIn() []string {
 	}
 }
 
-func (SecretAccess) Correlate(g Graph) []asset.Edge {
-	// Only AWS secret stores are matched here (GCP secret access comes from the
-	// GCP collector's IAM-policy read).
-	var awsSecrets []asset.Asset
-	types := map[string]bool{}
-	for _, s := range g.SecretAssets() {
-		if _, ok := secretReadActions[s.Type]; ok {
-			awsSecrets = append(awsSecrets, s)
-			types[s.Type] = true
-		}
-	}
-	if len(awsSecrets) == 0 {
-		return nil
-	}
+func (r SecretAccess) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
 
-	// Two-sided: a role's policies are matched against g's live secrets. A
-	// partial run that added/changed only a secret (no role) can still need
-	// this — a new secret can match an EXISTING, untouched role's wildcard
-	// grant — so only skip via NeedsPermissionRecompute (role itself changed,
-	// or its account's SCP did) when neither secret type changed this run.
-	skipUnchanged := g.OtherSideUnchanged("secretsmanager_secret", "ssm_parameter")
-
-	var edges []asset.Edge
-	// PermissionPrincipals, not IAMRoles: IAM users can hold secret-read
-	// grants too.
-	for _, role := range g.PermissionPrincipals() {
-		if skipUnchanged && !g.NeedsPermissionRecompute(role) {
-			continue
-		}
-		perms := secretPermsForRole(role, g.SCPPoliciesForAccount(role.AccountID))
-		if len(perms) == 0 {
-			continue
-		}
-
-		// A principal that can read EVERY secret of a type would fan out an edge
-		// to each one — combinatorial for an admin/CDK/org role — so that fact
-		// collapses to a SINGLE sentinel edge instead. Scoped grants (and
-		// wildcard grants carved up by a resource-scoped Deny) still emit
-		// per-secret edges.
-		wildcardType := map[string]bool{}
-		for typ := range types {
-			for _, action := range secretReadActions[typ] {
-				if allowedOnEverySecret(perms, action) {
-					wildcardType[typ] = true
-					break
-				}
+func (SecretAccess) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+		// Only AWS secret stores are matched here (GCP secret access comes from the
+		// GCP collector's IAM-policy read).
+		var awsSecrets []asset.Asset
+		types := map[string]bool{}
+		for _, s := range g.SecretAssets() {
+			if _, ok := secretReadActions[s.Type]; ok {
+				awsSecrets = append(awsSecrets, s)
+				types[s.Type] = true
 			}
 		}
-		if len(wildcardType) > 0 {
-			edges = append(edges, asset.Edge{
-				// SrcType is the principal's OWN type — PermissionPrincipals
-				// includes iam_users too, not just roles.
-				SrcID: role.ID, SrcType: role.Type,
-				DstID: secretWildcardID, DstType: secretWildcardType,
-				EdgeType: "accesses_secret",
-				Properties: map[string]string{
-					"origin": edgeOrigin,
-					"rule":   "secret_access",
-					"scope":  "wildcard",
-				},
-			})
+		if len(awsSecrets) == 0 {
+			return
 		}
 
-		for _, sec := range awsSecrets {
-			if wildcardType[sec.Type] {
-				continue // represented by the single wildcard sentinel edge above
+		// Two-sided: a role's policies are matched against g's live secrets. A
+		// partial run that added/changed only a secret (no role) can still need
+		// this — a new secret can match an EXISTING, untouched role's wildcard
+		// grant — so only skip via NeedsPermissionRecompute (role itself changed,
+		// or its account's SCP did) when neither secret type changed this run.
+		skipUnchanged := g.OtherSideUnchanged("secretsmanager_secret", "ssm_parameter")
+
+		// PermissionPrincipals, not IAMRoles: IAM users can hold secret-read
+		// grants too.
+		for _, role := range g.PermissionPrincipals() {
+			if skipUnchanged && !g.NeedsPermissionRecompute(role) {
+				continue
 			}
-			for _, action := range secretReadActions[sec.Type] {
-				if !allowedOnResource(perms, action, sec.ID) {
-					continue
+			perms := secretPermsForRole(role, g.SCPPoliciesForAccount(role.AccountID))
+			if len(perms) == 0 {
+				continue
+			}
+
+			// A principal that can read EVERY secret of a type would fan out an edge
+			// to each one — combinatorial for an admin/CDK/org role — so that fact
+			// collapses to a SINGLE sentinel edge instead. Scoped grants (and
+			// wildcard grants carved up by a resource-scoped Deny) still emit
+			// per-secret edges.
+			wildcardType := map[string]bool{}
+			for typ := range types {
+				for _, action := range secretReadActions[typ] {
+					if allowedOnEverySecret(perms, action) {
+						wildcardType[typ] = true
+						break
+					}
 				}
-				edges = append(edges, asset.Edge{
+			}
+			if len(wildcardType) > 0 {
+				if !yield(asset.Edge{
+					// SrcType is the principal's OWN type — PermissionPrincipals
+					// includes iam_users too, not just roles.
 					SrcID: role.ID, SrcType: role.Type,
-					DstID: sec.ID, DstType: sec.Type,
+					DstID: secretWildcardID, DstType: secretWildcardType,
 					EdgeType: "accesses_secret",
 					Properties: map[string]string{
 						"origin": edgeOrigin,
 						"rule":   "secret_access",
+						"scope":  "wildcard",
 					},
-				})
-				break
+				}) {
+					return
+				}
+			}
+
+			for _, sec := range awsSecrets {
+				if wildcardType[sec.Type] {
+					continue // represented by the single wildcard sentinel edge above
+				}
+				for _, action := range secretReadActions[sec.Type] {
+					if !allowedOnResource(perms, action, sec.ID) {
+						continue
+					}
+					if !yield(asset.Edge{
+						SrcID: role.ID, SrcType: role.Type,
+						DstID: sec.ID, DstType: sec.Type,
+						EdgeType: "accesses_secret",
+						Properties: map[string]string{
+							"origin": edgeOrigin,
+							"rule":   "secret_access",
+						},
+					}) {
+						return
+					}
+					break
+				}
 			}
 		}
 	}
-	return edges
 }
 
 // secretWildcardID / secretWildcardType identify the synthetic sentinel node a

@@ -26,7 +26,6 @@ var allRules = []Rule{
 	DeploysTo{},
 	K8sManifestOwnership{},
 	TFOwnership{},
-	&CIAccess{},
 	DeclaredIdentityOwnership{},
 	ImageOwnership{},
 	SecurityGroupAllows{},
@@ -39,6 +38,7 @@ var allRules = []Rule{
 	GCPWorkloadIdentity{},
 	IRSATrust{},
 	K8sPodServiceAccount{},
+	&CIAccess{},
 	IAMEffectivePermissions{},
 	SecretAccess{},
 	DataClassification{},
@@ -171,8 +171,8 @@ func TestRulesDeclareTheTypesTheyReadFromTheGraph(t *testing.T) {
 	}
 }
 
-// rulesCallingGraphAccessor returns the rule type names whose Correlate or
-// CorrelateAssets method calls the named Graph accessor.
+// rulesCallingGraphAccessor returns rules whose slice or streaming producer
+// methods call the named Graph accessor.
 func rulesCallingGraphAccessor(t *testing.T, accessor string) []string {
 	t.Helper()
 	var out []string
@@ -182,7 +182,7 @@ func rulesCallingGraphAccessor(t *testing.T, accessor string) []string {
 			if !ok || fn.Recv == nil || len(fn.Recv.List) != 1 {
 				continue
 			}
-			if fn.Name.Name != "Correlate" && fn.Name.Name != "CorrelateAssets" {
+			if fn.Name.Name != "Correlate" && fn.Name.Name != "CorrelateAssets" && fn.Name.Name != "Edges" && fn.Name.Name != "Annotations" {
 				continue
 			}
 			calls := false

@@ -1,6 +1,7 @@
 package correlate
 
 import (
+	"iter"
 	"net"
 	"slices"
 	"strings"
@@ -53,47 +54,51 @@ func (DNSPointsTo) InterestedIn() []string {
 	}
 }
 
-func (DNSPointsTo) Correlate(g Graph) []asset.Edge {
-	var edges []asset.Edge
-	for _, rec := range g.DNSRecords() {
-		for _, val := range splitValues(rec.Metadata["values"]) {
-			var targets []asset.Asset
-			if net.ParseIP(val) != nil {
-				targets = g.AssetsByPublicIP(val)
-			} else {
-				targets = g.AssetsByDomain(val)
-			}
-			// Deterministic truncation: sort by ID before capping so a value
-			// over the cap drops the same tail every rebuild rather than a
-			// nondeterministic subset (the map-iteration order of the index).
-			if len(targets) > maxDNSTargetsPerValue {
-				targets = slices.Clone(targets)
-				slices.SortFunc(targets, func(a, b asset.Asset) int {
-					return strings.Compare(a.ID, b.ID)
-				})
-				targets = targets[:maxDNSTargetsPerValue]
-			}
-			// No self/record-to-record guard is needed here: NewGraph keeps DNS
-			// name assets out of byPublicIP/byDomain entirely, so a target is
-			// always infrastructure.
-			for _, t := range targets {
-				if !dnsPointsToTargetTypes[t.Type] {
-					continue
+func (r DNSPointsTo) Correlate(g Graph) []asset.Edge {
+	return slices.Collect(r.Edges(g))
+}
+
+func (DNSPointsTo) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+		for _, rec := range g.DNSRecords() {
+			for _, val := range splitValues(rec.Metadata["values"]) {
+				var targets []asset.Asset
+				if net.ParseIP(val) != nil {
+					targets = g.AssetsByPublicIP(val)
+				} else {
+					targets = g.AssetsByDomain(val)
 				}
-				edges = append(edges, asset.Edge{
-					SrcID: rec.ID, SrcType: "dns_record",
-					DstID: t.ID, DstType: t.Type,
-					EdgeType: EdgeDNSPointsTo,
-					Properties: map[string]string{
-						"origin":        edgeOrigin,
-						"rule":          "dns_points_to",
-						"matched_value": val,
-					},
-				})
+				// Deterministic truncation: sort by ID before capping so a value
+				// over the cap drops the same tail every rebuild rather than a
+				// nondeterministic subset (the map-iteration order of the index).
+				if len(targets) > maxDNSTargetsPerValue {
+					targets = slices.Clone(targets)
+					slices.SortFunc(targets, func(a, b asset.Asset) int {
+						return strings.Compare(a.ID, b.ID)
+					})
+					targets = targets[:maxDNSTargetsPerValue]
+				}
+				// No self/record-to-record guard is needed here: NewGraph keeps DNS
+				// name assets out of byPublicIP/byDomain entirely, so a target is
+				// always infrastructure.
+				for _, t := range targets {
+					if !dnsPointsToTargetTypes[t.Type] {
+						continue
+					}
+					if !yield(dnsResolutionEdge(rec.ID, t.ID, t.Type, val)) {
+						return
+					}
+				}
 			}
 		}
 	}
-	return edges
+}
+
+func dnsResolutionEdge(record, target, kind, value string) asset.Edge {
+	return asset.Edge{SrcID: record, SrcType: "dns_record", DstID: target, DstType: kind,
+		EdgeType: EdgeDNSPointsTo, Properties: map[string]string{
+			"origin": edgeOrigin, "rule": "dns_points_to", "matched_value": value,
+		}}
 }
 
 // splitValues parses a dns_record's comma-joined values into trimmed,

@@ -107,6 +107,7 @@ func emittableMetricNames(t *testing.T) map[string]bool {
 	m.ObserveCorrelateSweep("full", "ok")
 	m.ObserveCorrelateFullSuccess(1720000000)
 	m.ObserveCorrelateView(490258, 600000)
+	m.ObserveCorrelateBuffer("index", 200<<20, 256<<20)
 	m.ObserveScopeCompletions("aws-1", []ScopeCompletion{{Scope: "eu-west-1/ec2:instances", Count: 3}}, 1720000000)
 	m.ObserveDeletionCandidates("aws-1", 4, false)
 	m.ObserveGraphTierFallthrough("seed")

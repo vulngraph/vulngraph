@@ -1,6 +1,8 @@
 package correlate
 
 import (
+	"iter"
+	"slices"
 	"sort"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
@@ -38,58 +40,8 @@ func (ImageOwnership) InterestedIn() []string {
 	return []string{"declared_image_build", "container_image"}
 }
 
-func (ImageOwnership) Correlate(g Graph) []asset.Edge {
-	// declarers[image] = repo asset IDs declaring it, deduped and sorted so the
-	// confidence verdict and the edge order are the same on every rebuild.
-	declarers := map[string]map[string]bool{}
-	for _, d := range g.DeclaredImageBuilds() {
-		img := asset.NormalizeImageRef(d.Metadata["image"])
-		repoID := d.Metadata["repo"]
-		if img == "" || repoID == "" {
-			continue
-		}
-		if declarers[img] == nil {
-			declarers[img] = map[string]bool{}
-		}
-		declarers[img][repoID] = true
-	}
-
-	var edges []asset.Edge
-	for _, d := range g.DeclaredImageBuilds() {
-		img := asset.NormalizeImageRef(d.Metadata["image"])
-		if img == "" {
-			continue
-		}
-		images := g.ContainerImagesByPath(img)
-		if len(images) == 0 {
-			// Declared but not running: no live node to anchor the edge to.
-			continue
-		}
-		repo, ok := g.RepoByFullName(d.Metadata["repo"])
-		if !ok {
-			continue
-		}
-		confidence := "high"
-		if len(declarers[img]) > 1 {
-			confidence = "medium"
-		}
-		for _, live := range images {
-			edges = append(edges, asset.Edge{
-				SrcID: live.ID, SrcType: "container_image",
-				DstID: repo.ID, DstType: "github_repo",
-				EdgeType: EdgeDefinedIn,
-				Properties: map[string]string{
-					"origin":     edgeOrigin,
-					"rule":       "image_ownership",
-					"confidence": confidence,
-					"provenance": "image_ref",
-					"path":       d.Metadata["path"],
-					"image":      img,
-				},
-			})
-		}
-	}
-
+func (r ImageOwnership) Correlate(g Graph) []asset.Edge {
+	edges := slices.Collect(r.Edges(g))
 	// One declaration per (repo, image) already, but two repos declaring the
 	// same image legitimately produce two edges into the same live image — sort
 	// so the emitted order is stable regardless of asset scan order.
@@ -99,5 +51,62 @@ func (ImageOwnership) Correlate(g Graph) []asset.Edge {
 		}
 		return edges[i].DstID < edges[j].DstID
 	})
+
 	return edges
+}
+func (ImageOwnership) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+		// declarers[image] = repo asset IDs declaring it, deduped and sorted so the
+		// confidence verdict and the edge order are the same on every rebuild.
+		declarers := map[string]map[string]bool{}
+		for _, d := range g.DeclaredImageBuilds() {
+			img := asset.NormalizeImageRef(d.Metadata["image"])
+			repoID := d.Metadata["repo"]
+			if img == "" || repoID == "" {
+				continue
+			}
+			if declarers[img] == nil {
+				declarers[img] = map[string]bool{}
+			}
+			declarers[img][repoID] = true
+		}
+
+		for _, d := range g.DeclaredImageBuilds() {
+			img := asset.NormalizeImageRef(d.Metadata["image"])
+			if img == "" {
+				continue
+			}
+			images := g.ContainerImagesByPath(img)
+			if len(images) == 0 {
+				// Declared but not running: no live node to anchor the edge to.
+				continue
+			}
+			repo, ok := g.RepoByFullName(d.Metadata["repo"])
+			if !ok {
+				continue
+			}
+			confidence := "high"
+			if len(declarers[img]) > 1 {
+				confidence = "medium"
+			}
+			for _, live := range images {
+				if !yield(asset.Edge{
+					SrcID: live.ID, SrcType: "container_image",
+					DstID: repo.ID, DstType: "github_repo",
+					EdgeType: EdgeDefinedIn,
+					Properties: map[string]string{
+						"origin":     edgeOrigin,
+						"rule":       "image_ownership",
+						"confidence": confidence,
+						"provenance": "image_ref",
+						"path":       d.Metadata["path"],
+						"image":      img,
+					},
+				}) {
+					return
+				}
+			}
+		}
+
+	}
 }

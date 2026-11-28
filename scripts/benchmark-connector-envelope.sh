@@ -3,7 +3,7 @@
 set -euo pipefail
 profile="${1:-smoke}"
 test_package="${PERF_ENVELOPE_PACKAGE:-./internal/jobs}"
-case "$test_package" in ./internal/jobs|./internal/app/correlate) ;; *) echo 'unsupported fixture package' >&2; exit 2;; esac
+case "$test_package" in ./internal/jobs|./internal/app/correlate|./internal/app/asset) ;; *) echo 'unsupported fixture package' >&2; exit 2;; esac
 case "$profile" in smoke|target|million|two-million) ;; *) echo 'expected smoke, target, million or two-million' >&2; exit 2;; esac
 root="$(cd "$(dirname "$0")/.." && pwd)"
 bounded() { python3 "$root/scripts/run_bounded.py" "$@"; }

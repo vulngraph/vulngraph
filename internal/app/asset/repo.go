@@ -466,11 +466,15 @@ var criticalEdgeTypes = graphschema.TierEdgeTypes(graphschema.TierCritical)
 var bulkEdgeTypes = graphschema.TierEdgeTypes(graphschema.TierBulk)
 
 // criticalEdgesQ loads all attack-path critical edges with NO LIMIT.
-// These are small in count but essential — every attack-path Cypher query uses them.
 // No ORDER BY: Ladybug doesn't need ordered edges, and sorting the full set before
 // returning would be pure memory pressure. max_bytes_before_external_group_by
 // spills the GROUP BY/argMax to disk instead of OOMing ClickHouse once the
 // critical-edge set grows.
+// Ordered aggregation consumes the existing (src_id, edge_type, dst_id) storage
+// order to reduce aggregation state. All five grouping columns and the latest
+// properties remain part of the query; this does not sort the full result.
+// Bound ordered blocks to 4 MiB: the default 50 MB buffering regresses the
+// smaller workload's peak even when ordered aggregation helps large inputs.
 //
 // connected_via_sg is the one uncapped edge that could be huge. The dst_id
 // filter below only fetches memberships whose destination is a real
@@ -485,7 +489,7 @@ var criticalEdgesQ = fmt.Sprintf(
 		  AND (edge_type != 'connected_via_sg'
 		       OR dst_id IN (SELECT id FROM assets WHERE type = 'security_group'))
 		GROUP BY src_id, src_type, dst_id, dst_type, edge_type
-		SETTINGS max_bytes_before_external_group_by = 2000000000`,
+		SETTINGS max_bytes_before_external_group_by = 2000000000, optimize_aggregation_in_order = 1, aggregation_in_order_max_block_bytes = 4194304`,
 	quotedCSV(criticalEdgeTypes))
 
 // bulkEdgesQ loads high-volume context edges, capped per type AND in total.

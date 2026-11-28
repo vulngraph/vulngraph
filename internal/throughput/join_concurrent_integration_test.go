@@ -38,6 +38,13 @@ type joinOperation struct {
 }
 
 type concurrentJoinReport struct {
+	MergeSettings         map[string]string        `json:"merge_settings,omitempty"`
+	PartsAfter            map[string]joinPartCount `json:"parts_after_requests,omitempty"`
+	PartsRecovered        map[string]joinPartCount `json:"parts_after_merge_recovery,omitempty"`
+	MergeRecoveryStarted  time.Time                `json:"merge_recovery_started,omitempty"`
+	MergeRecoveryFinished time.Time                `json:"merge_recovery_finished,omitempty"`
+	MergeRecoveryError    string                   `json:"merge_recovery_error,omitempty"`
+
 	Experiment         string                    `json:"experiment"`
 	BaselineQueryShape string                    `json:"baseline_query_shape"`
 	BudgetScope        string                    `json:"budget_scope"`
@@ -187,6 +194,29 @@ func runConcurrentJoins(t *testing.T, ctx context.Context, admin, app *db.CH, p 
 		require.NoError(t, e)
 		require.NoError(t, os.WriteFile(filepath.Join(os.Getenv("PERF_QUERY_DIR"), "concurrent-joins.json"), append(data, '\n'), 0o600))
 	}()
+	if experiment == "merge_cpu" || experiment == "latest_enrichment_keys" {
+		report.MergeSettings = map[string]string{}
+		require.NoError(t, admin.Select(ctx, func(rows driver.Rows) error {
+			for rows.Next() {
+				var k, v string
+				if e := rows.Scan(&k, &v); e != nil {
+					return e
+				}
+				report.MergeSettings[k] = v
+			}
+			return rows.Err()
+		}, `SELECT name,value FROM system.server_settings WHERE name IN ('background_pool_size','background_merges_mutations_concurrency_ratio','max_server_memory_usage')`))
+		wantThreads := os.Getenv("PERF_JOIN_MERGE_THREADS")
+		if wantThreads == "" {
+			wantThreads = "16"
+		}
+		require.Equal(t, wantThreads, report.MergeSettings["background_pool_size"])
+		threads, e := strconv.Atoi(wantThreads)
+		require.NoError(t, e)
+		ratio, e := strconv.ParseFloat(report.MergeSettings["background_merges_mutations_concurrency_ratio"], 64)
+		require.NoError(t, e)
+		require.Equal(t, float64(32), float64(threads)*ratio, "same merge task admission capacity")
+	}
 	repo := finding.NewCHRepo(app)
 	assets := asset.NewCHRepo(app)
 	wantSummary, wantClusters := largeJoinOracle(n, stamp, "")
@@ -254,7 +284,9 @@ func runConcurrentJoins(t *testing.T, ctx context.Context, admin, app *db.CH, p 
 				var e error
 				if op.Kind == "summary" {
 					var got finding.Summary
-					if currentProduction || (variant == "candidate" && experiment == "latest_rows") {
+					if variant == "candidate" && experiment == "latest_enrichment_keys" {
+						got, e = readJoinSummaryCandidate(callCtx, app, "", experiment)
+					} else if currentProduction || (variant == "candidate" && experiment == "latest_rows") {
 						got, e = repo.Summary(callCtx, finding.Filter{})
 					} else {
 						got, e = readJoinSummaryCandidate(callCtx, app, "", "baseline_rows")
@@ -265,7 +297,9 @@ func runConcurrentJoins(t *testing.T, ctx context.Context, admin, app *db.CH, p 
 				} else {
 					var got []finding.Cluster
 					var total int
-					if currentProduction || (variant == "candidate" && experiment == "latest_rows") {
+					if variant == "candidate" && experiment == "latest_enrichment_keys" {
+						got, total, e = readJoinClustersCandidate(callCtx, app, "", experiment)
+					} else if currentProduction || (variant == "candidate" && experiment == "latest_rows") {
 						got, total, e = repo.Clusters(callCtx, finding.Filter{})
 					} else {
 						got, total, e = readJoinClustersCandidate(callCtx, app, "", "baseline_rows")
@@ -383,6 +417,25 @@ func runConcurrentJoins(t *testing.T, ctx context.Context, admin, app *db.CH, p 
 		}
 		return rows.Err()
 	}, strings.Replace(largeJoinCosts, "log_comment=?", "startsWith(log_comment,?)", 1), prefix))
+	if experiment == "merge_cpu" || experiment == "latest_enrichment_keys" {
+		report.PartsAfter, err = joinParts(ctx, admin)
+		require.NoError(t, err)
+		report.MergeRecoveryStarted = time.Now().UTC()
+		report.PartsRecovered, err = settleJoinParts(ctx, admin)
+		report.MergeRecoveryFinished = time.Now().UTC()
+		if err != nil {
+			report.MergeRecoveryError = err.Error()
+		}
+		require.NoError(t, err)
+		got, e := repo.Summary(ctx, finding.Filter{})
+		require.NoError(t, e)
+		require.Equal(t, wantSummary, got, "complete summary after ordinary merge recovery")
+		clusters, total, e := repo.Clusters(ctx, finding.Filter{Limit: 500})
+		require.NoError(t, e)
+		sort.Slice(clusters, func(i, j int) bool { return clusters[i].CheckID < clusters[j].CheckID })
+		require.Equal(t, len(wantClusters), total)
+		require.Equal(t, wantClusters, clusters, "complete clusters after ordinary merge recovery")
+	}
 	var latencies []float64
 	correct := true
 	for _, op := range report.Operations {

@@ -1,5 +1,8 @@
 # Synthetic pipeline benchmarks
 
+See [sizing and benchmark evidence](performance/sizing.md) for estate dimensions,
+measured configurations and the distinction between component tests and capacity.
+
 Run the production ClickHouse reads, finding rollups, and Ladybug graph refresh
 against generated data, with no cloud account or production dump:
 

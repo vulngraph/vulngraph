@@ -11,6 +11,9 @@ completes fewer reads during merge catch-up and costs more CPU after merges
 settle. It remains a benchmark experiment. No production settings or deployment
 budgets change, and no full-profile coverage is awarded.
 
+The subsequent [catch-up sizing comparison](catchup-capacity.md) retains the
+production SQL and measures a larger optional database resource configuration.
+
 ## Dataset and resource boundaries
 
 The fixture contains one million logical assets, five million findings,

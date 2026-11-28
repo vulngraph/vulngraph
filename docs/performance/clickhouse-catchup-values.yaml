@@ -1,0 +1,16 @@
+# Optional database sizing for the measured catch-up workload in catchup-capacity.md.
+# This is not whole-application capacity or a minimum hardware requirement.
+# Size workers, Postgres, scanners, persistent storage and replicas separately.
+clickhouse:
+  resources:
+    requests: { cpu: "16", memory: "32Gi" }
+    limits: { cpu: "16", memory: "32Gi" }
+  tuning:
+    maxThreads: 2
+    maxConcurrentQueries: "24"
+    backgroundPoolSize: 16
+    maxServerMemoryBytes: "25769803776"
+    maxMemoryBytes: "4294967296"
+    markCacheBytes: "536870912"
+    indexMarkCacheBytes: "268435456"
+    uncompressedCacheBytes: "134217728"

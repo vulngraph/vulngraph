@@ -246,7 +246,7 @@ func TestLargeJoinCosts(t *testing.T) {
 	report.ResourceCohort = os.Getenv("PERF_JOIN_RESOURCES")
 	currentProduction := false
 	switch report.Experiment {
-	case "join_spill", "merge_join", "merge_join_bounded", "merge_join_blocks":
+	case "join_spill", "merge_join", "merge_join_bounded", "merge_join_blocks", "merge_cpu", "latest_enrichment_keys":
 		currentProduction = true
 	}
 	if report.Experiment == "join_spill" {
@@ -295,7 +295,7 @@ func TestLargeJoinCosts(t *testing.T) {
 		if report.CandidateSettings != nil {
 			lifecycleCtx = app.WithQuerySettings(ctx, report.CandidateSettings)
 		}
-		report.CandidateLifecycle = checkLatestRowLifecycle(t, lifecycleCtx, admin, app)
+		report.CandidateLifecycle = checkLatestRowLifecycle(t, lifecycleCtx, admin, app, report.Experiment)
 	}
 	start := time.Now()
 	stamp := start.Add(-time.Hour).Unix()
@@ -375,7 +375,9 @@ func TestLargeJoinCosts(t *testing.T) {
 						var got, want any
 						var callErr error
 						if kind == "summary" {
-							if currentProduction {
+							if mode == "candidate" && report.Experiment == "latest_enrichment_keys" {
+								got, callErr = readJoinSummaryCandidate(ctx, app, source, report.Experiment)
+							} else if currentProduction {
 								got, callErr = findingRepo.Summary(ctx, finding.Filter{Source: source})
 							} else if mode == "candidate" && (report.Experiment == "enrichment_keys" || report.Experiment == "latest_rows") {
 								got, callErr = readJoinSummaryCandidate(ctx, app, source, report.Experiment)
@@ -388,7 +390,9 @@ func TestLargeJoinCosts(t *testing.T) {
 						} else {
 							var rows []finding.Cluster
 							var total int
-							if currentProduction {
+							if mode == "candidate" && report.Experiment == "latest_enrichment_keys" {
+								rows, total, callErr = readJoinClustersCandidate(ctx, app, source, report.Experiment)
+							} else if currentProduction {
 								rows, total, callErr = findingRepo.Clusters(ctx, finding.Filter{Source: source})
 							} else if mode == "candidate" && (report.Experiment == "enrichment_keys" || report.Experiment == "latest_rows") {
 								rows, total, callErr = readJoinClustersCandidate(ctx, app, source, report.Experiment)

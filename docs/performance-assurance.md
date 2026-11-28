@@ -257,6 +257,14 @@ The fixed 512 MiB comparison guard is not a universal capacity limit. These
 repository measurements do not close the full-corpus concurrent pipeline or add
 weighted coverage; the indexed-Postgres control and remaining profiles stay open.
 
+[Catch-up sizing evidence](performance/catchup-capacity.md) adds one matched
+8/16-CPU pair and two 16-CPU confirmations at unchanged SQL and arrivals. All
+three larger runs complete 30 reads, six write windows and six package reads;
+p95 is 3.814–4.222 seconds, including merge catch-up. This is an optional
+database workload configuration, not full-estate acceptance. The [sizing guide](performance/sizing.md)
+labels measured results and unvalidated planning budgets separately; complete
+mixed/native/aged/24-hour evidence and weighted coverage remain open.
+
 PERF-03 also tracks [derived-state inventory page costs](specs/asset-derived-state.md#inventory-page-costs).
 Version-key hydration passes the measured 100,000-asset query budgets, but an
 empty selective page still reads 5,002 rows versus its 2,002-row joined baseline.

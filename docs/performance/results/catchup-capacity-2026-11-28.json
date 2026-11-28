@@ -1,0 +1,1952 @@
+{
+  "schema_version": 1,
+  "full_profile_accepted": false,
+  "weighted_coverage_awarded": 0,
+  "evidence_scope": "Synthetic repository-level query, ingestion and merge recovery; not complete estate capacity.",
+  "comparison_design": "One local16g/local32g sizing pair plus two unchanged local32g confirmations. Two separate rejected hypotheses have one pair each.",
+  "sizing_runs": [
+    {
+      "run": "join-capacity-sizing-v1-r1-baseline",
+      "variant": "baseline",
+      "phase": "catchup",
+      "source_patch_sha256": "260d584d3c3c8a92553af97da65cbd23300b47fc7bcc833f5c2c3e6e2abc04aa",
+      "correctness_and_terminal_accounting_passed": false,
+      "fixed_comparison_passed": false,
+      "completed_reads": 26,
+      "offered_reads": 30,
+      "observed_work_and_drain_seconds": 32.25821590423584,
+      "successful_reads_per_elapsed_second": 0.805996217434515,
+      "success_read_p95_seconds": 10.46507978439331,
+      "success_read_p99_seconds": 11.081827878952026,
+      "all_attempt_p95_seconds": 11.506905000000001,
+      "all_attempt_p99_seconds": 12.002711999999999,
+      "read_admission_wait_p99_seconds": 3.269699811935425,
+      "verified_ingestion_windows": 6,
+      "ingestion_windows": 6,
+      "verified_ingest_freshness_p95_seconds": 15.999855041503906,
+      "terminal_queries": 66,
+      "query_read_rows": 2838780514,
+      "query_logical_read_bytes": 124384034525,
+      "query_memory_peak_bytes": 1586588151,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211795352
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 732682038
+        }
+      },
+      "parts_at_arrival_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211795352
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 732682038
+        }
+      },
+      "parts_after_requests": {
+        "assets": {
+          "parts": 2,
+          "physical_rows": 1000000,
+          "bytes_on_disk": 9350336
+        },
+        "finding_enrichment": {
+          "parts": 5,
+          "physical_rows": 26654671,
+          "bytes_on_disk": 192244237
+        },
+        "findings": {
+          "parts": 4,
+          "physical_rows": 9431728,
+          "bytes_on_disk": 773615839
+        },
+        "graph_edges": {
+          "parts": 75,
+          "physical_rows": 115252401,
+          "bytes_on_disk": 692931189
+        }
+      },
+      "parts_after_merge_recovery": {
+        "assets": {
+          "parts": 2,
+          "physical_rows": 1000000,
+          "bytes_on_disk": 9350336
+        },
+        "finding_enrichment": {
+          "parts": 5,
+          "physical_rows": 26654671,
+          "bytes_on_disk": 192244237
+        },
+        "findings": {
+          "parts": 4,
+          "physical_rows": 9431728,
+          "bytes_on_disk": 773615839
+        },
+        "graph_edges": {
+          "parts": 8,
+          "physical_rows": 115252401,
+          "bytes_on_disk": 424524363
+        }
+      },
+      "merge_recovery_error": "",
+      "arrival_to_merge_quiescence_seconds": 39.38924980163574,
+      "post_request_merge_recovery_seconds": 7.056095838546753,
+      "clickhouse": {
+        "sample_window_seconds": 32.38130593299866,
+        "maximum_boundary_offset_seconds": 0.09215497970581055,
+        "cpu_core_seconds": 257.12683300000003,
+        "cgroup_peak_at": "2026-11-28T07:40:16.796243+00:00",
+        "cgroup_peak_bytes": 15572307968,
+        "process_rss_at_cgroup_peak_bytes": 12450398208,
+        "swap_at_cgroup_peak_bytes": 0,
+        "peak_process_rss_bytes": 12450398208,
+        "io_by_device": {
+          "254:16": {
+            "rbytes": 1312047104,
+            "wbytes": 1055301632,
+            "rios": 2756,
+            "wios": 434,
+            "dbytes": 0,
+            "dios": 0
+          }
+        }
+      },
+      "clickhouse_including_merge_recovery": {
+        "sample_window_seconds": 39.325252056121826,
+        "maximum_boundary_offset_seconds": 0.09318184852600098,
+        "cpu_core_seconds": 259.286889,
+        "cgroup_peak_bytes": 15572307968,
+        "swap_at_cgroup_peak_bytes": 0,
+        "max_observed_swap_bytes": 0,
+        "io_by_device": {
+          "254:16": {
+            "rbytes": 1312509952,
+            "wbytes": 1328840704,
+            "rios": 2764,
+            "wios": 681,
+            "dbytes": 0,
+            "dios": 0
+          }
+        }
+      },
+      "merge_settings": {
+        "background_merges_mutations_concurrency_ratio": "2",
+        "background_pool_size": "16",
+        "max_server_memory_usage": "12884901888"
+      },
+      "resources": {
+        "cohort": "local16g",
+        "clickhouse_cpus": 8,
+        "server_memory_bytes": 12884901888,
+        "query_memory_bytes": 4294967296,
+        "per_query_threads": 2,
+        "background_pool_size": 16,
+        "background_merges_mutations_concurrency_ratio": 2,
+        "fixed_comparison_query_budget_bytes": 536870912,
+        "docker": {
+          "cpus": 18,
+          "memory_bytes": 42057732096
+        },
+        "container_memory_bytes": 17179869184,
+        "swap_enabled": false
+      },
+      "operation_counts": {
+        "clusters": {
+          "offered": 15,
+          "verified": 11,
+          "errors": 4
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 6,
+          "errors": 0
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 6,
+          "errors": 0
+        },
+        "summary": {
+          "offered": 15,
+          "verified": 15,
+          "errors": 0
+        }
+      },
+      "sql_exception_codes": [
+        735,
+        236,
+        241,
+        735
+      ],
+      "comparison_failure_counts": {
+        "query memory exceeds 512 MiB": 30,
+        "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)": 1
+      },
+      "fixture": {
+        "fixture_version": 5,
+        "source": "923a18b17cb445f773109eb7db6b367f3715d0e5",
+        "platform": "darwin/arm64",
+        "go_version": "go1.26.11",
+        "logical_findings": 5000000,
+        "logical_enrichment": 25000000,
+        "finding_enrichment_versions": 3,
+        "inventory_counts": {
+          "logical_assets": 1000000,
+          "logical_edges": 102275000,
+          "physical_asset_rows": 1011000,
+          "physical_edge_rows": 123266003
+        },
+        "inventory_counts_before_extra_versions": {
+          "logical_assets": 1000000,
+          "logical_edges": 102275000,
+          "physical_asset_rows": 1000000,
+          "physical_edge_rows": 103266003
+        },
+        "additional_membership_versions": "two extra versions for every tenth image and package",
+        "application_query_concurrency": 8
+      },
+      "raw_artifact_sha256": {
+        "concurrent-joins.json": "b8be461b807dc242426adf4c376099ce7abea813968d152e417353677c16c98c",
+        "large-joins.json": "e714c7f9eb2c8afa13356bbd51d9a457fbb9d36570484c650279d28b634f9ae7",
+        "source.patch": "260d584d3c3c8a92553af97da65cbd23300b47fc7bcc833f5c2c3e6e2abc04aa",
+        "source-files.sha256": "0e9420654f753290749b6dd780e851a44d77a6356b2e6ac2f84b2f7d432daad5",
+        "resource-profile.json": "6fd4bd0f5e16afc3a8ae2b5becba257461fcba3f52b508bb122d61073ed35f3e",
+        "effective-config.yaml": "09fbf43cd9777555a8f1e2dac19365938eab23acaa6400ef2df4a719d0332a7c",
+        "environment.json": "bdf1593d50d44eaa9091b5c4f16ef7dfbbe503393208c59e6d2691c2c03d764e",
+        "clickhouse-resources.jsonl": "09a9d692143d2802fba14bacf1cdf99fef95ade036205690ffb094dcb5869616",
+        "run.log": "837866e7ba3792187b11928f52692c6f1d03326172ed5ac160798eb0a065e394"
+      }
+    },
+    {
+      "run": "join-capacity-sizing-v1-r1-candidate",
+      "variant": "candidate",
+      "phase": "catchup",
+      "source_patch_sha256": "260d584d3c3c8a92553af97da65cbd23300b47fc7bcc833f5c2c3e6e2abc04aa",
+      "correctness_and_terminal_accounting_passed": true,
+      "fixed_comparison_passed": false,
+      "completed_reads": 30,
+      "offered_reads": 30,
+      "observed_work_and_drain_seconds": 30.455655813217163,
+      "successful_reads_per_elapsed_second": 0.9850387128088236,
+      "success_read_p95_seconds": 3.927961826324463,
+      "success_read_p99_seconds": 4.0685648918151855,
+      "all_attempt_p95_seconds": 3.927962,
+      "all_attempt_p99_seconds": 4.068565,
+      "read_admission_wait_p99_seconds": 0.0021288394927978516,
+      "verified_ingestion_windows": 6,
+      "ingestion_windows": 6,
+      "verified_ingest_freshness_p95_seconds": 6.215447902679443,
+      "terminal_queries": 66,
+      "query_read_rows": 2506376008,
+      "query_logical_read_bytes": 114190132846,
+      "query_memory_peak_bytes": 1582675926,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211778606
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 732489433
+        }
+      },
+      "parts_at_arrival_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211778606
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 732489433
+        }
+      },
+      "parts_after_requests": {
+        "assets": {
+          "parts": 2,
+          "physical_rows": 1000000,
+          "bytes_on_disk": 9350336
+        },
+        "finding_enrichment": {
+          "parts": 5,
+          "physical_rows": 26654671,
+          "bytes_on_disk": 192244151
+        },
+        "findings": {
+          "parts": 4,
+          "physical_rows": 10414768,
+          "bytes_on_disk": 854236672
+        },
+        "graph_edges": {
+          "parts": 8,
+          "physical_rows": 115252337,
+          "bytes_on_disk": 424583434
+        }
+      },
+      "parts_after_merge_recovery": {
+        "assets": {
+          "parts": 2,
+          "physical_rows": 1000000,
+          "bytes_on_disk": 9350336
+        },
+        "finding_enrichment": {
+          "parts": 5,
+          "physical_rows": 26654671,
+          "bytes_on_disk": 192244151
+        },
+        "findings": {
+          "parts": 4,
+          "physical_rows": 10414768,
+          "bytes_on_disk": 854236672
+        },
+        "graph_edges": {
+          "parts": 8,
+          "physical_rows": 115252337,
+          "bytes_on_disk": 424583434
+        }
+      },
+      "merge_recovery_error": "",
+      "arrival_to_merge_quiescence_seconds": 35.56275391578674,
+      "post_request_merge_recovery_seconds": 5.0449841022491455,
+      "clickhouse": {
+        "sample_window_seconds": 30.478358030319214,
+        "maximum_boundary_offset_seconds": 0.12669706344604492,
+        "cpu_core_seconds": 202.079731,
+        "cgroup_peak_at": "2026-11-28T07:41:55.355324+00:00",
+        "cgroup_peak_bytes": 13698613248,
+        "process_rss_at_cgroup_peak_bytes": 10115444736,
+        "swap_at_cgroup_peak_bytes": 0,
+        "peak_process_rss_bytes": 10115444736,
+        "io_by_device": {
+          "254:16": {
+            "rbytes": 553955328,
+            "wbytes": 2924285952,
+            "rios": 582,
+            "wios": 2838,
+            "dbytes": 0,
+            "dios": 0
+          }
+        }
+      },
+      "clickhouse_including_merge_recovery": {
+        "sample_window_seconds": 35.396761894226074,
+        "maximum_boundary_offset_seconds": 0.1055459976196289,
+        "cpu_core_seconds": 202.47558,
+        "cgroup_peak_bytes": 13698613248,
+        "swap_at_cgroup_peak_bytes": 0,
+        "max_observed_swap_bytes": 0,
+        "io_by_device": {
+          "254:16": {
+            "rbytes": 553955328,
+            "wbytes": 2924285952,
+            "rios": 582,
+            "wios": 2838,
+            "dbytes": 0,
+            "dios": 0
+          }
+        }
+      },
+      "merge_settings": {
+        "background_merges_mutations_concurrency_ratio": "2",
+        "background_pool_size": "16",
+        "max_server_memory_usage": "25769803776"
+      },
+      "resources": {
+        "cohort": "local32g",
+        "clickhouse_cpus": 16,
+        "server_memory_bytes": 25769803776,
+        "query_memory_bytes": 4294967296,
+        "per_query_threads": 2,
+        "background_pool_size": 16,
+        "background_merges_mutations_concurrency_ratio": 2,
+        "fixed_comparison_query_budget_bytes": 536870912,
+        "docker": {
+          "cpus": 18,
+          "memory_bytes": 42057732096
+        },
+        "container_memory_bytes": 34359738368,
+        "swap_enabled": false
+      },
+      "operation_counts": {
+        "clusters": {
+          "offered": 15,
+          "verified": 15,
+          "errors": 0
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 6,
+          "errors": 0
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 6,
+          "errors": 0
+        },
+        "summary": {
+          "offered": 15,
+          "verified": 15,
+          "errors": 0
+        }
+      },
+      "sql_exception_codes": [],
+      "comparison_failure_counts": {
+        "query memory exceeds 512 MiB": 30,
+        "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)": 1
+      },
+      "fixture": {
+        "fixture_version": 5,
+        "source": "923a18b17cb445f773109eb7db6b367f3715d0e5",
+        "platform": "darwin/arm64",
+        "go_version": "go1.26.11",
+        "logical_findings": 5000000,
+        "logical_enrichment": 25000000,
+        "finding_enrichment_versions": 3,
+        "inventory_counts": {
+          "logical_assets": 1000000,
+          "logical_edges": 102275000,
+          "physical_asset_rows": 1011000,
+          "physical_edge_rows": 123266003
+        },
+        "inventory_counts_before_extra_versions": {
+          "logical_assets": 1000000,
+          "logical_edges": 102275000,
+          "physical_asset_rows": 1000000,
+          "physical_edge_rows": 103266003
+        },
+        "additional_membership_versions": "two extra versions for every tenth image and package",
+        "application_query_concurrency": 8
+      },
+      "raw_artifact_sha256": {
+        "concurrent-joins.json": "7c2a1a186821f689368d572c797c14943d3e815782ea7bee470506c8f08713fc",
+        "large-joins.json": "b4acefa717a35e3868a77a7acd745a39be5f11b328eb1ca807ae8584f519a3de",
+        "source.patch": "260d584d3c3c8a92553af97da65cbd23300b47fc7bcc833f5c2c3e6e2abc04aa",
+        "source-files.sha256": "0e9420654f753290749b6dd780e851a44d77a6356b2e6ac2f84b2f7d432daad5",
+        "resource-profile.json": "85ea9b5a39b4c9dc0a87cae54d0d106fecb16242cc7f976cfcb9f2fa36484a30",
+        "effective-config.yaml": "22ccbfcaf498dbd190c116d2d8d73cd29ac22178080e6112893faf9ba7991d8a",
+        "environment.json": "73997719ba0c9c15793c18484061d0e4c2ac85964f6f30cdd0118b2cd097a924",
+        "clickhouse-resources.jsonl": "7cc1126c5d52c1af99a40a6fc26f361134d8e400545ebbe7b340dbff38a588e8",
+        "run.log": "3297a99213a1e552627abcc8da8c88fdc9a1d69fad3f531e9c93d221821d813b"
+      }
+    },
+    {
+      "run": "join-capacity-sizing-v1-r2-candidate",
+      "variant": "candidate",
+      "phase": "catchup",
+      "source_patch_sha256": "260d584d3c3c8a92553af97da65cbd23300b47fc7bcc833f5c2c3e6e2abc04aa",
+      "correctness_and_terminal_accounting_passed": true,
+      "fixed_comparison_passed": false,
+      "completed_reads": 30,
+      "offered_reads": 30,
+      "observed_work_and_drain_seconds": 30.43036413192749,
+      "successful_reads_per_elapsed_second": 0.9858574110364998,
+      "success_read_p95_seconds": 3.8139421939849854,
+      "success_read_p99_seconds": 3.980705976486206,
+      "all_attempt_p95_seconds": 3.813942,
+      "all_attempt_p99_seconds": 3.980706,
+      "read_admission_wait_p99_seconds": 0.0020780563354492188,
+      "verified_ingestion_windows": 6,
+      "ingestion_windows": 6,
+      "verified_ingest_freshness_p95_seconds": 6.204509973526001,
+      "terminal_queries": 66,
+      "query_read_rows": 2500579685,
+      "query_logical_read_bytes": 112697108287,
+      "query_memory_peak_bytes": 1588390317,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211813928
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 733538664
+        }
+      },
+      "parts_at_arrival_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211813928
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 733538664
+        }
+      },
+      "parts_after_requests": {
+        "assets": {
+          "parts": 2,
+          "physical_rows": 1000000,
+          "bytes_on_disk": 9350352
+        },
+        "finding_enrichment": {
+          "parts": 6,
+          "physical_rows": 27766624,
+          "bytes_on_disk": 198441835
+        },
+        "findings": {
+          "parts": 4,
+          "physical_rows": 9431728,
+          "bytes_on_disk": 773795982
+        },
+        "graph_edges": {
+          "parts": 8,
+          "physical_rows": 115252415,
+          "bytes_on_disk": 426738802
+        }
+      },
+      "parts_after_merge_recovery": {
+        "assets": {
+          "parts": 2,
+          "physical_rows": 1000000,
+          "bytes_on_disk": 9350352
+        },
+        "finding_enrichment": {
+          "parts": 6,
+          "physical_rows": 27766624,
+          "bytes_on_disk": 198441835
+        },
+        "findings": {
+          "parts": 4,
+          "physical_rows": 9431728,
+          "bytes_on_disk": 773795982
+        },
+        "graph_edges": {
+          "parts": 8,
+          "physical_rows": 115252415,
+          "bytes_on_disk": 426738802
+        }
+      },
+      "merge_recovery_error": "",
+      "arrival_to_merge_quiescence_seconds": 35.54498219490051,
+      "post_request_merge_recovery_seconds": 5.048279047012329,
+      "clickhouse": {
+        "sample_window_seconds": 30.471320152282715,
+        "maximum_boundary_offset_seconds": 0.11373496055603027,
+        "cpu_core_seconds": 196.95047,
+        "cgroup_peak_at": "2026-11-28T07:44:58.407141+00:00",
+        "cgroup_peak_bytes": 13538209792,
+        "process_rss_at_cgroup_peak_bytes": 10052104192,
+        "swap_at_cgroup_peak_bytes": 0,
+        "peak_process_rss_bytes": 10052104192,
+        "io_by_device": {
+          "254:16": {
+            "rbytes": 466165760,
+            "wbytes": 3014127616,
+            "rios": 1036,
+            "wios": 2977,
+            "dbytes": 0,
+            "dios": 0
+          }
+        }
+      },
+      "clickhouse_including_merge_recovery": {
+        "sample_window_seconds": 35.676888942718506,
+        "maximum_boundary_offset_seconds": 0.11373496055603027,
+        "cpu_core_seconds": 197.826576,
+        "cgroup_peak_bytes": 13538209792,
+        "swap_at_cgroup_peak_bytes": 0,
+        "max_observed_swap_bytes": 0,
+        "io_by_device": {
+          "254:16": {
+            "rbytes": 469716992,
+            "wbytes": 3014127616,
+            "rios": 1049,
+            "wios": 2977,
+            "dbytes": 0,
+            "dios": 0
+          }
+        }
+      },
+      "merge_settings": {
+        "background_merges_mutations_concurrency_ratio": "2",
+        "background_pool_size": "16",
+        "max_server_memory_usage": "25769803776"
+      },
+      "resources": {
+        "cohort": "local32g",
+        "clickhouse_cpus": 16,
+        "server_memory_bytes": 25769803776,
+        "query_memory_bytes": 4294967296,
+        "per_query_threads": 2,
+        "background_pool_size": 16,
+        "background_merges_mutations_concurrency_ratio": 2,
+        "fixed_comparison_query_budget_bytes": 536870912,
+        "docker": {
+          "cpus": 18,
+          "memory_bytes": 42057732096
+        },
+        "container_memory_bytes": 34359738368,
+        "swap_enabled": false
+      },
+      "operation_counts": {
+        "clusters": {
+          "offered": 15,
+          "verified": 15,
+          "errors": 0
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 6,
+          "errors": 0
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 6,
+          "errors": 0
+        },
+        "summary": {
+          "offered": 15,
+          "verified": 15,
+          "errors": 0
+        }
+      },
+      "sql_exception_codes": [],
+      "comparison_failure_counts": {
+        "query memory exceeds 512 MiB": 30,
+        "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)": 1
+      },
+      "fixture": {
+        "fixture_version": 5,
+        "source": "923a18b17cb445f773109eb7db6b367f3715d0e5",
+        "platform": "darwin/arm64",
+        "go_version": "go1.26.11",
+        "logical_findings": 5000000,
+        "logical_enrichment": 25000000,
+        "finding_enrichment_versions": 3,
+        "inventory_counts": {
+          "logical_assets": 1000000,
+          "logical_edges": 102275000,
+          "physical_asset_rows": 1011000,
+          "physical_edge_rows": 123266003
+        },
+        "inventory_counts_before_extra_versions": {
+          "logical_assets": 1000000,
+          "logical_edges": 102275000,
+          "physical_asset_rows": 1000000,
+          "physical_edge_rows": 103266003
+        },
+        "additional_membership_versions": "two extra versions for every tenth image and package",
+        "application_query_concurrency": 8
+      },
+      "raw_artifact_sha256": {
+        "concurrent-joins.json": "7663bf46f27c76d69b1d286c44828baa6dee904788ecaaf91005f6a4eebcb6bf",
+        "large-joins.json": "b1dc65a4c6609c3908ccd5b85d93822a5384c392bfe6ae5b10e5fffc59777bed",
+        "source.patch": "260d584d3c3c8a92553af97da65cbd23300b47fc7bcc833f5c2c3e6e2abc04aa",
+        "source-files.sha256": "0e9420654f753290749b6dd780e851a44d77a6356b2e6ac2f84b2f7d432daad5",
+        "resource-profile.json": "5cd49eddac956ed36853bb7a098b7f82403fd2ffae5ca1a88f77fb3f7a47fa22",
+        "effective-config.yaml": "22ccbfcaf498dbd190c116d2d8d73cd29ac22178080e6112893faf9ba7991d8a",
+        "environment.json": "31f3af3604653c4d1c33fce7e8940c68ce4a8ac5da3104bd300feef441529652",
+        "clickhouse-resources.jsonl": "0c8a18fa2a821963475251cc004c1b73a3299233aa7fc41588fb44eff2bdea6b",
+        "run.log": "c23f62990f60dc169d46d831b3f9351d9e7db5dffcb5b08aa2c0adffa96e4fd8"
+      }
+    },
+    {
+      "run": "join-capacity-sizing-v1-r3-candidate",
+      "variant": "candidate",
+      "phase": "catchup",
+      "source_patch_sha256": "260d584d3c3c8a92553af97da65cbd23300b47fc7bcc833f5c2c3e6e2abc04aa",
+      "correctness_and_terminal_accounting_passed": true,
+      "fixed_comparison_passed": false,
+      "completed_reads": 30,
+      "offered_reads": 30,
+      "observed_work_and_drain_seconds": 30.445722103118896,
+      "successful_reads_per_elapsed_second": 0.9853601073540235,
+      "success_read_p95_seconds": 4.221697092056274,
+      "success_read_p99_seconds": 4.535130977630615,
+      "all_attempt_p95_seconds": 4.221697,
+      "all_attempt_p99_seconds": 4.535131000000001,
+      "read_admission_wait_p99_seconds": 0.001177072525024414,
+      "verified_ingestion_windows": 6,
+      "ingestion_windows": 6,
+      "verified_ingest_freshness_p95_seconds": 6.315809965133667,
+      "terminal_queries": 66,
+      "query_read_rows": 2490991360,
+      "query_logical_read_bytes": 111916256578,
+      "query_memory_peak_bytes": 1583151977,
+      "parts_before": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211780922
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 733160627
+        }
+      },
+      "parts_at_arrival_start": {
+        "assets": {
+          "parts": 8,
+          "physical_rows": 1011000,
+          "bytes_on_disk": 9521367
+        },
+        "finding_enrichment": {
+          "parts": 69,
+          "physical_rows": 75000000,
+          "bytes_on_disk": 422689091
+        },
+        "findings": {
+          "parts": 33,
+          "physical_rows": 15000000,
+          "bytes_on_disk": 1211780922
+        },
+        "graph_edges": {
+          "parts": 114,
+          "physical_rows": 123266003,
+          "bytes_on_disk": 733160627
+        }
+      },
+      "parts_after_requests": {
+        "assets": {
+          "parts": 2,
+          "physical_rows": 1000000,
+          "bytes_on_disk": 9350352
+        },
+        "finding_enrichment": {
+          "parts": 5,
+          "physical_rows": 26654671,
+          "bytes_on_disk": 192244210
+        },
+        "findings": {
+          "parts": 4,
+          "physical_rows": 9431728,
+          "bytes_on_disk": 773542840
+        },
+        "graph_edges": {
+          "parts": 9,
+          "physical_rows": 115252542,
+          "bytes_on_disk": 424776091
+        }
+      },
+      "parts_after_merge_recovery": {
+        "assets": {
+          "parts": 2,
+          "physical_rows": 1000000,
+          "bytes_on_disk": 9350352
+        },
+        "finding_enrichment": {
+          "parts": 5,
+          "physical_rows": 26654671,
+          "bytes_on_disk": 192244210
+        },
+        "findings": {
+          "parts": 4,
+          "physical_rows": 9431728,
+          "bytes_on_disk": 773542840
+        },
+        "graph_edges": {
+          "parts": 9,
+          "physical_rows": 115252542,
+          "bytes_on_disk": 424776091
+        }
+      },
+      "merge_recovery_error": "",
+      "arrival_to_merge_quiescence_seconds": 35.55408310890198,
+      "post_request_merge_recovery_seconds": 5.048686981201172,
+      "clickhouse": {
+        "sample_window_seconds": 30.336647033691406,
+        "maximum_boundary_offset_seconds": 0.11367297172546387,
+        "cpu_core_seconds": 206.32676600000002,
+        "cgroup_peak_at": "2026-11-28T07:46:41.477967+00:00",
+        "cgroup_peak_bytes": 13269712896,
+        "process_rss_at_cgroup_peak_bytes": 10390503424,
+        "swap_at_cgroup_peak_bytes": 0,
+        "peak_process_rss_bytes": 10390503424,
+        "io_by_device": {
+          "254:16": {
+            "rbytes": 1605165056,
+            "wbytes": 1322004480,
+            "rios": 2955,
+            "wios": 602,
+            "dbytes": 0,
+            "dios": 0
+          }
+        }
+      },
+      "clickhouse_including_merge_recovery": {
+        "sample_window_seconds": 35.528454065322876,
+        "maximum_boundary_offset_seconds": 0.028727054595947266,
+        "cpu_core_seconds": 207.05184000000003,
+        "cgroup_peak_bytes": 13269712896,
+        "swap_at_cgroup_peak_bytes": 0,
+        "max_observed_swap_bytes": 0,
+        "io_by_device": {
+          "254:16": {
+            "rbytes": 1605165056,
+            "wbytes": 1322221568,
+            "rios": 2955,
+            "wios": 604,
+            "dbytes": 0,
+            "dios": 0
+          }
+        }
+      },
+      "merge_settings": {
+        "background_merges_mutations_concurrency_ratio": "2",
+        "background_pool_size": "16",
+        "max_server_memory_usage": "25769803776"
+      },
+      "resources": {
+        "cohort": "local32g",
+        "clickhouse_cpus": 16,
+        "server_memory_bytes": 25769803776,
+        "query_memory_bytes": 4294967296,
+        "per_query_threads": 2,
+        "background_pool_size": 16,
+        "background_merges_mutations_concurrency_ratio": 2,
+        "fixed_comparison_query_budget_bytes": 536870912,
+        "docker": {
+          "cpus": 18,
+          "memory_bytes": 42057732096
+        },
+        "container_memory_bytes": 34359738368,
+        "swap_enabled": false
+      },
+      "operation_counts": {
+        "clusters": {
+          "offered": 15,
+          "verified": 15,
+          "errors": 0
+        },
+        "ingest": {
+          "offered": 6,
+          "verified": 6,
+          "errors": 0
+        },
+        "package-risk": {
+          "offered": 6,
+          "verified": 6,
+          "errors": 0
+        },
+        "summary": {
+          "offered": 15,
+          "verified": 15,
+          "errors": 0
+        }
+      },
+      "sql_exception_codes": [],
+      "comparison_failure_counts": {
+        "query memory exceeds 512 MiB": 30,
+        "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)": 1
+      },
+      "fixture": {
+        "fixture_version": 5,
+        "source": "923a18b17cb445f773109eb7db6b367f3715d0e5",
+        "platform": "darwin/arm64",
+        "go_version": "go1.26.11",
+        "logical_findings": 5000000,
+        "logical_enrichment": 25000000,
+        "finding_enrichment_versions": 3,
+        "inventory_counts": {
+          "logical_assets": 1000000,
+          "logical_edges": 102275000,
+          "physical_asset_rows": 1011000,
+          "physical_edge_rows": 123266003
+        },
+        "inventory_counts_before_extra_versions": {
+          "logical_assets": 1000000,
+          "logical_edges": 102275000,
+          "physical_asset_rows": 1000000,
+          "physical_edge_rows": 103266003
+        },
+        "additional_membership_versions": "two extra versions for every tenth image and package",
+        "application_query_concurrency": 8
+      },
+      "raw_artifact_sha256": {
+        "concurrent-joins.json": "e8cfede4a492a7c9995b0ba008676106ccf66459c067fe49b17a4925973a88ad",
+        "large-joins.json": "e4a628bfad2dc0929e854af78074bb76355e57d6f90b29d12c2dde89a3a3f05e",
+        "source.patch": "260d584d3c3c8a92553af97da65cbd23300b47fc7bcc833f5c2c3e6e2abc04aa",
+        "source-files.sha256": "0e9420654f753290749b6dd780e851a44d77a6356b2e6ac2f84b2f7d432daad5",
+        "resource-profile.json": "cf992fb0a502814cf0b5943266c812401334b647da09c065c0538c54615f4347",
+        "effective-config.yaml": "22ccbfcaf498dbd190c116d2d8d73cd29ac22178080e6112893faf9ba7991d8a",
+        "environment.json": "872842a81ecf13d8d8437d0e0fb1b6e2cc05aea3c6db95da148e2823d44f76fd",
+        "clickhouse-resources.jsonl": "2cba9ee978135af71f6385ee1f0c57e01bc49d7518bda4c770231a88e777f8c8",
+        "run.log": "77299165d8acddf7856638b12b6b08e8d8323a8d51b66588f43faa0f22792516"
+      }
+    }
+  ],
+  "rejected_experiments": {
+    "merge_cpu": [
+      {
+        "run": "join-capacity-merge-cpu-v1-r1-baseline",
+        "variant": "baseline",
+        "phase": "catchup",
+        "source_patch_sha256": "97ca9d7ed2ddf3c444eb4809a912292c26384f29c744c7168930f7cae819be63",
+        "correctness_and_terminal_accounting_passed": false,
+        "fixed_comparison_passed": false,
+        "completed_reads": 26,
+        "offered_reads": 30,
+        "observed_work_and_drain_seconds": 31.27321481704712,
+        "successful_reads_per_elapsed_second": 0.8313823875192814,
+        "success_read_p95_seconds": 10.49443793296814,
+        "success_read_p99_seconds": 10.499283790588379,
+        "all_attempt_p95_seconds": 11.081153,
+        "all_attempt_p99_seconds": 12.000742,
+        "read_admission_wait_p99_seconds": 3.4992849826812744,
+        "verified_ingestion_windows": 6,
+        "ingestion_windows": 6,
+        "verified_ingest_freshness_p95_seconds": 19.02547311782837,
+        "terminal_queries": 66,
+        "query_read_rows": 2744902376,
+        "query_logical_read_bytes": 116975714160,
+        "query_memory_peak_bytes": 1588208381,
+        "parts_before": {
+          "assets": {
+            "parts": 8,
+            "physical_rows": 1011000,
+            "bytes_on_disk": 9521367
+          },
+          "finding_enrichment": {
+            "parts": 69,
+            "physical_rows": 75000000,
+            "bytes_on_disk": 422689091
+          },
+          "findings": {
+            "parts": 33,
+            "physical_rows": 15000000,
+            "bytes_on_disk": 1211775696
+          },
+          "graph_edges": {
+            "parts": 114,
+            "physical_rows": 123266003,
+            "bytes_on_disk": 733358457
+          }
+        },
+        "parts_at_arrival_start": {
+          "assets": {
+            "parts": 8,
+            "physical_rows": 1011000,
+            "bytes_on_disk": 9521367
+          },
+          "finding_enrichment": {
+            "parts": 69,
+            "physical_rows": 75000000,
+            "bytes_on_disk": 422689091
+          },
+          "findings": {
+            "parts": 33,
+            "physical_rows": 15000000,
+            "bytes_on_disk": 1211775696
+          },
+          "graph_edges": {
+            "parts": 114,
+            "physical_rows": 123266003,
+            "bytes_on_disk": 733358457
+          }
+        },
+        "parts_after_requests": {
+          "assets": {
+            "parts": 2,
+            "physical_rows": 1000000,
+            "bytes_on_disk": 9350352
+          },
+          "finding_enrichment": {
+            "parts": 5,
+            "physical_rows": 26654671,
+            "bytes_on_disk": 192244156
+          },
+          "findings": {
+            "parts": 4,
+            "physical_rows": 5581296,
+            "bytes_on_disk": 458119742
+          },
+          "graph_edges": {
+            "parts": 75,
+            "physical_rows": 115252704,
+            "bytes_on_disk": 693392581
+          }
+        },
+        "parts_after_merge_recovery": {
+          "assets": {
+            "parts": 2,
+            "physical_rows": 1000000,
+            "bytes_on_disk": 9350352
+          },
+          "finding_enrichment": {
+            "parts": 5,
+            "physical_rows": 26654671,
+            "bytes_on_disk": 192244156
+          },
+          "findings": {
+            "parts": 4,
+            "physical_rows": 5581296,
+            "bytes_on_disk": 458119742
+          },
+          "graph_edges": {
+            "parts": 8,
+            "physical_rows": 115252704,
+            "bytes_on_disk": 424985755
+          }
+        },
+        "merge_recovery_error": "",
+        "arrival_to_merge_quiescence_seconds": 38.396416902542114,
+        "post_request_merge_recovery_seconds": 7.0502190589904785,
+        "clickhouse": {
+          "sample_window_seconds": 31.22673988342285,
+          "maximum_boundary_offset_seconds": 0.03216195106506348,
+          "cpu_core_seconds": 248.392356,
+          "cgroup_peak_at": "2026-11-28T07:25:30.810144+00:00",
+          "cgroup_peak_bytes": 14796808192,
+          "process_rss_at_cgroup_peak_bytes": 12099010560,
+          "swap_at_cgroup_peak_bytes": 0,
+          "peak_process_rss_bytes": 12201598976,
+          "io_by_device": {
+            "254:16": {
+              "rbytes": 191102976,
+              "wbytes": 2562916352,
+              "rios": 1063,
+              "wios": 2836,
+              "dbytes": 0,
+              "dios": 0
+            }
+          }
+        },
+        "clickhouse_including_merge_recovery": {
+          "sample_window_seconds": 38.44366979598999,
+          "maximum_boundary_offset_seconds": 0.06307291984558105,
+          "cpu_core_seconds": 251.03856100000002,
+          "cgroup_peak_bytes": 14796808192,
+          "swap_at_cgroup_peak_bytes": 0,
+          "max_observed_swap_bytes": 0,
+          "io_by_device": {
+            "254:16": {
+              "rbytes": 191102976,
+              "wbytes": 2562916352,
+              "rios": 1063,
+              "wios": 2836,
+              "dbytes": 0,
+              "dios": 0
+            }
+          }
+        },
+        "merge_settings": {
+          "background_merges_mutations_concurrency_ratio": "2",
+          "background_pool_size": "16",
+          "max_server_memory_usage": "12884901888"
+        },
+        "resources": {
+          "cohort": "local16g",
+          "clickhouse_cpus": 8,
+          "server_memory_bytes": 12884901888,
+          "query_memory_bytes": 4294967296,
+          "per_query_threads": 2,
+          "background_pool_size": 16,
+          "background_merges_mutations_concurrency_ratio": 2,
+          "fixed_comparison_query_budget_bytes": 536870912,
+          "docker": {
+            "cpus": 18,
+            "memory_bytes": 42057732096
+          },
+          "container_memory_bytes": 17179869184,
+          "swap_enabled": false
+        },
+        "operation_counts": {
+          "clusters": {
+            "offered": 15,
+            "verified": 11,
+            "errors": 4
+          },
+          "ingest": {
+            "offered": 6,
+            "verified": 6,
+            "errors": 0
+          },
+          "package-risk": {
+            "offered": 6,
+            "verified": 5,
+            "errors": 1
+          },
+          "summary": {
+            "offered": 15,
+            "verified": 15,
+            "errors": 0
+          }
+        },
+        "sql_exception_codes": [
+          241,
+          735,
+          236,
+          236,
+          236
+        ],
+        "comparison_failure_counts": {
+          "query memory exceeds 512 MiB": 30,
+          "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)": 1
+        },
+        "fixture": {
+          "fixture_version": 5,
+          "source": "82f4e945e6a74b0739460b63a855671b5a758b5a",
+          "platform": "darwin/arm64",
+          "go_version": "go1.26.11",
+          "logical_findings": 5000000,
+          "logical_enrichment": 25000000,
+          "finding_enrichment_versions": 3,
+          "inventory_counts": {
+            "logical_assets": 1000000,
+            "logical_edges": 102275000,
+            "physical_asset_rows": 1011000,
+            "physical_edge_rows": 123266003
+          },
+          "inventory_counts_before_extra_versions": {
+            "logical_assets": 1000000,
+            "logical_edges": 102275000,
+            "physical_asset_rows": 1000000,
+            "physical_edge_rows": 103266003
+          },
+          "additional_membership_versions": "two extra versions for every tenth image and package",
+          "application_query_concurrency": 8
+        },
+        "raw_artifact_sha256": {
+          "concurrent-joins.json": "99008b0d30f3f4b5ca6280771c9811167e09a7b12c6f4b51d3d92de5fc87277e",
+          "large-joins.json": "ac6e16f3537792d2e5e1454d3c268b73876ba81fc27ff2feeaa796b0349d5210",
+          "source.patch": "97ca9d7ed2ddf3c444eb4809a912292c26384f29c744c7168930f7cae819be63",
+          "source-files.sha256": "68c428b53aa742d31016e5fba1b6313eef3dcbd98711673de6399c8a4811ee2a",
+          "resource-profile.json": "99d800ee490ba4483b4918886da0d06ec931b428b9d30ac55c5489a478914a1f",
+          "effective-config.yaml": "09fbf43cd9777555a8f1e2dac19365938eab23acaa6400ef2df4a719d0332a7c",
+          "environment.json": "c9590bb603afa08032ee71f9085756ade7689973ee01aa61f6e9376e79c141a4",
+          "clickhouse-resources.jsonl": "88cdfb2e70fa7ac57e4f49af46ec882928ce28697b55718ac8cdd39ff895e478",
+          "run.log": "7789ab4bf125f98792fa06d44dc1be2441ae723cfe3cc72b16329523ea8b47de"
+        }
+      },
+      {
+        "run": "join-capacity-merge-cpu-v1-r1-candidate",
+        "variant": "candidate",
+        "phase": "catchup",
+        "source_patch_sha256": "97ca9d7ed2ddf3c444eb4809a912292c26384f29c744c7168930f7cae819be63",
+        "correctness_and_terminal_accounting_passed": false,
+        "fixed_comparison_passed": false,
+        "completed_reads": 24,
+        "offered_reads": 30,
+        "observed_work_and_drain_seconds": 35.43010210990906,
+        "successful_reads_per_elapsed_second": 0.6773900883928783,
+        "success_read_p95_seconds": 10.800935983657837,
+        "success_read_p99_seconds": 12.213174104690552,
+        "all_attempt_p95_seconds": 12.213174,
+        "all_attempt_p99_seconds": 13.705494,
+        "read_admission_wait_p99_seconds": 3.799243927001953,
+        "verified_ingestion_windows": 6,
+        "ingestion_windows": 6,
+        "verified_ingest_freshness_p95_seconds": 19.64841389656067,
+        "terminal_queries": 66,
+        "query_read_rows": 3055211146,
+        "query_logical_read_bytes": 130993171860,
+        "query_memory_peak_bytes": 1588643031,
+        "parts_before": {
+          "assets": {
+            "parts": 8,
+            "physical_rows": 1011000,
+            "bytes_on_disk": 9521367
+          },
+          "finding_enrichment": {
+            "parts": 69,
+            "physical_rows": 75000000,
+            "bytes_on_disk": 422689091
+          },
+          "findings": {
+            "parts": 33,
+            "physical_rows": 15000000,
+            "bytes_on_disk": 1211774772
+          },
+          "graph_edges": {
+            "parts": 114,
+            "physical_rows": 123266003,
+            "bytes_on_disk": 732875109
+          }
+        },
+        "parts_at_arrival_start": {
+          "assets": {
+            "parts": 8,
+            "physical_rows": 1011000,
+            "bytes_on_disk": 9521367
+          },
+          "finding_enrichment": {
+            "parts": 69,
+            "physical_rows": 75000000,
+            "bytes_on_disk": 422689091
+          },
+          "findings": {
+            "parts": 33,
+            "physical_rows": 15000000,
+            "bytes_on_disk": 1211774772
+          },
+          "graph_edges": {
+            "parts": 114,
+            "physical_rows": 123266003,
+            "bytes_on_disk": 732875109
+          }
+        },
+        "parts_after_requests": {
+          "assets": {
+            "parts": 2,
+            "physical_rows": 1000000,
+            "bytes_on_disk": 9350336
+          },
+          "finding_enrichment": {
+            "parts": 5,
+            "physical_rows": 26654671,
+            "bytes_on_disk": 192244165
+          },
+          "findings": {
+            "parts": 4,
+            "physical_rows": 9431728,
+            "bytes_on_disk": 773592838
+          },
+          "graph_edges": {
+            "parts": 75,
+            "physical_rows": 115252622,
+            "bytes_on_disk": 692798921
+          }
+        },
+        "parts_after_merge_recovery": {
+          "assets": {
+            "parts": 2,
+            "physical_rows": 1000000,
+            "bytes_on_disk": 9350336
+          },
+          "finding_enrichment": {
+            "parts": 5,
+            "physical_rows": 26654671,
+            "bytes_on_disk": 192244165
+          },
+          "findings": {
+            "parts": 4,
+            "physical_rows": 9431728,
+            "bytes_on_disk": 773592838
+          },
+          "graph_edges": {
+            "parts": 8,
+            "physical_rows": 115252622,
+            "bytes_on_disk": 424392095
+          }
+        },
+        "merge_recovery_error": "",
+        "arrival_to_merge_quiescence_seconds": 42.57056903839111,
+        "post_request_merge_recovery_seconds": 7.063197135925293,
+        "clickhouse": {
+          "sample_window_seconds": 35.61388897895813,
+          "maximum_boundary_offset_seconds": 0.12000703811645508,
+          "cpu_core_seconds": 281.231944,
+          "cgroup_peak_at": "2026-11-28T07:27:31.053381+00:00",
+          "cgroup_peak_bytes": 15160143872,
+          "process_rss_at_cgroup_peak_bytes": 12100947968,
+          "swap_at_cgroup_peak_bytes": 0,
+          "peak_process_rss_bytes": 12150775808,
+          "io_by_device": {
+            "254:16": {
+              "rbytes": 1368973312,
+              "wbytes": 1032716288,
+              "rios": 2878,
+              "wios": 405,
+              "dbytes": 0,
+              "dios": 0
+            }
+          }
+        },
+        "clickhouse_including_merge_recovery": {
+          "sample_window_seconds": 42.605692863464355,
+          "maximum_boundary_offset_seconds": 0.06145191192626953,
+          "cpu_core_seconds": 283.50718900000004,
+          "cgroup_peak_bytes": 15160143872,
+          "swap_at_cgroup_peak_bytes": 0,
+          "max_observed_swap_bytes": 0,
+          "io_by_device": {
+            "254:16": {
+              "rbytes": 1369268224,
+              "wbytes": 1329696768,
+              "rios": 2884,
+              "wios": 689,
+              "dbytes": 0,
+              "dios": 0
+            }
+          }
+        },
+        "merge_settings": {
+          "background_merges_mutations_concurrency_ratio": "8",
+          "background_pool_size": "4",
+          "max_server_memory_usage": "12884901888"
+        },
+        "resources": {
+          "cohort": "local16g",
+          "clickhouse_cpus": 8,
+          "server_memory_bytes": 12884901888,
+          "query_memory_bytes": 4294967296,
+          "per_query_threads": 2,
+          "background_pool_size": 4,
+          "background_merges_mutations_concurrency_ratio": 8,
+          "fixed_comparison_query_budget_bytes": 536870912,
+          "docker": {
+            "cpus": 18,
+            "memory_bytes": 42057732096
+          },
+          "container_memory_bytes": 17179869184,
+          "swap_enabled": false
+        },
+        "operation_counts": {
+          "clusters": {
+            "offered": 15,
+            "verified": 11,
+            "errors": 4
+          },
+          "ingest": {
+            "offered": 6,
+            "verified": 6,
+            "errors": 0
+          },
+          "package-risk": {
+            "offered": 6,
+            "verified": 6,
+            "errors": 0
+          },
+          "summary": {
+            "offered": 15,
+            "verified": 13,
+            "errors": 2
+          }
+        },
+        "sql_exception_codes": [
+          236,
+          735,
+          735,
+          735,
+          236,
+          236
+        ],
+        "comparison_failure_counts": {
+          "query memory exceeds 512 MiB": 30,
+          "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)": 1
+        },
+        "fixture": {
+          "fixture_version": 5,
+          "source": "82f4e945e6a74b0739460b63a855671b5a758b5a",
+          "platform": "darwin/arm64",
+          "go_version": "go1.26.11",
+          "logical_findings": 5000000,
+          "logical_enrichment": 25000000,
+          "finding_enrichment_versions": 3,
+          "inventory_counts": {
+            "logical_assets": 1000000,
+            "logical_edges": 102275000,
+            "physical_asset_rows": 1011000,
+            "physical_edge_rows": 123266003
+          },
+          "inventory_counts_before_extra_versions": {
+            "logical_assets": 1000000,
+            "logical_edges": 102275000,
+            "physical_asset_rows": 1000000,
+            "physical_edge_rows": 103266003
+          },
+          "additional_membership_versions": "two extra versions for every tenth image and package",
+          "application_query_concurrency": 8
+        },
+        "raw_artifact_sha256": {
+          "concurrent-joins.json": "1fd270c08991fc445720c9fea100012ba0dd9ed931c9149ac66879f8ed4fac93",
+          "large-joins.json": "d643e31f0a2612a7f38b7f98e02477648ae7560cdc5d72dd6b8e7e989e9f18ee",
+          "source.patch": "97ca9d7ed2ddf3c444eb4809a912292c26384f29c744c7168930f7cae819be63",
+          "source-files.sha256": "68c428b53aa742d31016e5fba1b6313eef3dcbd98711673de6399c8a4811ee2a",
+          "resource-profile.json": "59327a3807b03bd06aa4361a5b4e19c9bbb32cdabac8c81687f6c08526066876",
+          "effective-config.yaml": "1d5ee55cd7b1dd7a3c835f5a4bd43ececb29ab3ed37efecbab59108a19cc74b0",
+          "environment.json": "ece236abfc5d0532fef6215925a9900a4b0d3011b7d07a81f9041e18fecb00d5",
+          "clickhouse-resources.jsonl": "44d0db7b01536c3f7adf8670dfabfcf791245fb25108abca72a608a461393485",
+          "run.log": "501ba5a0e668f4f0897e045554a4033fe427ce48478a76187b2ad356818a17a5"
+        }
+      }
+    ],
+    "latest_enrichment_keys": [
+      {
+        "run": "join-capacity-final-keys-v1-r1-baseline",
+        "variant": "baseline",
+        "phase": "catchup",
+        "source_patch_sha256": "dd0376c50a941378eba5eb3ce449741eb0f6a9f00c9a750b0767f0c3d58d62d3",
+        "correctness_and_terminal_accounting_passed": false,
+        "fixed_comparison_passed": false,
+        "completed_reads": 26,
+        "offered_reads": 30,
+        "observed_work_and_drain_seconds": 32.814629793167114,
+        "successful_reads_per_elapsed_second": 0.7923295238702921,
+        "success_read_p95_seconds": 10.677860975265503,
+        "success_read_p99_seconds": 12.763216972351074,
+        "all_attempt_p95_seconds": 12.002962,
+        "all_attempt_p99_seconds": 12.763217000000001,
+        "read_admission_wait_p99_seconds": 3.461422920227051,
+        "verified_ingestion_windows": 6,
+        "ingestion_windows": 6,
+        "verified_ingest_freshness_p95_seconds": 19.757699966430664,
+        "terminal_queries": 66,
+        "query_read_rows": 2863024033,
+        "query_logical_read_bytes": 125441348188,
+        "query_memory_peak_bytes": 1584891783,
+        "parts_before": {
+          "assets": {
+            "parts": 8,
+            "physical_rows": 1011000,
+            "bytes_on_disk": 9521367
+          },
+          "finding_enrichment": {
+            "parts": 69,
+            "physical_rows": 75000000,
+            "bytes_on_disk": 422689091
+          },
+          "findings": {
+            "parts": 33,
+            "physical_rows": 15000000,
+            "bytes_on_disk": 1211773824
+          },
+          "graph_edges": {
+            "parts": 114,
+            "physical_rows": 123266003,
+            "bytes_on_disk": 733386099
+          }
+        },
+        "parts_at_arrival_start": {
+          "assets": {
+            "parts": 8,
+            "physical_rows": 1011000,
+            "bytes_on_disk": 9521367
+          },
+          "finding_enrichment": {
+            "parts": 69,
+            "physical_rows": 75000000,
+            "bytes_on_disk": 422689091
+          },
+          "findings": {
+            "parts": 33,
+            "physical_rows": 15000000,
+            "bytes_on_disk": 1211773824
+          },
+          "graph_edges": {
+            "parts": 114,
+            "physical_rows": 123266003,
+            "bytes_on_disk": 733386099
+          }
+        },
+        "parts_after_requests": {
+          "assets": {
+            "parts": 2,
+            "physical_rows": 1000000,
+            "bytes_on_disk": 9350336
+          },
+          "finding_enrichment": {
+            "parts": 6,
+            "physical_rows": 27766624,
+            "bytes_on_disk": 198441836
+          },
+          "findings": {
+            "parts": 4,
+            "physical_rows": 9431728,
+            "bytes_on_disk": 773484927
+          },
+          "graph_edges": {
+            "parts": 76,
+            "physical_rows": 115252645,
+            "bytes_on_disk": 693171302
+          }
+        },
+        "parts_after_merge_recovery": {
+          "assets": {
+            "parts": 2,
+            "physical_rows": 1000000,
+            "bytes_on_disk": 9350336
+          },
+          "finding_enrichment": {
+            "parts": 6,
+            "physical_rows": 27766624,
+            "bytes_on_disk": 198441836
+          },
+          "findings": {
+            "parts": 4,
+            "physical_rows": 9431728,
+            "bytes_on_disk": 773484927
+          },
+          "graph_edges": {
+            "parts": 9,
+            "physical_rows": 115252645,
+            "bytes_on_disk": 424764476
+          }
+        },
+        "merge_recovery_error": "",
+        "arrival_to_merge_quiescence_seconds": 39.95389795303345,
+        "post_request_merge_recovery_seconds": 7.065262079238892,
+        "clickhouse": {
+          "sample_window_seconds": 32.96997284889221,
+          "maximum_boundary_offset_seconds": 0.1140909194946289,
+          "cpu_core_seconds": 261.575951,
+          "cgroup_peak_at": "2026-11-28T07:33:47.448155+00:00",
+          "cgroup_peak_bytes": 15480565760,
+          "process_rss_at_cgroup_peak_bytes": 12110131200,
+          "swap_at_cgroup_peak_bytes": 0,
+          "peak_process_rss_bytes": 12356411392,
+          "io_by_device": {
+            "254:16": {
+              "rbytes": 794324992,
+              "wbytes": 2491052032,
+              "rios": 731,
+              "wios": 2295,
+              "dbytes": 0,
+              "dios": 0
+            }
+          }
+        },
+        "clickhouse_including_merge_recovery": {
+          "sample_window_seconds": 39.947733879089355,
+          "maximum_boundary_offset_seconds": 0.04564309120178223,
+          "cpu_core_seconds": 263.84366,
+          "cgroup_peak_bytes": 15480565760,
+          "swap_at_cgroup_peak_bytes": 0,
+          "max_observed_swap_bytes": 0,
+          "io_by_device": {
+            "254:16": {
+              "rbytes": 794324992,
+              "wbytes": 2491052032,
+              "rios": 731,
+              "wios": 2295,
+              "dbytes": 0,
+              "dios": 0
+            }
+          }
+        },
+        "merge_settings": {
+          "background_merges_mutations_concurrency_ratio": "2",
+          "background_pool_size": "16",
+          "max_server_memory_usage": "12884901888"
+        },
+        "resources": {
+          "cohort": "local16g",
+          "clickhouse_cpus": 8,
+          "server_memory_bytes": 12884901888,
+          "query_memory_bytes": 4294967296,
+          "per_query_threads": 2,
+          "background_pool_size": 16,
+          "background_merges_mutations_concurrency_ratio": 2,
+          "fixed_comparison_query_budget_bytes": 536870912,
+          "docker": {
+            "cpus": 18,
+            "memory_bytes": 42057732096
+          },
+          "container_memory_bytes": 17179869184,
+          "swap_enabled": false
+        },
+        "operation_counts": {
+          "clusters": {
+            "offered": 15,
+            "verified": 11,
+            "errors": 4
+          },
+          "ingest": {
+            "offered": 6,
+            "verified": 6,
+            "errors": 0
+          },
+          "package-risk": {
+            "offered": 6,
+            "verified": 6,
+            "errors": 0
+          },
+          "summary": {
+            "offered": 15,
+            "verified": 15,
+            "errors": 0
+          }
+        },
+        "sql_exception_codes": [
+          236,
+          735,
+          236,
+          236
+        ],
+        "comparison_failure_counts": {
+          "query memory exceeds 512 MiB": 30,
+          "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)": 1
+        },
+        "fixture": {
+          "fixture_version": 5,
+          "source": "923a18b17cb445f773109eb7db6b367f3715d0e5",
+          "platform": "darwin/arm64",
+          "go_version": "go1.26.11",
+          "logical_findings": 5000000,
+          "logical_enrichment": 25000000,
+          "finding_enrichment_versions": 3,
+          "inventory_counts": {
+            "logical_assets": 1000000,
+            "logical_edges": 102275000,
+            "physical_asset_rows": 1011000,
+            "physical_edge_rows": 123266003
+          },
+          "inventory_counts_before_extra_versions": {
+            "logical_assets": 1000000,
+            "logical_edges": 102275000,
+            "physical_asset_rows": 1000000,
+            "physical_edge_rows": 103266003
+          },
+          "additional_membership_versions": "two extra versions for every tenth image and package",
+          "application_query_concurrency": 8
+        },
+        "raw_artifact_sha256": {
+          "concurrent-joins.json": "7f2d11cc8791f1f1512afb62c123d99f36a9338d9fb8cb80f353981dfe574957",
+          "large-joins.json": "d3a97227c1f6f1937b794d65e6c527422482d7d7ef7c60f5a72bab28f410dc76",
+          "source.patch": "dd0376c50a941378eba5eb3ce449741eb0f6a9f00c9a750b0767f0c3d58d62d3",
+          "source-files.sha256": "0f48de36c835cebce56b0fc6a065acd37cb178a63f9cb0f1cd7e46372d43720d",
+          "resource-profile.json": "dd5da66453e7775241ca15ad6861ff001b86a472b57c70e0d8bfae8393354789",
+          "effective-config.yaml": "09fbf43cd9777555a8f1e2dac19365938eab23acaa6400ef2df4a719d0332a7c",
+          "environment.json": "69c640d1ad68c49def47d6230e2e9a5245d1bde679a3d5cc25a134a2ae3ccbdc",
+          "clickhouse-resources.jsonl": "d070e01ecc4958bff7da281bd269e2f125dc3e08bb569acf9c36de0fcd062302",
+          "run.log": "26008d817670c570420d726139842c66fde56f72d2dcfc7de1d1696b30266e92"
+        }
+      },
+      {
+        "run": "join-capacity-final-keys-v1-r1-candidate",
+        "variant": "candidate",
+        "phase": "catchup",
+        "source_patch_sha256": "dd0376c50a941378eba5eb3ce449741eb0f6a9f00c9a750b0767f0c3d58d62d3",
+        "correctness_and_terminal_accounting_passed": false,
+        "fixed_comparison_passed": false,
+        "completed_reads": 17,
+        "offered_reads": 30,
+        "observed_work_and_drain_seconds": 39.88187289237976,
+        "successful_reads_per_elapsed_second": 0.42625881803179294,
+        "success_read_p95_seconds": 12.881847858428955,
+        "success_read_p99_seconds": 12.881847858428955,
+        "all_attempt_p95_seconds": 12.881848,
+        "all_attempt_p99_seconds": 14.00389,
+        "read_admission_wait_p99_seconds": 4.003057956695557,
+        "verified_ingestion_windows": 6,
+        "ingestion_windows": 6,
+        "verified_ingest_freshness_p95_seconds": 17.140012979507446,
+        "terminal_queries": 66,
+        "query_read_rows": 2934071887,
+        "query_logical_read_bytes": 123924023703,
+        "query_memory_peak_bytes": 2087119657,
+        "parts_before": {
+          "assets": {
+            "parts": 8,
+            "physical_rows": 1011000,
+            "bytes_on_disk": 9521367
+          },
+          "finding_enrichment": {
+            "parts": 69,
+            "physical_rows": 75000000,
+            "bytes_on_disk": 422689091
+          },
+          "findings": {
+            "parts": 33,
+            "physical_rows": 15000000,
+            "bytes_on_disk": 1211784750
+          },
+          "graph_edges": {
+            "parts": 114,
+            "physical_rows": 123266003,
+            "bytes_on_disk": 733540796
+          }
+        },
+        "parts_at_arrival_start": {
+          "assets": {
+            "parts": 8,
+            "physical_rows": 1011000,
+            "bytes_on_disk": 9521367
+          },
+          "finding_enrichment": {
+            "parts": 69,
+            "physical_rows": 75000000,
+            "bytes_on_disk": 422689091
+          },
+          "findings": {
+            "parts": 33,
+            "physical_rows": 15000000,
+            "bytes_on_disk": 1211784750
+          },
+          "graph_edges": {
+            "parts": 114,
+            "physical_rows": 123266003,
+            "bytes_on_disk": 733540796
+          }
+        },
+        "parts_after_requests": {
+          "assets": {
+            "parts": 2,
+            "physical_rows": 1000000,
+            "bytes_on_disk": 9350336
+          },
+          "finding_enrichment": {
+            "parts": 5,
+            "physical_rows": 26654671,
+            "bytes_on_disk": 192244172
+          },
+          "findings": {
+            "parts": 4,
+            "physical_rows": 10414768,
+            "bytes_on_disk": 854238639
+          },
+          "graph_edges": {
+            "parts": 6,
+            "physical_rows": 113154570,
+            "bytes_on_disk": 410293693
+          }
+        },
+        "parts_after_merge_recovery": {
+          "assets": {
+            "parts": 2,
+            "physical_rows": 1000000,
+            "bytes_on_disk": 9350336
+          },
+          "finding_enrichment": {
+            "parts": 5,
+            "physical_rows": 26654671,
+            "bytes_on_disk": 192244172
+          },
+          "findings": {
+            "parts": 4,
+            "physical_rows": 10414768,
+            "bytes_on_disk": 854238639
+          },
+          "graph_edges": {
+            "parts": 6,
+            "physical_rows": 113154570,
+            "bytes_on_disk": 410293693
+          }
+        },
+        "merge_recovery_error": "",
+        "arrival_to_merge_quiescence_seconds": 45.02359485626221,
+        "post_request_merge_recovery_seconds": 5.051139831542969,
+        "clickhouse": {
+          "sample_window_seconds": 39.8274929523468,
+          "maximum_boundary_offset_seconds": 0.08723807334899902,
+          "cpu_core_seconds": 292.55843,
+          "cgroup_peak_at": "2026-11-28T07:35:47.680981+00:00",
+          "cgroup_peak_bytes": 15081299968,
+          "process_rss_at_cgroup_peak_bytes": 12236754944,
+          "swap_at_cgroup_peak_bytes": 0,
+          "peak_process_rss_bytes": 12416802816,
+          "io_by_device": {
+            "254:16": {
+              "rbytes": 337002496,
+              "wbytes": 2605051904,
+              "rios": 1088,
+              "wios": 2497,
+              "dbytes": 0,
+              "dios": 0
+            }
+          }
+        },
+        "clickhouse_including_merge_recovery": {
+          "sample_window_seconds": 44.98705196380615,
+          "maximum_boundary_offset_seconds": 0.08723807334899902,
+          "cpu_core_seconds": 293.239861,
+          "cgroup_peak_bytes": 15081299968,
+          "swap_at_cgroup_peak_bytes": 0,
+          "max_observed_swap_bytes": 0,
+          "io_by_device": {
+            "254:16": {
+              "rbytes": 337002496,
+              "wbytes": 2605051904,
+              "rios": 1088,
+              "wios": 2497,
+              "dbytes": 0,
+              "dios": 0
+            }
+          }
+        },
+        "merge_settings": {
+          "background_merges_mutations_concurrency_ratio": "2",
+          "background_pool_size": "16",
+          "max_server_memory_usage": "12884901888"
+        },
+        "resources": {
+          "cohort": "local16g",
+          "clickhouse_cpus": 8,
+          "server_memory_bytes": 12884901888,
+          "query_memory_bytes": 4294967296,
+          "per_query_threads": 2,
+          "background_pool_size": 16,
+          "background_merges_mutations_concurrency_ratio": 2,
+          "fixed_comparison_query_budget_bytes": 536870912,
+          "docker": {
+            "cpus": 18,
+            "memory_bytes": 42057732096
+          },
+          "container_memory_bytes": 17179869184,
+          "swap_enabled": false
+        },
+        "operation_counts": {
+          "clusters": {
+            "offered": 15,
+            "verified": 8,
+            "errors": 7
+          },
+          "ingest": {
+            "offered": 6,
+            "verified": 6,
+            "errors": 0
+          },
+          "package-risk": {
+            "offered": 6,
+            "verified": 6,
+            "errors": 0
+          },
+          "summary": {
+            "offered": 15,
+            "verified": 9,
+            "errors": 6
+          }
+        },
+        "sql_exception_codes": [
+          735,
+          236,
+          236,
+          236,
+          735,
+          236,
+          735,
+          236,
+          735,
+          735,
+          210,
+          236,
+          735
+        ],
+        "comparison_failure_counts": {
+          "query memory exceeds 512 MiB": 30,
+          "target interactive latency exceeded (1500 ms p95 / 3000 ms p99)": 1
+        },
+        "fixture": {
+          "fixture_version": 5,
+          "source": "923a18b17cb445f773109eb7db6b367f3715d0e5",
+          "platform": "darwin/arm64",
+          "go_version": "go1.26.11",
+          "logical_findings": 5000000,
+          "logical_enrichment": 25000000,
+          "finding_enrichment_versions": 3,
+          "inventory_counts": {
+            "logical_assets": 1000000,
+            "logical_edges": 102275000,
+            "physical_asset_rows": 1011000,
+            "physical_edge_rows": 123266003
+          },
+          "inventory_counts_before_extra_versions": {
+            "logical_assets": 1000000,
+            "logical_edges": 102275000,
+            "physical_asset_rows": 1000000,
+            "physical_edge_rows": 103266003
+          },
+          "additional_membership_versions": "two extra versions for every tenth image and package",
+          "application_query_concurrency": 8
+        },
+        "raw_artifact_sha256": {
+          "concurrent-joins.json": "0352ce1f9dbb496db7c3f62c44099b81593921d40667da8609394f335766b22d",
+          "large-joins.json": "5433c8537daa21c6f243f289b6d912d9cb9949bf27e88eeee51ff829d695b68a",
+          "source.patch": "dd0376c50a941378eba5eb3ce449741eb0f6a9f00c9a750b0767f0c3d58d62d3",
+          "source-files.sha256": "0f48de36c835cebce56b0fc6a065acd37cb178a63f9cb0f1cd7e46372d43720d",
+          "resource-profile.json": "be22d853c19c9d088fc4f37dac4936e10e2057713aebe6d4d8cb21b8c23fa316",
+          "effective-config.yaml": "09fbf43cd9777555a8f1e2dac19365938eab23acaa6400ef2df4a719d0332a7c",
+          "environment.json": "8443cebb3c0870e4a7357e6c9bd3ac85a421dc33b3a4841887c775dffb4865f4",
+          "clickhouse-resources.jsonl": "d6ae8236cfecaaaa0db97a54e786423aa8a973bd45c2a1b2ceb2d86a0e738d51",
+          "run.log": "d948278ea39d2936bbc8b19aac574816fb4013a49135cd2579b8c0a826465b36"
+        }
+      }
+    ]
+  },
+  "vm_observations": [
+    {
+      "artifact": "catchup-sizing-vm-resources.jsonl",
+      "sha256": "b37ee7b91216a0999e119d7a4a1bb618d1580fe7120fb8162424e1422e0252ee",
+      "samples": 155,
+      "minimum_available_bytes": 21948162048,
+      "maximum_swap_used_bytes": 0,
+      "pressure_stall_metrics": "unavailable",
+      "coverage": "first sizing pair (partial baseline coverage)"
+    },
+    {
+      "artifact": "catchup-sizing-confirm-vm-resources.jsonl",
+      "sha256": "7091979ff5e3a67095a21c4129cc01da872bdea19fd6cc991685876121584918",
+      "samples": 195,
+      "minimum_available_bytes": 24315502592,
+      "maximum_swap_used_bytes": 0,
+      "pressure_stall_metrics": "unavailable",
+      "coverage": "confirmation runs 2 and 3"
+    }
+  ]
+}

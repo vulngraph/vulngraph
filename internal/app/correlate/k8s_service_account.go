@@ -1,6 +1,8 @@
 package correlate
 
 import (
+	"iter"
+	"slices"
 	"strings"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
@@ -47,39 +49,43 @@ func (K8sPodServiceAccount) InterestedIn() []string {
 	return []string{"k8s_pod", "k8s_service_account"}
 }
 
-func (K8sPodServiceAccount) Correlate(g Graph) []asset.Edge {
-	sas := g.K8sServiceAccounts()
-	if len(sas) == 0 {
-		return nil
-	}
-	byID := make(map[string]bool, len(sas))
-	for _, sa := range sas {
-		byID[sa.ID] = true
-	}
+func (r K8sPodServiceAccount) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
 
-	var edges []asset.Edge
-	for _, w := range g.Workloads() {
-		// Pods only. A Deployment's spec.template carries a ServiceAccount too, but
-		// the collector does not record it, and inferring the parent's identity from
-		// its pods would invert the direction this edge is meant to run in.
-		if w.Type != "k8s_pod" {
-			continue
+func (K8sPodServiceAccount) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+		sas := g.K8sServiceAccounts()
+		if len(sas) == 0 {
+			return
 		}
-		saID, ok := serviceAccountIDFor(w)
-		if !ok || !byID[saID] {
-			continue
+		byID := make(map[string]bool, len(sas))
+		for _, sa := range sas {
+			byID[sa.ID] = true
 		}
-		edges = append(edges, asset.Edge{
-			SrcID: w.ID, SrcType: "k8s_pod",
-			DstID: saID, DstType: "k8s_service_account",
-			EdgeType: EdgeExecutesAs,
-			Properties: map[string]string{
-				"origin": edgeOrigin,
-				"rule":   "k8s_pod_service_account",
-			},
-		})
+
+		for _, w := range g.Workloads() {
+			// Pods only. A Deployment's spec.template carries a ServiceAccount too, but
+			// the collector does not record it, and inferring the parent's identity from
+			// its pods would invert the direction this edge is meant to run in.
+			if w.Type != "k8s_pod" {
+				continue
+			}
+			saID, ok := serviceAccountIDFor(w)
+			if !ok || !byID[saID] {
+				continue
+			}
+			if !yield(asset.Edge{
+				SrcID: w.ID, SrcType: "k8s_pod",
+				DstID: saID, DstType: "k8s_service_account",
+				EdgeType: EdgeExecutesAs,
+				Properties: map[string]string{
+					"origin": edgeOrigin,
+					"rule":   "k8s_pod_service_account",
+				},
+			}) {
+				return
+			}
+		}
 	}
-	return edges
 }
 
 // serviceAccountIDFor rebuilds the ID the kubernetes collector gives the

@@ -1,6 +1,8 @@
 package correlate
 
 import (
+	"iter"
+	"slices"
 	"strings"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
@@ -32,34 +34,39 @@ func (K8sManifestOwnership) InterestedIn() []string {
 	}
 }
 
-func (K8sManifestOwnership) Correlate(g Graph) []asset.Edge {
-	var edges []asset.Edge
-	for _, d := range g.DeclaredK8sWorkloads() {
-		repoID := d.Metadata["repo"]
-		if repoID == "" {
-			continue
-		}
-		matches, confidence := liveMatchesFor(g, d)
-		if len(matches) == 0 {
-			continue
-		}
+func (r K8sManifestOwnership) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
 
-		for _, m := range matches {
-			edges = append(edges, asset.Edge{
-				SrcID: m.ID, SrcType: m.Type,
-				DstID: repoID, DstType: "github_repo",
-				EdgeType: EdgeDefinedIn,
-				Properties: map[string]string{
-					"origin":     edgeOrigin,
-					"rule":       "k8s_manifest_ownership",
-					"confidence": confidence,
-					"provenance": "iac_manifest",
-					"path":       d.Metadata["path"],
-				},
-			})
+func (K8sManifestOwnership) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+
+		for _, d := range g.DeclaredK8sWorkloads() {
+			repoID := d.Metadata["repo"]
+			if repoID == "" {
+				continue
+			}
+			matches, confidence := liveMatchesFor(g, d)
+			if len(matches) == 0 {
+				continue
+			}
+
+			for _, m := range matches {
+				if !yield(asset.Edge{
+					SrcID: m.ID, SrcType: m.Type,
+					DstID: repoID, DstType: "github_repo",
+					EdgeType: EdgeDefinedIn,
+					Properties: map[string]string{
+						"origin":     edgeOrigin,
+						"rule":       "k8s_manifest_ownership",
+						"confidence": confidence,
+						"provenance": "iac_manifest",
+						"path":       d.Metadata["path"],
+					},
+				}) {
+					return
+				}
+			}
 		}
 	}
-	return edges
 }
 
 // driftDeclaredNotLive is the metadata value CorrelateAssets stamps on a
@@ -71,17 +78,23 @@ const driftDeclaredNotLive = "declared_not_live"
 // CorrelateAssets records the current drift intent for every declaration.
 // Reaffirming unchanged state prevents an older delayed sweep from replacing a
 // newer interpretation. Empty drift explicitly clears the producer's field.
-func (K8sManifestOwnership) CorrelateAssets(g Graph) []asset.Annotation {
-	var out []asset.Annotation
-	for _, d := range g.DeclaredK8sWorkloads() {
-		matches, _ := liveMatchesFor(g, d)
-		value := ""
-		if len(matches) == 0 {
-			value = driftDeclaredNotLive
+func (r K8sManifestOwnership) CorrelateAssets(g Graph) []asset.Annotation {
+	return slices.Collect(r.Annotations(g))
+}
+
+func (K8sManifestOwnership) Annotations(g Graph) iter.Seq[asset.Annotation] {
+	return func(yield func(asset.Annotation) bool) {
+		for _, d := range g.DeclaredK8sWorkloads() {
+			matches, _ := liveMatchesFor(g, d)
+			value := ""
+			if len(matches) == 0 {
+				value = driftDeclaredNotLive
+			}
+			if !yield(withMetadata(d, "drift", value)) {
+				return
+			}
 		}
-		out = append(out, withMetadata(d, "drift", value))
 	}
-	return out
 }
 
 // withMetadata carries only the owned field and the declaration inputs it

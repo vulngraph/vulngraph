@@ -3,7 +3,9 @@ package correlate
 import (
 	"encoding/json"
 	"fmt"
+	"iter"
 	"net/netip"
+	"slices"
 	"strings"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
@@ -110,26 +112,31 @@ func (SecurityGroupAllows) InterestedIn() []string {
 	return []string{"security_group"}
 }
 
-func (SecurityGroupAllows) Correlate(g Graph) []asset.Edge {
-	var edges []asset.Edge
-	for _, sg := range g.SecurityGroups() {
-		for _, r := range parseIngress(sg.Metadata["ingress"]) {
-			for _, ref := range r.SGRefs {
-				if ref == "" {
-					continue
+func (r SecurityGroupAllows) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
+
+func (SecurityGroupAllows) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+
+		for _, sg := range g.SecurityGroups() {
+			for _, r := range parseIngress(sg.Metadata["ingress"]) {
+				for _, ref := range r.SGRefs {
+					if ref == "" {
+						continue
+					}
+					if !yield(asset.Edge{
+						SrcID: sg.ID, SrcType: "security_group",
+						DstID: ref, DstType: "security_group",
+						EdgeType: EdgeSGAllowsFrom,
+						Properties: map[string]string{
+							"origin": edgeOrigin,
+							"rule":   "sg_allows_from",
+							"ports":  portLabel(r),
+						},
+					}) {
+						return
+					}
 				}
-				edges = append(edges, asset.Edge{
-					SrcID: sg.ID, SrcType: "security_group",
-					DstID: ref, DstType: "security_group",
-					EdgeType: EdgeSGAllowsFrom,
-					Properties: map[string]string{
-						"origin": edgeOrigin,
-						"rule":   "sg_allows_from",
-						"ports":  portLabel(r),
-					},
-				})
 			}
 		}
 	}
-	return edges
 }

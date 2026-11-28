@@ -107,6 +107,16 @@ jobs:
           PERF_LINUX_GO_CACHE="$(go env GOCACHE)"
           export PERF_LINUX_GO_CACHE
           bash scripts/benchmark-connector-envelope.sh target "$RUNNER_TEMP/critical-edge-throughput"
+      - name: Check bounded correlation outputs and publication costs
+        timeout-minutes: 8
+        env:
+          PERF_ENVELOPE_PACKAGE: ./internal/app/correlate
+          PERF_ENVELOPE_TEST: ^TestBoundedCorrelationCosts$
+          PERF_ENVELOPE_SWAP: equal
+        run: |
+          PERF_LINUX_GO_CACHE="$(go env GOCACHE)"
+          export PERF_LINUX_GO_CACHE
+          bash scripts/benchmark-connector-envelope.sh target "$RUNNER_TEMP/bounded-correlation-throughput"
       - name: Check projected graph assets and lifecycle parity
         timeout-minutes: 8
         env:
@@ -168,6 +178,8 @@ jobs:
             !${{ runner.temp }}/correlation-source-throughput/envelope.test
             ${{ runner.temp }}/critical-edge-throughput/
             !${{ runner.temp }}/critical-edge-throughput/envelope.test
+            ${{ runner.temp }}/bounded-correlation-throughput/
+            !${{ runner.temp }}/bounded-correlation-throughput/envelope.test
             ${{ runner.temp }}/graph-projection-lifecycle/
             !${{ runner.temp }}/graph-projection-lifecycle/envelope.test
             ${{ runner.temp }}/graph-projection-costs/

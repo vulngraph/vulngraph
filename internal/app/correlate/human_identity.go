@@ -2,6 +2,8 @@ package correlate
 
 import (
 	"encoding/json"
+	"iter"
+	"slices"
 	"strings"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
@@ -27,49 +29,52 @@ func (HumanIdentityFederation) InterestedIn() []string {
 	return []string{"human_identity", "iam_role"}
 }
 
-func (HumanIdentityFederation) Correlate(g Graph) []asset.Edge {
-	if len(g.HumanIdentities()) == 0 {
-		return nil
-	}
+func (r HumanIdentityFederation) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
 
-	var edges []asset.Edge
-
-	// When an IAM role's trust policy names an OIDC subject equal to a human's
-	// email (email-based IdPs such as Okta/Google), link that human to the role.
-	//
-	// skipUnchanged only skips a role when human_identity did NOT change this
-	// run: a partial that adds only a human can still match an existing,
-	// untouched role's trust sub. Guarding it at all matters because
-	// extractOIDCSubs is a full policy decode over every IAMRole() — running it
-	// unconditionally on every partial touching iam_role/github_repo/human_identity
-	// would repeat IAMEffectivePermissions' cost blowup on a large role set.
-	skipUnchanged := g.OtherSideUnchanged("human_identity")
-	for _, role := range g.IAMRoles() {
-		if skipUnchanged && !g.NeedsRecompute(role.ID) {
-			continue
+func (HumanIdentityFederation) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+		if len(g.HumanIdentities()) == 0 {
+			return
 		}
-		subs := extractOIDCSubs(role)
-		for _, sub := range subs {
-			email := strings.ToLower(sub)
-			if human, ok := g.HumanByEmail(email); ok {
-				edges = append(edges, asset.Edge{
-					SrcID:    human.ID,
-					SrcType:  "human_identity",
-					DstID:    role.ID,
-					DstType:  "iam_role",
-					EdgeType: EdgeFederatedAccess,
-					Properties: map[string]string{
-						"origin":     edgeOrigin,
-						"rule":       "human_identity_federation",
-						"trust_type": "oidc_email",
-						"subject":    sub,
-					},
-				})
+
+		// When an IAM role's trust policy names an OIDC subject equal to a human's
+		// email (email-based IdPs such as Okta/Google), link that human to the role.
+		//
+		// skipUnchanged only skips a role when human_identity did NOT change this
+		// run: a partial that adds only a human can still match an existing,
+		// untouched role's trust sub. Guarding it at all matters because
+		// extractOIDCSubs is a full policy decode over every IAMRole() — running it
+		// unconditionally on every partial touching iam_role/github_repo/human_identity
+		// would repeat IAMEffectivePermissions' cost blowup on a large role set.
+		skipUnchanged := g.OtherSideUnchanged("human_identity")
+		for _, role := range g.IAMRoles() {
+			if skipUnchanged && !g.NeedsRecompute(role.ID) {
+				continue
+			}
+			subs := extractOIDCSubs(role)
+			for _, sub := range subs {
+				email := strings.ToLower(sub)
+				if human, ok := g.HumanByEmail(email); ok {
+					if !yield(asset.Edge{
+						SrcID:    human.ID,
+						SrcType:  "human_identity",
+						DstID:    role.ID,
+						DstType:  "iam_role",
+						EdgeType: EdgeFederatedAccess,
+						Properties: map[string]string{
+							"origin":     edgeOrigin,
+							"rule":       "human_identity_federation",
+							"trust_type": "oidc_email",
+							"subject":    sub,
+						},
+					}) {
+						return
+					}
+				}
 			}
 		}
-	}
 
-	return edges
+	}
 }
 
 // extractOIDCSubs returns OIDC subject values from an IAM role's trust policies.

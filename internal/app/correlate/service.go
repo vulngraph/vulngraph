@@ -60,6 +60,7 @@ type Service struct {
 	rules  []Rule
 	// viewObserver is optional; nil disables view-size reporting.
 	viewObserver ViewObserver
+	staged       *StagedViewLimits
 }
 
 func NewService(repo viewLoader, assets assetStore, rules []Rule) *Service {
@@ -88,6 +89,9 @@ func (s *Service) Correlate(ctx context.Context) (int, error) {
 	version, versionErr := s.assets.BeginDerivedUpdate(ctx)
 	if versionErr != nil {
 		return 0, fmt.Errorf("Correlate: derive version: %w", versionErr)
+	}
+	if s.staged != nil {
+		return s.correlateStaged(ctx, s.rules, version, nil)
 	}
 	logger := log.FromContext(ctx)
 
@@ -187,6 +191,9 @@ func (s *Service) PartialCorrelate(ctx context.Context, changedIDs []string) (in
 		return 0, nil
 	}
 
+	if s.staged != nil {
+		return s.correlateStaged(ctx, activeRules, time.Time{}, changed)
+	}
 	neededTypes := neededTypesFor(activeRules)
 	view, truncated, err := s.repo.LoadViewForTypes(ctx, neededTypes)
 	if err != nil {

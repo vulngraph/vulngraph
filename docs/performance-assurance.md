@@ -331,3 +331,26 @@ addresses idle time between incomplete bounded passes while preserving ordinary
 new-pass scheduling, queue limits and urgent backfill. Whole-pass cost and the
 independent all-finding oracle remain required; no profile gains coverage from
 the failed diagnostic or from a small replay alone.
+
+
+### Bounded correlation production path
+
+PERF-05/11 now retain [bounded correlation](specs/bounded-correlation.md): a single
+projected source read, disk-backed replay, complete rule contexts and bounded
+streamed output replace the default 600,000-row materialized-reader refusal.
+At 100,200 assets, three exact-output pairs reduce sampled correlation RSS from
+530.05 MB to 101.98 MB while median elapsed increases from 1.206 s to 2.578 s.
+Three explicitly sized million-asset passes produce exactly 2,002,600 relationships;
+the old reader refuses that input. The earlier smaller-index refusal is retained.
+
+One current-source integrated million-asset cohort completes six lifecycle waves,
+8,995 reads, native COPY/BFS and ordinary enrichment scheduling with no application
+SQL exceptions or failed job attempts. All 10,392 expected static severity factors
+are current by 745.78 seconds. The aligned whole-stack resident-plus-swap peak is
+8.635 GB; the worker reaches its 4 GiB RAM cap and uses swap. This supersedes the
+earlier incomplete diagnostic for this specific cohort, not its retained evidence.
+
+Logical index/context/spool limits are not hard process-memory guarantees. All
+populated rule families, RAM-only capacity, temporary-volume enforcement, aged
+recovery, multiple replicas, the 24-hour soak and the combined 5m-finding/100m-
+membership workload remain unaccepted. Full-profile coverage credit stays zero.

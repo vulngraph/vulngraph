@@ -189,6 +189,10 @@ serve-to-worker graph RPC, ignore them and never go through the proxy.
 |---|---|---|---|---|---|
 | `SYNC_INTERVAL` | worker, scanner (schedule) | `2h` | duration | No | Cadence of the connector reconciliation sweep. Quiet connectors back off up to 6× this, never beyond 12h; values above 12h are effectively capped at 12h. |
 | `CORRELATE_INTERVAL` | worker, scanner (schedule) | `30m` | duration | No | Cadence of the whole-graph correlation sweep. |
+| `CORRELATE_INDEX_MIB` | worker | `512` | positive integer MiB | No | Logical budget for correlation source references and output deduplication indexes. This is not a Go heap/RSS cap. |
+| `CORRELATE_CONTEXT_MIB` | worker | `16` | positive integer MiB | No | Maximum complete context required by an indivisible correlation rule. An exceeded budget fails the pass instead of truncating input. |
+| `CORRELATE_SPOOL_MIB` | worker | `1024` | positive integer MiB | No | Combined input/output temporary-file budget. Uses `TMPDIR`; shares the Helm `/tmp` volume with graph CSV staging. |
+| `CORRELATE_OUTPUT_MIB` | worker | `768` | positive integer MiB | No | Output portion of the correlation spool budget; must fit `CORRELATE_SPOOL_MIB`. See [bounded correlation](specs/bounded-correlation.md) for measured tradeoffs and resource limits. |
 | `ENRICH_INTERVAL` | worker, scanner (schedule) | `15m` | duration | No | Cadence of the enrichment backstop sweep. Most enrichment happens at ingest and after correlate. |
 | `ENRICH_MAX_AGE` | worker | `24h` | duration | No | Freshness backstop for the enrichment change-gate: a finding is re-enriched after this age even if unchanged. |
 | `OWNER_TAG_KEYS` | worker, serve | unset | comma-separated tag keys | No | Extra resource tag keys that name an owner team, consulted before the defaults (`owner`, `Owner`, `team`, `Team`, `app.kubernetes.io/part-of`). Set the same value on both: the worker stamps finding owners with it and serve resolves the asset page's owner with it. See [ADR 089](adr/089-ownership-and-routing.md). |

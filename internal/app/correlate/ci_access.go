@@ -1,6 +1,8 @@
 package correlate
 
 import (
+	"iter"
+	"slices"
 	"sync"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
@@ -79,53 +81,62 @@ func (r *CIAccess) PendingLiveVerify() []PendingVerify {
 // targets, not an unbounded accumulation across sweeps. This requires
 // Correlate to actually run every sweep, including one over an empty view —
 // Service.Correlate must not short-circuit before the rule loop.
-func (r *CIAccess) Correlate(g Graph) []asset.Edge {
-	// Built into locals first, so the lock is held only for the final commit —
-	// not for the whole scan of g.DeclaredCIAccess() — while still making the
-	// reset-then-repopulate visible to PendingLiveVerify as one atomic step
-	// rather than a window where pending briefly reads as nil mid-Correlate.
-	var edges []asset.Edge
-	var pending []PendingVerify
-	for _, d := range g.DeclaredCIAccess() {
-		if d.Metadata["condition"] == "disabled" {
-			continue
-		}
-		repoID := d.Metadata["repo"]
-		if repoID == "" {
-			continue
+func (r *CIAccess) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
+func (r *CIAccess) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+		// Built into locals first, so the lock is held only for the final commit —
+		// not for the whole scan of g.DeclaredCIAccess() — while still making the
+		// reset-then-repopulate visible to PendingLiveVerify as one atomic step
+		// rather than a window where pending briefly reads as nil mid-Correlate.
+		var pending []PendingVerify
+		for _, d := range g.DeclaredCIAccess() {
+			if d.Metadata["condition"] == "disabled" {
+				continue
+			}
+			repoID := d.Metadata["repo"]
+			if repoID == "" {
+				continue
+			}
+
+			switch d.Metadata["provider"] {
+			case "aws":
+				arn := d.Metadata["target_arn"]
+				if arn == "" {
+					continue
+				}
+				if g.IsPrincipal(arn) {
+					for _, edge := range declaredCIEdges(g, d, repoID, arn, "iam_role") {
+						if !yield(edge) {
+							return
+						}
+					}
+				} else {
+					pending = append(pending, PendingVerify{
+						RepoID: repoID, TargetARN: arn, AccountID: d.Metadata["account_id"],
+						WorkflowPath: d.Metadata["workflow_path"],
+					})
+				}
+			case "gcp":
+				sa := d.Metadata["target_sa"]
+				if sa == "" {
+					continue
+				}
+				saID := "serviceAccount:" + sa
+				if g.IsPrincipal(saID) {
+					for _, edge := range declaredCIEdges(g, d, repoID, saID, "gcp_service_account") {
+						if !yield(edge) {
+							return
+						}
+					}
+				}
+			}
 		}
 
-		switch d.Metadata["provider"] {
-		case "aws":
-			arn := d.Metadata["target_arn"]
-			if arn == "" {
-				continue
-			}
-			if g.IsPrincipal(arn) {
-				edges = append(edges, declaredCIEdges(g, d, repoID, arn, "iam_role")...)
-			} else {
-				pending = append(pending, PendingVerify{
-					RepoID: repoID, TargetARN: arn, AccountID: d.Metadata["account_id"],
-					WorkflowPath: d.Metadata["workflow_path"],
-				})
-			}
-		case "gcp":
-			sa := d.Metadata["target_sa"]
-			if sa == "" {
-				continue
-			}
-			saID := "serviceAccount:" + sa
-			if g.IsPrincipal(saID) {
-				edges = append(edges, declaredCIEdges(g, d, repoID, saID, "gcp_service_account")...)
-			}
-		}
+		r.mu.Lock()
+		r.pending = pending
+		r.mu.Unlock()
+
 	}
-
-	r.mu.Lock()
-	r.pending = pending
-	r.mu.Unlock()
-
-	return edges
 }
 
 func ciAccessEdge(repoID, targetID, targetType, workflowPath string) asset.Edge {

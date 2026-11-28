@@ -1,6 +1,9 @@
 package correlate
 
 import (
+	"iter"
+	"slices"
+
 	"github.com/vulngraph/vulngraph/internal/app/asset"
 )
 
@@ -17,71 +20,78 @@ func (GCPFirewallApplies) InterestedIn() []string {
 	return []string{"gcp_firewall", "gce_instance", "vpc_network"}
 }
 
-func (GCPFirewallApplies) Correlate(g Graph) []asset.Edge {
-	var edges []asset.Edge
-	for _, fw := range g.GCPFirewalls() {
-		if fw.Metadata["disabled"] == "true" {
-			continue
-		}
-		if dir := fw.Metadata["direction"]; dir != "" && dir != "INGRESS" {
-			continue
-		}
-		network := fw.Metadata["network"]
-		targets := splitValues(fw.Metadata["target_tags"])
-		targetSAs := splitValues(fw.Metadata["target_sas"])
+func (r GCPFirewallApplies) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
 
-		if len(targets) == 0 && len(targetSAs) == 0 {
-			// Whole-network rule: emit fw→network (1 edge). Traversal recovers
-			// which instances are affected via (fw)-[:AppliesTo]->(net)<-[:InVPC]-(inst).
-			if network != "" && fw.AccountID != "" {
-				edges = append(edges, asset.Edge{
+func (GCPFirewallApplies) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+
+		for _, fw := range g.GCPFirewalls() {
+			if fw.Metadata["disabled"] == "true" {
+				continue
+			}
+			if dir := fw.Metadata["direction"]; dir != "" && dir != "INGRESS" {
+				continue
+			}
+			network := fw.Metadata["network"]
+			targets := splitValues(fw.Metadata["target_tags"])
+			targetSAs := splitValues(fw.Metadata["target_sas"])
+
+			if len(targets) == 0 && len(targetSAs) == 0 {
+				// Whole-network rule: emit fw→network (1 edge). Traversal recovers
+				// which instances are affected via (fw)-[:AppliesTo]->(net)<-[:InVPC]-(inst).
+				if network != "" && fw.AccountID != "" {
+					if !yield(asset.Edge{
+						SrcID: fw.ID, SrcType: "gcp_firewall",
+						// Project-qualified: a bare "gcp-network:default" key would collapse
+						// every project's auto-created network into one node.
+						DstID: "gcp-network:" + fw.AccountID + "/" + network, DstType: "vpc_network",
+						EdgeType: EdgeFirewallAppliesTo,
+						Properties: map[string]string{
+							"origin": edgeOrigin,
+							"rule":   "applies_to",
+							"scope":  "whole_network",
+						},
+					}) {
+						return
+					}
+				}
+				continue
+			}
+
+			// Targeted rule (tags or service accounts): only emit edges to instances
+			// in the SAME PROJECT it targets. The project check is the same one
+			// firewallApplies makes and for the same reason — this loop has its own
+			// inline network comparison rather than calling that helper, so it needs
+			// the guard separately.
+			scope := "tagged"
+			if len(targetSAs) > 0 {
+				scope = "service_account"
+			}
+			for _, inst := range g.GCEInstances() {
+				if fw.AccountID == "" || fw.AccountID != inst.AccountID {
+					continue
+				}
+				if inst.Metadata["network"] != network {
+					continue
+				}
+				if !firewallTargets(fw, inst) {
+					continue
+				}
+				if !yield(asset.Edge{
 					SrcID: fw.ID, SrcType: "gcp_firewall",
-					// Project-qualified: a bare "gcp-network:default" key would collapse
-					// every project's auto-created network into one node.
-					DstID: "gcp-network:" + fw.AccountID + "/" + network, DstType: "vpc_network",
+					DstID: inst.ID, DstType: "gce_instance",
 					EdgeType: EdgeFirewallAppliesTo,
 					Properties: map[string]string{
 						"origin": edgeOrigin,
 						"rule":   "applies_to",
-						"scope":  "whole_network",
+						"scope":  scope,
 					},
-				})
+				}) {
+					return
+				}
 			}
-			continue
-		}
-
-		// Targeted rule (tags or service accounts): only emit edges to instances
-		// in the SAME PROJECT it targets. The project check is the same one
-		// firewallApplies makes and for the same reason — this loop has its own
-		// inline network comparison rather than calling that helper, so it needs
-		// the guard separately.
-		scope := "tagged"
-		if len(targetSAs) > 0 {
-			scope = "service_account"
-		}
-		for _, inst := range g.GCEInstances() {
-			if fw.AccountID == "" || fw.AccountID != inst.AccountID {
-				continue
-			}
-			if inst.Metadata["network"] != network {
-				continue
-			}
-			if !firewallTargets(fw, inst) {
-				continue
-			}
-			edges = append(edges, asset.Edge{
-				SrcID: fw.ID, SrcType: "gcp_firewall",
-				DstID: inst.ID, DstType: "gce_instance",
-				EdgeType: EdgeFirewallAppliesTo,
-				Properties: map[string]string{
-					"origin": edgeOrigin,
-					"rule":   "applies_to",
-					"scope":  scope,
-				},
-			})
 		}
 	}
-	return edges
 }
 
 // maxFirewallReachEdgesPerRule caps the instance→instance fan-out one firewall
@@ -110,71 +120,76 @@ func (GCPFirewallReachability) InterestedIn() []string {
 	return []string{"gcp_firewall", "gce_instance"}
 }
 
-func (GCPFirewallReachability) Correlate(g Graph) []asset.Edge {
-	var edges []asset.Edge
-	for _, fw := range g.GCPFirewalls() {
-		if fw.Metadata["disabled"] == "true" {
-			continue
-		}
-		if dir := fw.Metadata["direction"]; dir != "" && dir != "INGRESS" {
-			continue
-		}
-		sourceTags := splitValues(fw.Metadata["source_tags"])
-		if len(sourceTags) == 0 {
-			continue // no source tags → nothing to link laterally (world-open is InternetReachability's job)
-		}
-		network := fw.Metadata["network"]
+func (r GCPFirewallReachability) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
 
-		// Source instances: SAME PROJECT, same network, network_tags ∩ source_tags.
-		//
-		// firewallApplies guards the GOVERNED side below, but this loop builds the
-		// SOURCE side with its own comparison, so it needs the same project guard
-		// separately — otherwise cross-project lateral movement leaks into
-		// sg_allows_from, which feeds risk propagation across unrelated projects.
-		var sources []asset.Asset
-		for _, inst := range g.GCEInstances() {
-			if fw.AccountID == "" || fw.AccountID != inst.AccountID {
+func (GCPFirewallReachability) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+
+		for _, fw := range g.GCPFirewalls() {
+			if fw.Metadata["disabled"] == "true" {
 				continue
 			}
-			if inst.Metadata["network"] == network &&
-				intersects(sourceTags, splitValues(inst.Metadata["network_tags"])) {
-				sources = append(sources, inst)
-			}
-		}
-		if len(sources) == 0 {
-			continue
-		}
-
-		ports := fw.Metadata["allowed"]
-		count := 0
-	governedLoop:
-		for _, gov := range g.GCEInstances() {
-			if !firewallApplies(fw, gov) {
+			if dir := fw.Metadata["direction"]; dir != "" && dir != "INGRESS" {
 				continue
 			}
-			for _, src := range sources {
-				if src.ID == gov.ID {
+			sourceTags := splitValues(fw.Metadata["source_tags"])
+			if len(sourceTags) == 0 {
+				continue // no source tags → nothing to link laterally (world-open is InternetReachability's job)
+			}
+			network := fw.Metadata["network"]
+
+			// Source instances: SAME PROJECT, same network, network_tags ∩ source_tags.
+			//
+			// firewallApplies guards the GOVERNED side below, but this loop builds the
+			// SOURCE side with its own comparison, so it needs the same project guard
+			// separately — otherwise cross-project lateral movement leaks into
+			// sg_allows_from, which feeds risk propagation across unrelated projects.
+			var sources []asset.Asset
+			for _, inst := range g.GCEInstances() {
+				if fw.AccountID == "" || fw.AccountID != inst.AccountID {
 					continue
 				}
-				if count >= maxFirewallReachEdgesPerRule {
-					break governedLoop
+				if inst.Metadata["network"] == network &&
+					intersects(sourceTags, splitValues(inst.Metadata["network_tags"])) {
+					sources = append(sources, inst)
 				}
-				count++
-				edges = append(edges, asset.Edge{
-					SrcID: gov.ID, SrcType: "gce_instance", // governed instance permits ingress...
-					DstID: src.ID, DstType: "gce_instance", // ...from the source-tagged instance
-					EdgeType: EdgeSGAllowsFrom,
-					Properties: map[string]string{
-						"origin":   edgeOrigin,
-						"rule":     "gcp_firewall_reachability",
-						"ports":    ports,
-						"firewall": fw.Name,
-					},
-				})
+			}
+			if len(sources) == 0 {
+				continue
+			}
+
+			ports := fw.Metadata["allowed"]
+			count := 0
+		governedLoop:
+			for _, gov := range g.GCEInstances() {
+				if !firewallApplies(fw, gov) {
+					continue
+				}
+				for _, src := range sources {
+					if src.ID == gov.ID {
+						continue
+					}
+					if count >= maxFirewallReachEdgesPerRule {
+						break governedLoop
+					}
+					count++
+					if !yield(asset.Edge{
+						SrcID: gov.ID, SrcType: "gce_instance", // governed instance permits ingress...
+						DstID: src.ID, DstType: "gce_instance", // ...from the source-tagged instance
+						EdgeType: EdgeSGAllowsFrom,
+						Properties: map[string]string{
+							"origin":   edgeOrigin,
+							"rule":     "gcp_firewall_reachability",
+							"ports":    ports,
+							"firewall": fw.Name,
+						},
+					}) {
+						return
+					}
+				}
 			}
 		}
 	}
-	return edges
 }
 
 // firewallApplies reports whether an INGRESS firewall rule governs an instance:

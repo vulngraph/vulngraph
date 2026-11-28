@@ -2,6 +2,8 @@ package correlate
 
 import (
 	"encoding/json"
+	"iter"
+	"slices"
 	"strings"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
@@ -152,101 +154,114 @@ func (IAMEffectivePermissions) InterestedIn() []string {
 	return []string{"iam_role", "iam_user", "gcp_service_account", "aws_scp_set"}
 }
 
-func (IAMEffectivePermissions) Correlate(g Graph) []asset.Edge {
-	var edges []asset.Edge
-	// PermissionPrincipals, not IAMRoles: IAM users (long-lived access keys)
-	// are principals too and must be checked, not just roles.
-	for _, principal := range g.PermissionPrincipals() {
-		// A full sweep must stay exhaustive (NeedsPermissionRecompute always
-		// true there). A partial correlate only needs to touch the principals
-		// actually implicated by this run — recomputing the whole fleet on
-		// every IAM-shaped change does not scale.
-		if !g.NeedsPermissionRecompute(principal) {
-			continue
+func (r IAMEffectivePermissions) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
+
+func (IAMEffectivePermissions) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+		// PermissionPrincipals, not IAMRoles: IAM users (long-lived access keys)
+		// are principals too and must be checked, not just roles.
+		for _, principal := range g.PermissionPrincipals() {
+			// A full sweep must stay exhaustive (NeedsPermissionRecompute always
+			// true there). A partial correlate only needs to touch the principals
+			// actually implicated by this run — recomputing the whole fleet on
+			// every IAM-shaped change does not scale.
+			if !g.NeedsPermissionRecompute(principal) {
+				continue
+			}
+			for edge := range iamPermissionStream(principal, g.SCPPoliciesForAccount(principal.AccountID)) {
+				if !yield(edge) {
+					return
+				}
+			}
 		}
-		edges = append(edges, iamPermissionEdges(principal, g.SCPPoliciesForAccount(principal.AccountID))...)
+
 	}
-	return edges
 }
 
 func iamPermissionEdges(role asset.Asset, scps []collectedPolicy) []asset.Edge {
-	policiesJSON := role.Metadata["policies"]
-	if policiesJSON == "" {
-		return nil
-	}
-
-	var policies []collectedPolicy
-	if err := json.Unmarshal([]byte(policiesJSON), &policies); err != nil {
-		return nil
-	}
-	if (role.Type == "iam_role" || role.Type == "iam_user") && collectedBoundaryReadUnknown(role.Metadata["permission_boundary_complete"], policies) {
-		policies = append(policies, collectedPolicy{Type: "boundary", Incomplete: true})
-	}
-	// SCPs cap what the account's principals may do at all; fold them in
-	// alongside the principal's own policies so this rule's edges reflect the
-	// same cap CIEM privesc detection already applies.
-	policies = append(policies, applicableOrganizationPolicies(role, scps)...)
-
-	// Effective permissions — Allow ∩ boundary ∩ SCP, explicit Deny retained per
-	// AWS deny-wins semantics — computed by the same evaluator privesc detection
-	// uses (internal/app/ciem), not a hand-rolled approximation. A parse error
-	// means no edges are emitted rather than guessing.
-	perms, err := effectivePermissionsForCollectedPolicies(policies)
-	if err != nil {
-		return nil
-	}
-
-	var edges []asset.Edge
-	policyEdgeSeen := map[string]bool{} // dedupe per (role, policy, category)
-
-	for _, p := range policies {
-		if p.Type == "trust" {
-			continue // trust policies grant assume — handled by federation/iam correlators
-		}
-		// Only identity policies grant; a boundary or SCP only CAPS a grant
-		// (perms above already folds that cap in via intersection) and must
-		// never be attributed as the source of a dangerous action itself.
-		if p.Type == "boundary" || p.Type == "scp" {
-			continue
-		}
-		if p.Document == "" {
-			continue
+	return slices.Collect(iamPermissionStream(role, scps))
+}
+func iamPermissionStream(role asset.Asset, scps []collectedPolicy) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+		policiesJSON := role.Metadata["policies"]
+		if policiesJSON == "" {
+			return
 		}
 
-		categories := dangerousActionsInPolicy(p.Document, perms)
-		if len(categories) == 0 {
-			continue
+		var policies []collectedPolicy
+		if err := json.Unmarshal([]byte(policiesJSON), &policies); err != nil {
+			return
+		}
+		if (role.Type == "iam_role" || role.Type == "iam_user") && collectedBoundaryReadUnknown(role.Metadata["permission_boundary_complete"], policies) {
+			policies = append(policies, collectedPolicy{Type: "boundary", Incomplete: true})
+		}
+		// SCPs cap what the account's principals may do at all; fold them in
+		// alongside the principal's own policies so this rule's edges reflect the
+		// same cap CIEM privesc detection already applies.
+		policies = append(policies, applicableOrganizationPolicies(role, scps)...)
+
+		// Effective permissions — Allow ∩ boundary ∩ SCP, explicit Deny retained per
+		// AWS deny-wins semantics — computed by the same evaluator privesc detection
+		// uses (internal/app/ciem), not a hand-rolled approximation. A parse error
+		// means no edges are emitted rather than guessing.
+		perms, err := effectivePermissionsForCollectedPolicies(policies)
+		if err != nil {
+			return
 		}
 
-		// Policy node ID: use ARN if available (managed policies) else synthesize.
-		policyID := policyIDFor(role, p)
+		policyEdgeSeen := map[string]bool{} // dedupe per (role, policy, category)
 
-		for category := range categories {
-			key := role.ID + "|" + policyID + "|" + category
-			if policyEdgeSeen[key] {
+		for _, p := range policies {
+			if p.Type == "trust" {
+				continue // trust policies grant assume — handled by federation/iam correlators
+			}
+			// Only identity policies grant; a boundary or SCP only CAPS a grant
+			// (perms above already folds that cap in via intersection) and must
+			// never be attributed as the source of a dangerous action itself.
+			if p.Type == "boundary" || p.Type == "scp" {
 				continue
 			}
-			policyEdgeSeen[key] = true
+			if p.Document == "" {
+				continue
+			}
 
-			edges = append(edges, asset.Edge{
-				SrcID:    role.ID,
-				SrcType:  role.Type,
-				DstID:    policyID,
-				DstType:  "iam_policy",
-				EdgeType: EdgeAllowsAction,
-				Properties: map[string]string{
-					// origin/rule are stamped by every correlation rule, so an
-					// edge's origin is auditable.
-					"origin":      edgeOrigin,
-					"rule":        "iam_effective_permissions",
-					"category":    category,
-					"policy_name": p.Name,
-					"managed":     boolStr(p.Managed),
-				},
-			})
+			categories := dangerousActionsInPolicy(p.Document, perms)
+			if len(categories) == 0 {
+				continue
+			}
+
+			// Policy node ID: use ARN if available (managed policies) else synthesize.
+			policyID := policyIDFor(role, p)
+
+			for category := range categories {
+				key := role.ID + "|" + policyID + "|" + category
+				if policyEdgeSeen[key] {
+					continue
+				}
+				policyEdgeSeen[key] = true
+
+				if !yield(asset.Edge{
+					SrcID:    role.ID,
+					SrcType:  role.Type,
+					DstID:    policyID,
+					DstType:  "iam_policy",
+					EdgeType: EdgeAllowsAction,
+					Properties: map[string]string{
+						// origin/rule are stamped by every correlation rule, so an
+						// edge's origin is auditable.
+						"origin":      edgeOrigin,
+						"rule":        "iam_effective_permissions",
+						"category":    category,
+						"policy_name": p.Name,
+						"managed":     boolStr(p.Managed),
+					},
+				}) {
+					return
+				}
+			}
 		}
+
 	}
-	return edges
 }
 
 // effectivePermissionsForCollectedPolicies converts the collector's raw policy

@@ -386,6 +386,10 @@ func worker(ctx context.Context, getenv func(string) string) error {
 	// can be read by the correlate worker after each sweep and handed to
 	// verify_ci_role — see jobs.Deps.CIAccessPending below.
 	ciAccessRule := &correlate.CIAccess{}
+	correlateLimits, err := correlate.StagedViewLimitsFromEnv(getenv)
+	if err != nil {
+		return fmt.Errorf("worker: correlation budgets: %w", err)
+	}
 
 	// The correlation rule registry — the single place new cross-asset
 	// relationship families are added: implement correlate.Rule and append it.
@@ -424,7 +428,7 @@ func worker(ctx context.Context, getenv func(string) string) error {
 		correlate.SecretAccess{},            // IamRole -[accesses_secret]-> Secrets Manager / SSM secret
 		correlate.DataClassification{},      // Asset -[ContainsData]-> DataClass (DSPM heuristic bootstrap)
 		correlate.HumanIdentityFederation{}, // HumanIdentity -[Owns]-> Repo, -[FederatedAccess]-> IamRole
-	}).WithViewMetrics(metrics)
+	}).WithViewMetrics(metrics).WithStagedViews(correlateLimits)
 
 	// Image-vuln scanner — gives container_image assets a CVE axis so an
 	// exposed pod running a KEV image CVE can reach must_fix. CVE matching

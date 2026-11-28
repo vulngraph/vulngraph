@@ -1,6 +1,7 @@
 package correlate
 
 import (
+	"iter"
 	"slices"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
@@ -52,100 +53,107 @@ func (DeclaredIdentityOwnership) InterestedIn() []string {
 	return []string{"declared_cloud_identity", "iam_role", "iam_user", "gcp_service_account", "github_repo"}
 }
 
-func (DeclaredIdentityOwnership) Correlate(g Graph) []asset.Edge {
-	var edges []asset.Edge
-	seen := map[string]bool{}
-	add := func(e asset.Edge) {
-		k := e.SrcID + "|" + e.EdgeType + "|" + e.DstID
-		if seen[k] {
-			return
-		}
-		seen[k] = true
-		edges = append(edges, e)
-	}
+func (r DeclaredIdentityOwnership) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
 
-	// Roles indexed by the file they were found in, so an OIDC subject can find
-	// the role declared alongside it in one lookup instead of rescanning every
-	// harvested identity (that inner rescan is quadratic in corpus size, and this
-	// rule sees every repo in every org).
-	rolesByFile := map[string][]string{}
-	for _, d := range g.DeclaredIdentities() {
-		v := d.Metadata["value"]
-		if v == "" || d.Metadata["kind"] != kindIamRole {
-			continue
+func (DeclaredIdentityOwnership) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+		seen := map[string]bool{}
+		add := func(e asset.Edge) bool {
+			k := e.SrcID + "|" + e.EdgeType + "|" + e.DstID
+			if seen[k] {
+				return true
+			}
+			seen[k] = true
+			return yield(e)
 		}
-		k := d.Metadata["repo"] + "|" + d.Metadata["path"]
-		if !slices.Contains(rolesByFile[k], v) {
-			rolesByFile[k] = append(rolesByFile[k], v)
-		}
-	}
-	// trustTarget is the role whose trust policy an OIDC subject in this file
-	// belongs to. The harvest records which FILE a subject sits in, not which
-	// role block, so pairing it with every role the file mentions would grant
-	// one role's trust to every other role there (a principal ARN in another
-	// statement, a second aws_iam_role resource). Only a file naming exactly
-	// one role is unambiguous; anything else is skipped.
-	trustTarget := func(file string) (string, bool) {
-		if ids := rolesByFile[file]; len(ids) == 1 {
-			return ids[0], true
-		}
-		return "", false
-	}
 
-	for _, d := range g.DeclaredIdentities() {
-		repoID, value := d.Metadata["repo"], d.Metadata["value"]
-		if repoID == "" || value == "" {
-			continue
-		}
-		path := d.Metadata["path"]
-
-		switch d.Metadata["kind"] {
-		case kindIamRole, kindIamUser, kindGCPSA:
-			// Ownership: the repo whose file names this identity declares it.
-			if !g.IsPrincipal(value) {
+		// Roles indexed by the file they were found in, so an OIDC subject can find
+		// the role declared alongside it in one lookup instead of rescanning every
+		// harvested identity (that inner rescan is quadratic in corpus size, and this
+		// rule sees every repo in every org).
+		rolesByFile := map[string][]string{}
+		for _, d := range g.DeclaredIdentities() {
+			v := d.Metadata["value"]
+			if v == "" || d.Metadata["kind"] != kindIamRole {
 				continue
 			}
-			add(asset.Edge{
-				SrcID: value, SrcType: liveTypeFor(d.Metadata["kind"]),
-				DstID: repoID, DstType: "github_repo",
-				EdgeType: EdgeDefinedIn,
-				Properties: map[string]string{
-					"origin":     edgeOrigin,
-					"rule":       "declared_identity_ownership",
-					"provenance": "identifier_harvest",
-					"confidence": "high", // exact identifier equality, nothing reconstructed
-					"match":      "identifier",
-					"path":       path,
-				},
-			})
-		case kindGitHubOIDC:
-			// Federation: a subject found in a trust policy grants the named repo's CI
-			// the role that policy belongs to — see trustTarget. Without an
-			// unambiguous co-located role there is nothing to point an edge at.
-			subjectRepo, ok := g.RepoByFullName(value)
-			if !ok {
-				continue
+			k := d.Metadata["repo"] + "|" + d.Metadata["path"]
+			if !slices.Contains(rolesByFile[k], v) {
+				rolesByFile[k] = append(rolesByFile[k], v)
 			}
-			roleARN, ok := trustTarget(repoID + "|" + path)
-			if !ok || !g.IsPrincipal(roleARN) {
-				continue
-			}
-			add(asset.Edge{
-				SrcID: subjectRepo.ID, SrcType: "github_repo",
-				DstID: roleARN, DstType: "iam_role",
-				EdgeType: EdgeFederatedAccess,
-				Properties: map[string]string{
-					"origin":      edgeOrigin,
-					"rule":        "declared_identity_ownership",
-					"provenance":  "iac_trust_policy",
-					"confidence":  "high",
-					"path":        path,
-					"declared_in": repoID,
-				},
-			})
 		}
+		// trustTarget is the role whose trust policy an OIDC subject in this file
+		// belongs to. The harvest records which FILE a subject sits in, not which
+		// role block, so pairing it with every role the file mentions would grant
+		// one role's trust to every other role there (a principal ARN in another
+		// statement, a second aws_iam_role resource). Only a file naming exactly
+		// one role is unambiguous; anything else is skipped.
+		trustTarget := func(file string) (string, bool) {
+			if ids := rolesByFile[file]; len(ids) == 1 {
+				return ids[0], true
+			}
+			return "", false
+		}
+
+		for _, d := range g.DeclaredIdentities() {
+			repoID, value := d.Metadata["repo"], d.Metadata["value"]
+			if repoID == "" || value == "" {
+				continue
+			}
+			path := d.Metadata["path"]
+
+			switch d.Metadata["kind"] {
+			case kindIamRole, kindIamUser, kindGCPSA:
+				// Ownership: the repo whose file names this identity declares it.
+				if !g.IsPrincipal(value) {
+					continue
+				}
+				if !add(asset.Edge{
+					SrcID: value, SrcType: liveTypeFor(d.Metadata["kind"]),
+					DstID: repoID, DstType: "github_repo",
+					EdgeType: EdgeDefinedIn,
+					Properties: map[string]string{
+						"origin":     edgeOrigin,
+						"rule":       "declared_identity_ownership",
+						"provenance": "identifier_harvest",
+						"confidence": "high", // exact identifier equality, nothing reconstructed
+						"match":      "identifier",
+						"path":       path,
+					},
+				}) {
+					return
+				}
+			case kindGitHubOIDC:
+				// Federation: a subject found in a trust policy grants the named repo's CI
+				// the role that policy belongs to — see trustTarget. Without an
+				// unambiguous co-located role there is nothing to point an edge at.
+				subjectRepo, ok := g.RepoByFullName(value)
+				if !ok {
+					continue
+				}
+				roleARN, ok := trustTarget(repoID + "|" + path)
+				if !ok || !g.IsPrincipal(roleARN) {
+					continue
+				}
+				if !add(asset.Edge{
+					SrcID: subjectRepo.ID, SrcType: "github_repo",
+					DstID: roleARN, DstType: "iam_role",
+					EdgeType: EdgeFederatedAccess,
+					Properties: map[string]string{
+						"origin":      edgeOrigin,
+						"rule":        "declared_identity_ownership",
+						"provenance":  "iac_trust_policy",
+						"confidence":  "high",
+						"path":        path,
+						"declared_in": repoID,
+					},
+				}) {
+					return
+				}
+			}
+		}
+
 	}
-	return edges
 }
 
 // liveTypeFor maps a harvested identity kind to the live asset type it joins.

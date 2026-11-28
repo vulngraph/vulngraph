@@ -1,9 +1,11 @@
 # Correlation and graph source reads
 
-These changes reduce source-query working memory and repeated correlation work.
-They do not establish a million-asset production capacity profile. The default
-correlation reader still refuses 600,000 or more relevant assets; staging remains
-an unaccepted experiment outside production wiring.
+These historical comparisons reduced source-query working memory and repeated
+correlation work while retaining the 600,000-row materialized-reader refusal.
+The later [bounded correlation implementation](../specs/bounded-correlation.md)
+replaces that default worker path and reports completed million-asset component
+and integrated checks. The refusal below remains the historical control; neither
+cohort establishes full-profile capacity.
 
 The local comparisons use deployed ClickHouse 26.8.34.13 and deployment XML,
 Linux ARM64 containers, two database CPUs, a 3 GiB server cap and a 2 GiB query

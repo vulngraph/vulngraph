@@ -1,6 +1,9 @@
 package correlate
 
 import (
+	"iter"
+	"slices"
+
 	"github.com/vulngraph/vulngraph/internal/app/asset"
 )
 
@@ -34,32 +37,37 @@ func (GCPWorkloadIdentity) InterestedIn() []string {
 	return []string{"k8s_service_account", "gcp_service_account"}
 }
 
-func (GCPWorkloadIdentity) Correlate(g Graph) []asset.Edge {
-	var edges []asset.Edge
-	for _, sa := range g.K8sServiceAccounts() {
-		gcpSAEmail := sa.Metadata["iam.gke.io/gcp-service-account"]
-		if gcpSAEmail == "" {
-			continue
-		}
-		// Only emit the edge when the GCP SA is actually present in the inventory
-		// so we don't produce dangling references.
-		gcpSAID := "serviceAccount:" + gcpSAEmail
-		if !g.IsPrincipal(gcpSAID) {
-			continue
-		}
-		for _, edgeType := range []string{EdgeFederatedAccess, EdgeExecutesAs} {
-			edges = append(edges, asset.Edge{
-				SrcID: sa.ID, SrcType: "k8s_service_account",
-				DstID: gcpSAID, DstType: "gcp_service_account",
-				EdgeType: edgeType,
-				Properties: map[string]string{
-					"origin":     edgeOrigin,
-					"rule":       "gcp_workload_identity",
-					"trust_type": "gke_wif",
-					"annotation": gcpSAEmail,
-				},
-			})
+func (r GCPWorkloadIdentity) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
+
+func (GCPWorkloadIdentity) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+
+		for _, sa := range g.K8sServiceAccounts() {
+			gcpSAEmail := sa.Metadata["iam.gke.io/gcp-service-account"]
+			if gcpSAEmail == "" {
+				continue
+			}
+			// Only emit the edge when the GCP SA is actually present in the inventory
+			// so we don't produce dangling references.
+			gcpSAID := "serviceAccount:" + gcpSAEmail
+			if !g.IsPrincipal(gcpSAID) {
+				continue
+			}
+			for _, edgeType := range []string{EdgeFederatedAccess, EdgeExecutesAs} {
+				if !yield(asset.Edge{
+					SrcID: sa.ID, SrcType: "k8s_service_account",
+					DstID: gcpSAID, DstType: "gcp_service_account",
+					EdgeType: edgeType,
+					Properties: map[string]string{
+						"origin":     edgeOrigin,
+						"rule":       "gcp_workload_identity",
+						"trust_type": "gke_wif",
+						"annotation": gcpSAEmail,
+					},
+				}) {
+					return
+				}
+			}
 		}
 	}
-	return edges
 }

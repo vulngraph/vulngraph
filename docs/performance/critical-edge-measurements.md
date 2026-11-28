@@ -125,9 +125,9 @@ have component correctness/cost evidence; they are not wholly unaddressed work.
 
 PERF-05/11 still require sustained integrated native builds, concurrent collection
 and ingestion, complete score freshness, recovery and whole-process resource
-budgets at the declared estate sizes. The default correlation path still refuses
-600,000 or more relevant assets; experimental staged correlation is not enabled.
-The [successful large-join resource cohort](catchup-capacity.md) measures database
-queries and writes, not removal of this correlation limit or acceptance of the
-complete pipeline. Full-profile coverage and the 24-hour soak remain open; see
+budgets at the declared estate sizes. The later [bounded production correlator](../specs/bounded-correlation.md) replaces
+the default 600,000-row refusal with byte budgets and completes a million-asset
+mixed/native diagnostic. Its recorded swap use and per-rule context limits remain
+explicit. The [successful large-join resource cohort](catchup-capacity.md) measures
+database queries and writes, not acceptance of the complete pipeline. Full-profile coverage and the 24-hour soak remain open; see
 [current sizing evidence and limits](sizing.md).

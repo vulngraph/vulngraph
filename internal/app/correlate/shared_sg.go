@@ -1,6 +1,9 @@
 package correlate
 
 import (
+	"iter"
+	"slices"
+
 	"github.com/vulngraph/vulngraph/internal/app/asset"
 )
 
@@ -23,24 +26,29 @@ func (SharedSecurityGroup) InterestedIn() []string {
 	return []string{
 		"security_group", "ec2_instance", "rds_instance", "redshift_cluster",
 		"elasticache_cluster", "lambda_function", "ecs_service", "load_balancer",
-		"s3_bucket",
+		"s3_bucket", "azure_vm",
 	}
 }
 
-func (SharedSecurityGroup) Correlate(g Graph) []asset.Edge {
-	var edges []asset.Edge
-	for sgID, members := range g.AssetsBySG() {
-		for _, a := range members {
-			edges = append(edges, asset.Edge{
-				SrcID: a.ID, SrcType: a.Type,
-				DstID: sgID, DstType: "security_group",
-				EdgeType: EdgeConnectedViaSG,
-				Properties: map[string]string{
-					"origin": edgeOrigin,
-					"rule":   "shared_security_group",
-				},
-			})
+func (r SharedSecurityGroup) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
+
+func (SharedSecurityGroup) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+
+		for sgID, members := range g.AssetsBySG() {
+			for _, a := range members {
+				if !yield(asset.Edge{
+					SrcID: a.ID, SrcType: a.Type,
+					DstID: sgID, DstType: "security_group",
+					EdgeType: EdgeConnectedViaSG,
+					Properties: map[string]string{
+						"origin": edgeOrigin,
+						"rule":   "shared_security_group",
+					},
+				}) {
+					return
+				}
+			}
 		}
 	}
-	return edges
 }

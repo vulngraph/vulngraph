@@ -41,15 +41,17 @@ type Metrics struct {
 
 	notifyDelivery *prometheus.CounterVec
 
-	ladybugSync       *prometheus.CounterVec
-	graphTierEmpty    *prometheus.CounterVec
-	ladybugPhase      *prometheus.HistogramVec
-	correlateSweeps   *prometheus.CounterVec
-	correlateLastFull prometheus.Gauge
-	correlateViewRows prometheus.Gauge
-	correlateViewCap  prometheus.Gauge
-	baseImageRunning  *prometheus.GaugeVec
-	packageDepartures *prometheus.GaugeVec
+	ladybugSync          *prometheus.CounterVec
+	graphTierEmpty       *prometheus.CounterVec
+	ladybugPhase         *prometheus.HistogramVec
+	correlateSweeps      *prometheus.CounterVec
+	correlateLastFull    prometheus.Gauge
+	correlateViewRows    prometheus.Gauge
+	correlateViewCap     prometheus.Gauge
+	correlateBufferUsed  *prometheus.GaugeVec
+	correlateBufferLimit *prometheus.GaugeVec
+	baseImageRunning     *prometheus.GaugeVec
+	packageDepartures    *prometheus.GaugeVec
 
 	// deletion is the observe-only deletion signal — see metrics_deletion.go.
 	deletion deletionMetrics
@@ -153,12 +155,20 @@ func New() *Metrics {
 		}),
 		correlateViewRows: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace, Subsystem: "correlate", Name: "view_rows",
-			Help: "Rows returned by the last correlation inventory view load. Compare against correlate_view_limit: crossing the limit fails the sweep closed (correlate.ErrViewTruncated), because a rule that cannot see an endpoint stops re-stamping its edge and the edge leaves the traversable graph within 48h.",
+			Help: "Rows returned by the last correlation source load, including failed loads. The staged reader uses byte budgets; a zero view_limit means no row-count ceiling.",
 		}),
 		correlateViewCap: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace, Subsystem: "correlate", Name: "view_limit",
-			Help: "The correlation view's circuit-breaker limit, exported so the headroom ratio is computable without hardcoding the constant in a query.",
+			Help: "The legacy correlation view's row-count ceiling; zero when staged byte budgets govern instead.",
 		}),
+		correlateBufferUsed: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace, Subsystem: "correlate", Name: "buffer_bytes",
+			Help: "Last staged pass logical byte charges by buffer (index, spool, output), including failed passes. These are not Go heap or RSS measurements.",
+		}, []string{"buffer"}),
+		correlateBufferLimit: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace, Subsystem: "correlate", Name: "buffer_limit_bytes",
+			Help: "Configured staged correlation logical byte ceilings by buffer (index, spool, output).",
+		}, []string{"buffer"}),
 		costCollect: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: namespace, Subsystem: "cost", Name: "collect_total",
 			Help: "AWS Cost Explorer collection attempts by outcome (ok = snapshots stored; empty = the API answered with nothing; permission_denied = IAM refused, almost always a missing ce:GetCostAndUsage; config_error = the connector config never produced an AWS config, so no call was made; api_error = any other Cost Explorer failure; store_error = the fetch worked and the write did not; connector_list_error = the loop could not even enumerate connectors; no_aws_connectors = nothing to collect). The per-outcome labels separate failure paths that all render in the UI as \"no cost anomalies\". Alert on permission_denied > 0 and on ok == 0 over a full collection interval.",
@@ -187,6 +197,7 @@ func New() *Metrics {
 		m.jobRuns, m.jobDuration, m.rebuildDur, m.feedRefresh, m.adjudication, m.consistency,
 		m.sweepOutcome, m.sweepLast, m.checkEvaluable, m.checkApplicable, m.reasonCache,
 		m.correlateSweeps, m.correlateLastFull, m.correlateViewRows, m.correlateViewCap,
+		m.correlateBufferUsed, m.correlateBufferLimit,
 		m.ladybugSync, m.graphTierEmpty, m.ladybugPhase,
 		m.costCollect, m.costLastSuccess, m.costSnapshotRows,
 		m.notifyDelivery, m.baseImageRunning, m.packageDepartures,
@@ -256,6 +267,15 @@ func (m *Metrics) ObserveCorrelateView(rows, limit int) {
 	}
 	m.correlateViewRows.Set(float64(rows))
 	m.correlateViewCap.Set(float64(limit))
+}
+
+// ObserveCorrelateBuffer records modeled bytes; process memory is measured separately.
+func (m *Metrics) ObserveCorrelateBuffer(buffer string, used, limit int64) {
+	if m == nil {
+		return
+	}
+	m.correlateBufferUsed.WithLabelValues(buffer).Set(float64(used))
+	m.correlateBufferLimit.WithLabelValues(buffer).Set(float64(limit))
 }
 
 // ObserveCostCollect records one cost-collection attempt's outcome. Every exit

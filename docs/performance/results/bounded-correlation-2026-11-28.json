@@ -1,0 +1,595 @@
+{
+  "version": 1,
+  "scope": "Local Linux ARM64 component evidence. All registered rules execute; populated compute-role, DNS, IAM permission and exposure paths. Three repetitions share one store/process. No whole-profile credit.",
+  "components": [
+    {
+      "cohort": "smoke-framed-v1",
+      "passed": true,
+      "logical_assets": 5200,
+      "physical_asset_rows": 10200,
+      "expected_edges": 12600,
+      "limits": {
+        "AggregationSpillBytes": 134217728,
+        "Rows": 0,
+        "IndexBytes": 268435456,
+        "DiskBytes": 1073741824,
+        "ContextBytes": 16777216,
+        "PageBytes": 2097152,
+        "PageRows": 2000,
+        "OutputRows": 0,
+        "OutputBytes": 536870912
+      },
+      "samples": [
+        {
+          "name": "bounded-correlation:legacy:0",
+          "seconds": 0.079878897,
+          "allocated_bytes": 80307032,
+          "tagged_query_count": 9,
+          "source_terminal_count": 1,
+          "source_query_peak_bytes": 24153368,
+          "sampled_phase_peaks_bytes": {}
+        },
+        {
+          "name": "bounded-correlation:bounded:0",
+          "seconds": 0.155736784,
+          "allocated_bytes": 186232456,
+          "tagged_query_count": 9,
+          "source_terminal_count": 1,
+          "source_query_peak_bytes": 31147821,
+          "sampled_phase_peaks_bytes": {}
+        },
+        {
+          "name": "bounded-correlation:bounded:1",
+          "seconds": 0.163530553,
+          "allocated_bytes": 186211768,
+          "tagged_query_count": 9,
+          "source_terminal_count": 1,
+          "source_query_peak_bytes": 24121848,
+          "sampled_phase_peaks_bytes": {
+            "rss": 30408704,
+            "process_swap": 0,
+            "go_heap": 6547360,
+            "go_heap_inuse": 8781824,
+            "cgroup_memory": 33419264,
+            "cgroup_swap": 0
+          }
+        },
+        {
+          "name": "bounded-correlation:legacy:1",
+          "seconds": 0.081291067,
+          "allocated_bytes": 77953176,
+          "tagged_query_count": 9,
+          "source_terminal_count": 1,
+          "source_query_peak_bytes": 24155936,
+          "sampled_phase_peaks_bytes": {
+            "rss": 37896192,
+            "process_swap": 0,
+            "go_heap": 13265304,
+            "go_heap_inuse": 15351808,
+            "cgroup_memory": 41324544,
+            "cgroup_swap": 0
+          }
+        },
+        {
+          "name": "bounded-correlation:legacy:2",
+          "seconds": 0.077063182,
+          "allocated_bytes": 77949760,
+          "tagged_query_count": 9,
+          "source_terminal_count": 1,
+          "source_query_peak_bytes": 24125392,
+          "sampled_phase_peaks_bytes": {}
+        },
+        {
+          "name": "bounded-correlation:bounded:2",
+          "seconds": 0.16160259,
+          "allocated_bytes": 186212928,
+          "tagged_query_count": 9,
+          "source_terminal_count": 1,
+          "source_query_peak_bytes": 24122216,
+          "sampled_phase_peaks_bytes": {
+            "rss": 30257152,
+            "process_swap": 0,
+            "go_heap": 6629568,
+            "go_heap_inuse": 8642560,
+            "cgroup_memory": 32985088,
+            "cgroup_swap": 0
+          }
+        }
+      ],
+      "staged_passes": [
+        {
+          "publication_started": true,
+          "published_edge_rows": 12600,
+          "published_annotation_rows": 0,
+          "publication_complete": true,
+          "source_complete": true,
+          "index_charge_bytes": 2340443,
+          "source_queries": 1,
+          "source_rows": 5200,
+          "source_charge_bytes": 1884782,
+          "spool_bytes": 1467482,
+          "replay_passes": 33,
+          "replay_rows": 26600,
+          "replay_bytes": 7496918,
+          "replay_charge_bytes": 9636718,
+          "spool_read_calls": 417,
+          "spool_read_bytes": 26419378,
+          "output_rows": 12600,
+          "output_bytes": 3369800
+        },
+        {
+          "publication_started": true,
+          "published_edge_rows": 12600,
+          "published_annotation_rows": 0,
+          "publication_complete": true,
+          "source_complete": true,
+          "index_charge_bytes": 2340443,
+          "source_queries": 1,
+          "source_rows": 5200,
+          "source_charge_bytes": 1884782,
+          "spool_bytes": 1467482,
+          "replay_passes": 33,
+          "replay_rows": 26600,
+          "replay_bytes": 7496918,
+          "replay_charge_bytes": 9636718,
+          "spool_read_calls": 417,
+          "spool_read_bytes": 26419378,
+          "output_rows": 12600,
+          "output_bytes": 3369800
+        },
+        {
+          "publication_started": true,
+          "published_edge_rows": 12600,
+          "published_annotation_rows": 0,
+          "publication_complete": true,
+          "source_complete": true,
+          "index_charge_bytes": 2340443,
+          "source_queries": 1,
+          "source_rows": 5200,
+          "source_charge_bytes": 1884782,
+          "spool_bytes": 1467482,
+          "replay_passes": 33,
+          "replay_rows": 26600,
+          "replay_bytes": 7496918,
+          "replay_charge_bytes": 9636718,
+          "spool_read_calls": 417,
+          "spool_read_bytes": 26419378,
+          "output_rows": 12600,
+          "output_bytes": 3369800
+        }
+      ],
+      "artifact_sha256": {
+        "bounded-correlation.json": "d51bac8e132fd7217059096ed9c757314913f3052c166cfda59f477b5104c977",
+        "worker-resources.jsonl": "a6c619124fc071868f07fc40b158072187bf8732c710fa460640fc1eced1c2eb",
+        "source.patch": "ed59ef85c77d19f24e1ff1c1399e1e0526a653feccbd9d9a5aab7beb6e269c64",
+        "environment.json": "0a93847b3dc0c1038ec791ddfc3d5bbe4301d36f0276133c82aa80bffc60540b",
+        "effective-config.yaml": "98d8c7891f517f939d4f0eefdec8f5172a38f2f495430019ea1ea01df172ef30",
+        "clickhouse-version.txt": "f703e8ce0d2ac1b375914998c55bd7893c869ce685d245eb21087efcbfc5a37e",
+        "worker-container-limits.json": "935c27e5109a35a5e118ba2e89212be1b2c417715c979965e7170b25347cc42e"
+      }
+    },
+    {
+      "cohort": "target-framed-v1",
+      "passed": true,
+      "logical_assets": 100200,
+      "physical_asset_rows": 200200,
+      "expected_edges": 202600,
+      "limits": {
+        "AggregationSpillBytes": 134217728,
+        "Rows": 0,
+        "IndexBytes": 268435456,
+        "DiskBytes": 1073741824,
+        "ContextBytes": 16777216,
+        "PageBytes": 2097152,
+        "PageRows": 2000,
+        "OutputRows": 0,
+        "OutputBytes": 536870912
+      },
+      "samples": [
+        {
+          "name": "bounded-correlation:legacy:0",
+          "seconds": 1.2035713160000001,
+          "allocated_bytes": 1541220968,
+          "tagged_query_count": 104,
+          "source_terminal_count": 1,
+          "source_query_peak_bytes": 221183480,
+          "sampled_phase_peaks_bytes": {
+            "rss": 530046976,
+            "process_swap": 0,
+            "go_heap": 425627960,
+            "go_heap_inuse": 437395456,
+            "cgroup_memory": 533233664,
+            "cgroup_swap": 0
+          }
+        },
+        {
+          "name": "bounded-correlation:bounded:0",
+          "seconds": 2.605377476,
+          "allocated_bytes": 3450219152,
+          "tagged_query_count": 104,
+          "source_terminal_count": 1,
+          "source_query_peak_bytes": 210129588,
+          "sampled_phase_peaks_bytes": {
+            "rss": 101203968,
+            "process_swap": 0,
+            "go_heap": 65256600,
+            "go_heap_inuse": 67608576,
+            "cgroup_memory": 186028032,
+            "cgroup_swap": 0
+          }
+        },
+        {
+          "name": "bounded-correlation:bounded:1",
+          "seconds": 2.578284313,
+          "allocated_bytes": 3450015688,
+          "tagged_query_count": 104,
+          "source_terminal_count": 1,
+          "source_query_peak_bytes": 244250143,
+          "sampled_phase_peaks_bytes": {
+            "rss": 101982208,
+            "process_swap": 0,
+            "go_heap": 65679192,
+            "go_heap_inuse": 68214784,
+            "cgroup_memory": 189116416,
+            "cgroup_swap": 0
+          }
+        },
+        {
+          "name": "bounded-correlation:legacy:1",
+          "seconds": 1.206042047,
+          "allocated_bytes": 1538889176,
+          "tagged_query_count": 104,
+          "source_terminal_count": 1,
+          "source_query_peak_bytes": 191601870,
+          "sampled_phase_peaks_bytes": {
+            "rss": 488394752,
+            "process_swap": 0,
+            "go_heap": 449631992,
+            "go_heap_inuse": 458858496,
+            "cgroup_memory": 490127360,
+            "cgroup_swap": 0
+          }
+        },
+        {
+          "name": "bounded-correlation:legacy:2",
+          "seconds": 1.35627937,
+          "allocated_bytes": 1538957576,
+          "tagged_query_count": 104,
+          "source_terminal_count": 1,
+          "source_query_peak_bytes": 226400748,
+          "sampled_phase_peaks_bytes": {
+            "rss": 521945088,
+            "process_swap": 0,
+            "go_heap": 486823536,
+            "go_heap_inuse": 499474432,
+            "cgroup_memory": 529362944,
+            "cgroup_swap": 0
+          }
+        },
+        {
+          "name": "bounded-correlation:bounded:2",
+          "seconds": 2.507707088,
+          "allocated_bytes": 3449987608,
+          "tagged_query_count": 104,
+          "source_terminal_count": 1,
+          "source_query_peak_bytes": 226397524,
+          "sampled_phase_peaks_bytes": {
+            "rss": 99565568,
+            "process_swap": 0,
+            "go_heap": 62754984,
+            "go_heap_inuse": 65576960,
+            "cgroup_memory": 189988864,
+            "cgroup_swap": 0
+          }
+        }
+      ],
+      "staged_passes": [
+        {
+          "publication_started": true,
+          "published_edge_rows": 202600,
+          "published_annotation_rows": 0,
+          "publication_complete": true,
+          "source_complete": true,
+          "index_charge_bytes": 36635443,
+          "source_queries": 1,
+          "source_rows": 100200,
+          "source_charge_bytes": 37001282,
+          "spool_bytes": 28888982,
+          "replay_passes": 33,
+          "replay_rows": 501600,
+          "replay_bytes": 144604418,
+          "replay_charge_bytes": 185219218,
+          "spool_read_calls": 3824,
+          "spool_read_bytes": 250293409,
+          "output_rows": 202600,
+          "output_bytes": 56284800
+        },
+        {
+          "publication_started": true,
+          "published_edge_rows": 202600,
+          "published_annotation_rows": 0,
+          "publication_complete": true,
+          "source_complete": true,
+          "index_charge_bytes": 36635443,
+          "source_queries": 1,
+          "source_rows": 100200,
+          "source_charge_bytes": 37001282,
+          "spool_bytes": 28888982,
+          "replay_passes": 33,
+          "replay_rows": 501600,
+          "replay_bytes": 144604418,
+          "replay_charge_bytes": 185219218,
+          "spool_read_calls": 3824,
+          "spool_read_bytes": 250294276,
+          "output_rows": 202600,
+          "output_bytes": 56284800
+        },
+        {
+          "publication_started": true,
+          "published_edge_rows": 202600,
+          "published_annotation_rows": 0,
+          "publication_complete": true,
+          "source_complete": true,
+          "index_charge_bytes": 36635443,
+          "source_queries": 1,
+          "source_rows": 100200,
+          "source_charge_bytes": 37001282,
+          "spool_bytes": 28888982,
+          "replay_passes": 33,
+          "replay_rows": 501600,
+          "replay_bytes": 144604418,
+          "replay_charge_bytes": 185219218,
+          "spool_read_calls": 3824,
+          "spool_read_bytes": 250293409,
+          "output_rows": 202600,
+          "output_bytes": 56284800
+        }
+      ],
+      "artifact_sha256": {
+        "bounded-correlation.json": "13d85eb6e19b2980ac3daabbfc2cb41fee7aa77f00c14a03a83a5dbd93cd1886",
+        "worker-resources.jsonl": "95ea2f1b0e10587d69ec961215f9f9ad1f7e21393d84ba0d7954a7320d8626e2",
+        "source.patch": "ed59ef85c77d19f24e1ff1c1399e1e0526a653feccbd9d9a5aab7beb6e269c64",
+        "environment.json": "8a3b43d438db89b4c91002b31672866cc009d97070c996d2138f6a704420a561",
+        "effective-config.yaml": "98d8c7891f517f939d4f0eefdec8f5172a38f2f495430019ea1ea01df172ef30",
+        "clickhouse-version.txt": "f703e8ce0d2ac1b375914998c55bd7893c869ce685d245eb21087efcbfc5a37e",
+        "worker-container-limits.json": "935c27e5109a35a5e118ba2e89212be1b2c417715c979965e7170b25347cc42e"
+      }
+    },
+    {
+      "cohort": "million-sized-v1",
+      "passed": true,
+      "logical_assets": 1000200,
+      "physical_asset_rows": 2000200,
+      "expected_edges": 2002600,
+      "limits": {
+        "AggregationSpillBytes": 134217728,
+        "Rows": 0,
+        "IndexBytes": 536870912,
+        "DiskBytes": 1073741824,
+        "ContextBytes": 16777216,
+        "PageBytes": 2097152,
+        "PageRows": 2000,
+        "OutputRows": 0,
+        "OutputBytes": 805306368
+      },
+      "samples": [
+        {
+          "name": "bounded-correlation:legacy:0",
+          "seconds": 2.683473253,
+          "allocated_bytes": 2693027704,
+          "error": "measure bounded-correlation:legacy:0: Correlate: correlate: inventory view truncated at limit",
+          "tagged_query_count": 2,
+          "source_terminal_count": 1,
+          "source_query_peak_bytes": 239401284,
+          "sampled_phase_peaks_bytes": {
+            "rss": 1362063360,
+            "process_swap": 0,
+            "go_heap": 1148323016,
+            "go_heap_inuse": 1175388160,
+            "cgroup_memory": 1364795392,
+            "cgroup_swap": 0
+          }
+        },
+        {
+          "name": "bounded-correlation:bounded:0",
+          "seconds": 27.066696681,
+          "allocated_bytes": 34283161592,
+          "tagged_query_count": 1004,
+          "source_terminal_count": 1,
+          "source_query_peak_bytes": 204022087,
+          "sampled_phase_peaks_bytes": {
+            "rss": 1370546176,
+            "process_swap": 0,
+            "go_heap": 1309053248,
+            "go_heap_inuse": 1341800448,
+            "cgroup_memory": 1571483648,
+            "cgroup_swap": 0
+          }
+        },
+        {
+          "name": "bounded-correlation:bounded:1",
+          "seconds": 26.628444944,
+          "allocated_bytes": 34280922864,
+          "tagged_query_count": 1004,
+          "source_terminal_count": 1,
+          "source_query_peak_bytes": 204826594,
+          "sampled_phase_peaks_bytes": {
+            "rss": 733937664,
+            "process_swap": 0,
+            "go_heap": 641250904,
+            "go_heap_inuse": 659193856,
+            "cgroup_memory": 1597661184,
+            "cgroup_swap": 0
+          }
+        },
+        {
+          "name": "bounded-correlation:bounded:2",
+          "seconds": 27.422009805,
+          "allocated_bytes": 34280595552,
+          "tagged_query_count": 1004,
+          "source_terminal_count": 1,
+          "source_query_peak_bytes": 201407208,
+          "sampled_phase_peaks_bytes": {
+            "rss": 734019584,
+            "process_swap": 0,
+            "go_heap": 653060088,
+            "go_heap_inuse": 671580160,
+            "cgroup_memory": 1601994752,
+            "cgroup_swap": 0
+          }
+        }
+      ],
+      "staged_passes": [
+        {
+          "publication_started": true,
+          "published_edge_rows": 2002600,
+          "published_annotation_rows": 0,
+          "publication_complete": true,
+          "source_complete": true,
+          "index_charge_bytes": 361535443,
+          "source_queries": 1,
+          "source_rows": 1000200,
+          "source_charge_bytes": 370631282,
+          "spool_bytes": 289618982,
+          "replay_passes": 33,
+          "replay_rows": 5001600,
+          "replay_bytes": 1448254418,
+          "replay_charge_bytes": 1853369218,
+          "spool_read_calls": 31803,
+          "spool_read_bytes": 2083973886,
+          "output_rows": 2002600,
+          "output_bytes": 557584800
+        },
+        {
+          "publication_started": true,
+          "published_edge_rows": 2002600,
+          "published_annotation_rows": 0,
+          "publication_complete": true,
+          "source_complete": true,
+          "index_charge_bytes": 361535443,
+          "source_queries": 1,
+          "source_rows": 1000200,
+          "source_charge_bytes": 370631282,
+          "spool_bytes": 289618982,
+          "replay_passes": 33,
+          "replay_rows": 5001600,
+          "replay_bytes": 1448254418,
+          "replay_charge_bytes": 1853369218,
+          "spool_read_calls": 31803,
+          "spool_read_bytes": 2083973886,
+          "output_rows": 2002600,
+          "output_bytes": 557584800
+        },
+        {
+          "publication_started": true,
+          "published_edge_rows": 2002600,
+          "published_annotation_rows": 0,
+          "publication_complete": true,
+          "source_complete": true,
+          "index_charge_bytes": 361535443,
+          "source_queries": 1,
+          "source_rows": 1000200,
+          "source_charge_bytes": 370631282,
+          "spool_bytes": 289618982,
+          "replay_passes": 33,
+          "replay_rows": 5001600,
+          "replay_bytes": 1448254418,
+          "replay_charge_bytes": 1853369218,
+          "spool_read_calls": 31803,
+          "spool_read_bytes": 2083973876,
+          "output_rows": 2002600,
+          "output_bytes": 557584800
+        }
+      ],
+      "artifact_sha256": {
+        "bounded-correlation.json": "e7b44147c9fb9755ef1a15567bf5c67d7d46fac903b2f7d604d7c389dcef8fa7",
+        "worker-resources.jsonl": "5b5782b819512d4f633fd2f1f480ef7040dd31427e5b48ae68c3850418194d37",
+        "source.patch": "4d4a50ca76b8c736c3bb1c61ac673e50deb4531ed81ad5f0c7241f9dc65098fa",
+        "environment.json": "dd427fa446853bab0fbb722c81f8de82fafc98d8bc25bbf1053defbf2cda0d2f",
+        "effective-config.yaml": "98d8c7891f517f939d4f0eefdec8f5172a38f2f495430019ea1ea01df172ef30",
+        "clickhouse-version.txt": "f703e8ce0d2ac1b375914998c55bd7893c869ce685d245eb21087efcbfc5a37e",
+        "worker-container-limits.json": "935c27e5109a35a5e118ba2e89212be1b2c417715c979965e7170b25347cc42e"
+      }
+    }
+  ],
+  "integrated": {
+    "diagnostic_passed": true,
+    "full_profile_accepted": false,
+    "completed_waves": 6,
+    "read_count": 8995,
+    "read_errors": 0,
+    "query_terminal_records": 85896,
+    "application_query_exceptions": 0,
+    "jobs_with_error_attempts": 0,
+    "freshness_upper_bound_seconds": 745.7787008285522,
+    "logical_assets": 1000000,
+    "expected_active_findings": 10392,
+    "active_collect_peak": 20,
+    "retained_result_peak": 20,
+    "native_overlap_samples": 187,
+    "temporary_allocated_peak_bytes": 403279872,
+    "temporary_excludes": [
+      "/dev/shm",
+      "scratch outside private TMPDIR"
+    ],
+    "swap_used": true,
+    "one_cohort_not_matched_comparison": true,
+    "original_admin_export_failed": true,
+    "recovered_exact_retained_logs": true,
+    "static_factor_freshness_only": true,
+    "aligned_peak": {
+      "active": {
+        "collect": 0,
+        "correlation_full": 0,
+        "correlation_partial": 1,
+        "enrich": 2,
+        "graph": 1,
+        "oracle": 0,
+        "retained_result": 0,
+        "sync": 11
+      },
+      "worker": 4191674368,
+      "worker_go_heap": 2805435448,
+      "cpu_seconds": {
+        "worker": 1874.250977,
+        "clickhouse": 1003.955866,
+        "postgres": 106.792127
+      },
+      "clickhouse": 3735117824,
+      "postgres": 344322048,
+      "span_seconds": 0.06526303291320801,
+      "sum_cgroup_bytes": 8271114240,
+      "swap_bytes": {
+        "worker": 363589632,
+        "clickhouse": 0,
+        "postgres": 180224
+      },
+      "sum_swap_bytes": 363769856,
+      "sum_resident_and_swap_bytes": 8634884096
+    },
+    "artifact_sha256": {
+      "envelope.json": "bdf9b9b76299507a78606b591564889ec630895795cb7da174032b07676cd48d",
+      "application-query-costs-recovered.jsonl": "93542fba138429498a0fe7cc0812ecd20387aea2c7d09eaa872ce3b5151d2483",
+      "jobs-with-errors.csv": "1dffad123d2910d9f79bcac0952445d55661e3b9801e825d6bdd888fb88a2959",
+      "query-cost-errors.log": "82b064fb2f905ac13741fc01b4a7eebe76f81296775551bf37b21c0e9f9b01c2",
+      "source.patch": "cf64832f69dd4c161cdbb88632e5a7e3ed66cc5f1fbe47f7630daa9fb9c09092",
+      "source-freeze-verification.json": "8d89a9ec56569361aa1d88b11a5b143de4cd822ddd165bc2f30751b95c79182d"
+    },
+    "limitations": [
+      "Synthetic modeled collectors; no live SDK quota/latency proof",
+      "No RAM-only or 24h/full-profile capacity acceptance",
+      "All registered rules execute; not every family has million-scale populated context",
+      "Raw report labels 24 rules; frozen source contains 25",
+      "Final graph reconciliation explicitly requested by fixture"
+    ]
+  },
+  "retained_failure": {
+    "cohort": "million-default-v1",
+    "index_limit_bytes": 268435456,
+    "publication_started": false,
+    "published_edges": 0,
+    "staged_edges_at_refusal": 1470942,
+    "failure": "logical index budget",
+    "artifact_sha256": "ad6f502ad72405980e77ee703ac2fc72d90e6f01fcfd81f1390ce38e71335a52"
+  }
+}

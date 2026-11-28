@@ -54,7 +54,7 @@ cleanup() {
  case "$stats_status" in 0|143) ;; *) result=1;; esac
  if [[ "$measurements_started" = 1 ]]; then
   bounded 20 docker exec "$ch" clickhouse-client --user bench --password "$password" --query 'SYSTEM FLUSH LOGS' > "$output/query-log-flush.log" 2>&1 || result=1
-  bounded 30 docker exec "$ch" clickhouse-client --user bench --password "$password" --query "SELECT event_time_microseconds, query_id, type, log_comment, normalizeQuery(query) AS normalized_query, query_duration_ms, read_rows, read_bytes, written_rows, written_bytes, memory_usage, ProfileEvents, exception_code FROM system.query_log WHERE initial_user='graph' AND type!='QueryStart' ORDER BY event_time_microseconds FORMAT JSONEachRow" > "$output/application-query-costs.jsonl" 2> "$output/query-cost-errors.log" || result=1
+  bounded 60 docker exec "$ch" clickhouse-client --user bench --password "$password" --query "SELECT event_time_microseconds, query_id, type, log_comment, normalizeQuery(query) AS normalized_query, query_duration_ms, read_rows, read_bytes, written_rows, written_bytes, memory_usage, ProfileEvents, exception_code FROM system.query_log WHERE initial_user='graph' AND type!='QueryStart' SETTINGS max_threads=1,max_block_size=256,max_memory_usage=536870912,max_execution_time=50 FORMAT JSONEachRow" > "$output/application-query-costs.jsonl" 2> "$output/query-cost-errors.log" || result=1
  fi
  bounded 10 docker logs "$ch" > "$output/clickhouse.log" 2>&1 || true
  bounded 10 docker logs "$pg" > "$output/postgres.log" 2>&1 || true
@@ -162,6 +162,8 @@ bounded 3500 docker run --name "$worker" --network "$suffix" --cpus "$worker_cpu
  -e PERF_ENVELOPE_CONNECTORS="$connectors" -e PERF_ENVELOPE_ASSETS="$assets" -e PERF_COMMIT="$PERF_COMMIT" \
  -e PERF_ENVELOPE_SCOPE_COUNTS="${PERF_ENVELOPE_SCOPE_COUNTS:-}" \
  -e PERF_CORRELATION_JOIN_PROBE="${PERF_CORRELATION_JOIN_PROBE:-0}" \
+ -e CORRELATE_INDEX_MIB="${CORRELATE_INDEX_MIB:-}" -e CORRELATE_CONTEXT_MIB="${CORRELATE_CONTEXT_MIB:-}" \
+ -e CORRELATE_SPOOL_MIB="${CORRELATE_SPOOL_MIB:-}" -e CORRELATE_OUTPUT_MIB="${CORRELATE_OUTPUT_MIB:-}" \
  -e PERF_ENVELOPE_COLLECT_HOLD_MS="${PERF_ENVELOPE_COLLECT_HOLD_MS:-500}" \
  -e PERF_GRAPH_WIRE_VARIANT="${PERF_GRAPH_WIRE_VARIANT:-}" -e PERF_GRAPH_WIRE_SECONDS="${PERF_GRAPH_WIRE_SECONDS:-30}" \
  -e PERF_ENVELOPE_REPRODUCE_HISTORICAL_LOST_UPDATE="${PERF_ENVELOPE_REPRODUCE_HISTORICAL_LOST_UPDATE:-0}" \

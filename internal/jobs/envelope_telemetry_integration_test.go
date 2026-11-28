@@ -72,6 +72,10 @@ func (r *envelopeTrace) sample(ctx context.Context) error {
 			}
 			files[name] = string(b)
 		}
+		temp, err := envelopeTempUsage(os.TempDir())
+		if err != nil {
+			return err
+		}
 		r.mu.Lock()
 		active := map[string]int{}
 		for k, v := range r.active {
@@ -79,12 +83,17 @@ func (r *envelopeTrace) sample(ctx context.Context) error {
 		}
 		r.mu.Unlock()
 		r.write(map[string]any{"event": "sample", "active": active, "go_heap_alloc_bytes": m.HeapAlloc,
-			"go_heap_inuse_bytes": m.HeapInuse, "go_sys_bytes": m.Sys, "go_gc_count": m.NumGC, "go_total_alloc_bytes": m.TotalAlloc, "files": files})
+			"go_heap_inuse_bytes": m.HeapInuse, "go_sys_bytes": m.Sys, "go_gc_count": m.NumGC, "go_total_alloc_bytes": m.TotalAlloc, "files": files,
+			"temporary_files": temp})
 	}
 }
 
 func (r *envelopeTrace) ObserveCorrelateView(rows, limit int) {
-	r.write(map[string]any{"event": "correlation_view", "relevant_rows_loaded": rows, "unchanged_limit": limit})
+	r.write(map[string]any{"event": "correlation_view", "relevant_rows_loaded": rows, "row_limit_zero_means_byte_budgets": limit})
+}
+
+func (r *envelopeTrace) ObserveStagedView(stats correlate.StagedViewStats) {
+	r.write(map[string]any{"event": "correlation_staged_cost", "stats": stats})
 }
 
 func (r *envelopeTrace) ObserveLadybugSync(path string, seconds float64) {

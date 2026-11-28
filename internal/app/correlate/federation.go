@@ -2,6 +2,8 @@ package correlate
 
 import (
 	"encoding/json"
+	"iter"
+	"slices"
 	"strings"
 
 	"github.com/vulngraph/vulngraph/internal/app/asset"
@@ -30,84 +32,96 @@ func (FederationTrust) InterestedIn() []string {
 	return []string{"iam_role", "github_repo"}
 }
 
-func (FederationTrust) Correlate(g Graph) []asset.Edge {
-	// Two-sided: a role's trust policy is matched against g's live repos. A
-	// partial run that changed only a repo (not any role) can still need this
-	// — a brand-new repo can match an EXISTING, untouched role's trust subject
-	// — so only skip unchanged roles when no github_repo changed this run.
-	skipUnchanged := g.OtherSideUnchanged("github_repo")
-	var edges []asset.Edge
-	for _, role := range g.IAMRoles() {
-		if skipUnchanged && !g.NeedsRecompute(role.ID) {
-			continue
+func (r FederationTrust) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
+
+func (FederationTrust) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+		// Two-sided: a role's trust policy is matched against g's live repos. A
+		// partial run that changed only a repo (not any role) can still need this
+		// — a brand-new repo can match an EXISTING, untouched role's trust subject
+		// — so only skip unchanged roles when no github_repo changed this run.
+		skipUnchanged := g.OtherSideUnchanged("github_repo")
+		for _, role := range g.IAMRoles() {
+			if skipUnchanged && !g.NeedsRecompute(role.ID) {
+				continue
+			}
+			for edge := range githubOIDCStream(role, g) {
+				if !yield(edge) {
+					return
+				}
+			}
 		}
-		edges = append(edges, githubOIDCEdges(role, g)...)
+
 	}
-	return edges
 }
 
-// githubOIDCEdges parses an IAM role's trust policy for GitHub Actions OIDC
+// githubOIDCStream parses an IAM role's trust policy for GitHub Actions OIDC
 // principals and matches them against repos in the graph.
 //
 // GitHub trust policy condition format:
 //
 //	"token.actions.githubusercontent.com:sub": "repo:org/name:ref:refs/heads/main"
 //	or "repo:org/name:*"  (any branch)
-func githubOIDCEdges(role asset.Asset, g Graph) []asset.Edge {
-	policies := decodePolicies(role.Metadata["policies"])
-	if len(policies) == 0 {
-		return nil
-	}
-
-	var edges []asset.Edge
-	seen := map[string]bool{}
-	emit := func(repo asset.Asset, sub string) {
-		if seen[repo.ID] {
+func githubOIDCStream(role asset.Asset, g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
+		policies := decodePolicies(role.Metadata["policies"])
+		if len(policies) == 0 {
 			return
 		}
-		seen[repo.ID] = true
-		edges = append(edges, asset.Edge{
-			SrcID: repo.ID, SrcType: "github_repo",
-			DstID: role.ID, DstType: role.Type,
-			EdgeType: EdgeFederatedAccess,
-			Properties: map[string]string{
-				"origin":     edgeOrigin,
-				"rule":       "federation_trust",
-				"trust_type": "github_oidc",
-				"subject":    sub,
-				"provenance": "trust_policy",
-			},
-		})
-	}
-	for _, pol := range policies {
-		// Only trust policies contain federated principals; skip identity/boundary/scp.
-		if pol.Type != "trust" && pol.Type != "" {
-			continue
+
+		seen := map[string]bool{}
+		emit := func(repo asset.Asset, sub string) bool {
+			if seen[repo.ID] {
+				return true
+			}
+			seen[repo.ID] = true
+			return yield(asset.Edge{
+				SrcID: repo.ID, SrcType: "github_repo",
+				DstID: role.ID, DstType: role.Type,
+				EdgeType: EdgeFederatedAccess,
+				Properties: map[string]string{
+					"origin":     edgeOrigin,
+					"rule":       "federation_trust",
+					"trust_type": "github_oidc",
+					"subject":    sub,
+					"provenance": "trust_policy",
+				},
+			})
 		}
-		for _, sub := range extractGitHubSubjects(pol.Document) {
-			// sub format: "repo:org/name:ref:refs/heads/main" or "repo:org/name:*".
-			// The full "org/name" is required: a short-name match would link
-			// repo:otherorg/infra to every repo called "infra" in the estate.
-			pattern := githubRepoFromSub(sub)
-			if pattern == "" {
+		for _, pol := range policies {
+			// Only trust policies contain federated principals; skip identity/boundary/scp.
+			if pol.Type != "trust" && pol.Type != "" {
 				continue
 			}
-			if !strings.ContainsAny(pattern, "*?") {
-				if repo, ok := g.RepoByFullName(pattern); ok {
-					emit(repo, sub)
+			for _, sub := range extractGitHubSubjects(pol.Document) {
+				// sub format: "repo:org/name:ref:refs/heads/main" or "repo:org/name:*".
+				// The full "org/name" is required: a short-name match would link
+				// repo:otherorg/infra to every repo called "infra" in the estate.
+				pattern := githubRepoFromSub(sub)
+				if pattern == "" {
+					continue
 				}
-				continue
-			}
-			// A wildcard subject (StringLike "repo:org/*:ref:refs/heads/main")
-			// trusts every repo whose full name the pattern can match.
-			for _, repo := range g.GitHubRepos() {
-				if githubSubjectMatchesRepo(sub, repo.ID) {
-					emit(repo, sub)
+				if !strings.ContainsAny(pattern, "*?") {
+					if repo, ok := g.RepoByFullName(pattern); ok {
+						if !emit(repo, sub) {
+							return
+						}
+					}
+					continue
+				}
+				// A wildcard subject (StringLike "repo:org/*:ref:refs/heads/main")
+				// trusts every repo whose full name the pattern can match.
+				for _, repo := range g.GitHubRepos() {
+					if githubSubjectMatchesRepo(sub, repo.ID) {
+						if !emit(repo, sub) {
+							return
+						}
+					}
 				}
 			}
 		}
+
 	}
-	return edges
 }
 
 // githubSubjectMatchesRepo reports whether a StringLike sub pattern can be

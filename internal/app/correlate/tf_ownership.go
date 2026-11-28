@@ -1,6 +1,9 @@
 package correlate
 
 import (
+	"iter"
+	"slices"
+
 	"github.com/vulngraph/vulngraph/internal/app/asset"
 )
 
@@ -88,41 +91,46 @@ func (TFOwnership) InterestedIn() []string {
 	return types
 }
 
-func (TFOwnership) Correlate(g Graph) []asset.Edge {
-	var edges []asset.Edge
-	for _, d := range g.DeclaredTFResources() {
-		repoID := d.Metadata["repo"]
-		if repoID == "" {
-			continue
-		}
-		target := d.Metadata["target_arn"]
-		if target == "" {
-			target = d.Metadata["target_id"]
-		}
-		if target == "" {
-			continue
-		}
+func (r TFOwnership) Correlate(g Graph) []asset.Edge { return slices.Collect(r.Edges(g)) }
 
-		m, ok := g.AssetByID(target)
-		if !ok || !tfOwnershipSafeLiveTypes[m.Type] {
-			// No live match, or a live match whose type has no safe defined_in
-			// route (e.g. security_group) — skip rather than emit an edge that
-			// would silently drop at Ladybug load.
-			continue
-		}
+func (TFOwnership) Edges(g Graph) iter.Seq[asset.Edge] {
+	return func(yield func(asset.Edge) bool) {
 
-		edges = append(edges, asset.Edge{
-			SrcID: m.ID, SrcType: m.Type,
-			DstID: repoID, DstType: "github_repo",
-			EdgeType: EdgeDefinedIn,
-			Properties: map[string]string{
-				"origin":     edgeOrigin,
-				"rule":       "tf_ownership",
-				"confidence": "high",
-				"provenance": "iac_terraform",
-				"address":    d.Metadata["address"],
-			},
-		})
+		for _, d := range g.DeclaredTFResources() {
+			repoID := d.Metadata["repo"]
+			if repoID == "" {
+				continue
+			}
+			target := d.Metadata["target_arn"]
+			if target == "" {
+				target = d.Metadata["target_id"]
+			}
+			if target == "" {
+				continue
+			}
+
+			m, ok := g.AssetByID(target)
+			if !ok || !tfOwnershipSafeLiveTypes[m.Type] {
+				// No live match, or a live match whose type has no safe defined_in
+				// route (e.g. security_group) — skip rather than emit an edge that
+				// would silently drop at Ladybug load.
+				continue
+			}
+
+			if !yield(asset.Edge{
+				SrcID: m.ID, SrcType: m.Type,
+				DstID: repoID, DstType: "github_repo",
+				EdgeType: EdgeDefinedIn,
+				Properties: map[string]string{
+					"origin":     edgeOrigin,
+					"rule":       "tf_ownership",
+					"confidence": "high",
+					"provenance": "iac_terraform",
+					"address":    d.Metadata["address"],
+				},
+			}) {
+				return
+			}
+		}
 	}
-	return edges
 }

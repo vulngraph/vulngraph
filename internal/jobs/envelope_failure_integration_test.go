@@ -18,14 +18,15 @@ import (
 // this cohort without changing the production breaker or its retry policy.
 func envelopeCheckCorrelationLimit(t *testing.T, ctx context.Context, pool *pgxpool.Pool, ch *db.CH, trace *envelopeTrace, report *envelopeReport) {
 	t.Helper()
-	var refused bool
-	require.NoError(t, pool.QueryRow(ctx, `SELECT EXISTS (
-		SELECT 1 FROM river_job j, unnest(j.errors) e
-		WHERE j.queue=$1 AND e->>'error' LIKE $2)`, queueCorrelate, "%"+correlate.ErrViewTruncated.Error()+"%").Scan(&refused))
-	if !refused {
+	var refusal string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT coalesce((
+		SELECT e->>'error' FROM river_job j, unnest(j.errors) e
+		WHERE j.queue=$1 AND (e->>'error' LIKE $2 OR e->>'error' LIKE $3) LIMIT 1),'')`,
+		queueCorrelate, "%"+correlate.ErrViewTruncated.Error()+"%", "%"+correlate.ErrStagedBudget.Error()+"%").Scan(&refusal))
+	if refusal == "" {
 		return
 	}
-	message := "correlation refused its relevant population at the unchanged 600000-row breaker; cohort incomplete"
+	message := "correlation capacity refusal; cohort incomplete: " + refusal
 	report.Failures = append(report.Failures, message)
 	counts := map[string]uint64{}
 	err := ch.Select(ctx, func(rows driver.Rows) error {

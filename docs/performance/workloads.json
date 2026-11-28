@@ -3991,6 +3991,7 @@
         "module:internal/app/correlate/deploys.go",
         "module:internal/app/correlate/domain.go",
         "module:internal/app/correlate/ec2_iam.go",
+        "module:internal/app/correlate/edge_stream.go",
         "module:internal/app/correlate/executes_as.go",
         "module:internal/app/correlate/federation.go",
         "module:internal/app/correlate/gcp_firewall.go",
@@ -4013,17 +4014,23 @@
         "module:internal/app/correlate/port_eval.go",
         "module:internal/app/correlate/reachability.go",
         "module:internal/app/correlate/repo.go",
+        "module:internal/app/correlate/repo_staged.go",
+        "module:internal/app/correlate/repo_staged_frame.go",
+        "module:internal/app/correlate/repo_staged_refs.go",
         "module:internal/app/correlate/repo_view_query.go",
         "module:internal/app/correlate/rules.go",
         "module:internal/app/correlate/secgroups.go",
         "module:internal/app/correlate/secret_access.go",
         "module:internal/app/correlate/service.go",
+        "module:internal/app/correlate/service_staged.go",
+        "module:internal/app/correlate/service_staged_dns.go",
         "module:internal/app/correlate/shared_sg.go",
+        "module:internal/app/correlate/staged_config.go",
         "module:internal/app/correlate/tf_ownership.go",
         "module:internal/jobs/correlate.go",
         "module:internal/jobs/correlate_coalescer.go"
       ],
-      "next_action": "Measure complete input/output working sets, coalesced invalidations and mixed freshness; the default 600k refusal remains and larger-profile capacity is unaccepted."
+      "next_action": "Bounded source/context/output replay replaces the production 600k row refusal; retain component latency tradeoffs and the current-source million-asset mixed diagnostic. Complete populated-rule, no-swap, aged, multi-replica and full-profile freshness/resource acceptance."
     },
     {
       "id": "graph.fallback",

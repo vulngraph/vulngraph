@@ -1,7 +1,9 @@
 # Critical graph-edge source reads
 
 The critical-edge source query uses existing storage order to release aggregation
-state incrementally. A query-local 4 MiB aggregation block bound is necessary:
+state incrementally, with a 4 MiB aggregation block target and 4,096-row input
+blocks. The input-block comparison below extends the original measurements.
+A query-local 4 MiB aggregation block bound was necessary:
 enabling ordered aggregation with its default 50 MB block target increased the
 100,000-edge fixture peak from 93.8 MB to 162.8 MB. That failed candidate is
 retained. The bulk-edge query, all five grouping columns, latest property
@@ -16,7 +18,9 @@ an invalid security-group destination, an expired edge and a bulk edge. Each
 operation must return exactly the expected complete result and exactly one
 critical and one bulk terminal query-log record. EXPLAIN must show ordered
 aggregation. Three alternating baseline/candidate repeats use identical data
-and resource limits; the baseline removes only the two query-local settings.
+and resource limits; the historical baseline removes the ordered-aggregation and
+input-block settings. The following table retains the original comparison before
+the input-block change.
 
 The local cohort uses deployed ClickHouse 26.8.34.13 with deployment XML on
 Linux ARM64, two database CPUs, a 3 GiB server cap and a 2 GiB query cap. The
@@ -70,6 +74,44 @@ The [compact local results](critical-edge-results.json) retain the artifact hash
 The deployed upstream [ordered aggregation implementation](https://github.com/ClickHouse/ClickHouse/blob/v26.8.34.13-lts/src/Processors/Transforms/AggregatingInOrderTransform.cpp)
 checks accumulated state at key boundaries; the block target does not bound all
 query or process memory. No query memory ceiling is raised.
+
+## Input-block comparison — 2026-11-28
+
+The unchanged ordered query later exceeded the 64 MiB comparison guard in native
+ARM64 CI: 70.14 MB in one sample, versus 41.87 and 60.09 MB in the other two.
+All outputs were correct and there were no SQL exceptions. The original failure
+is retained; it is not an out-of-memory or full-system capacity failure. The
+4 MiB aggregation target does not also bound the rows buffered on its inputs.
+
+A focused experiment limits only critical-query input blocks to 4,096 rows.
+Three alternating pairs per fixture compare against the existing ordered query
+with default input blocks, preserving the SQL fields, filters and exact outputs.
+
+| Fixture | Existing / bounded peak query memory | Existing / bounded median whole read including oracle | Existing / bounded median critical-query CPU |
+| --- | ---: | ---: | ---: |
+| 100k critical edges, two versions | 95.49 / 32.78 MB | 169.98 / 174.42 ms | 119.36 / 108.87 ms |
+| 1m critical edges, two versions | 101.87 / 43.44 MB | 1.692 / 1.564 s | 1.210 / 1.006 s |
+
+The smaller fixture has a 2.6% elapsed-time cost. The million-edge fixture
+improves both memory and elapsed time; the setting is not adopted merely to
+make a fluctuating CI sample pass. Both retain the independent exact
+property/type/freshness oracle through the actual repository decoder.
+
+On a separate retained versioned clone, all six isolated queries return exactly
+999,496 critical rows with byte-identical sorted properties. Existing versus
+bounded query memory peaks are 70.07 / 32.25 MB; SQL medians are 449 / 382 ms,
+and CPU medians are 0.652 / 0.581 seconds. The first existing query takes 975 ms
+and remains included. Source merges are stopped for this comparison; it does
+not include concurrent ingestion, asset loading, Go decoding or native graph
+construction. The original seed is never started or modified.
+
+The [input-block evidence](critical-edge-input-results.json) retains individual
+samples, source/query/report hashes and the failed CI record. A wrapper setup
+failure before any aged measurement is retained separately. The production
+change applies the same input setting to the critical query only. The bulk query
+and the 64/512 MiB guards remain unchanged, and the historical hash-query
+negative control still must fail its original memory guard. Fresh production
+replay and required native CI validate the committed setting before merge.
 
 ## Remaining scope
 

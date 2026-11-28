@@ -20,6 +20,23 @@ type enrichmentCandidateLister interface {
 	EnrichmentCandidates(context.Context, finding.Filter) (finding.EnrichmentPage, error)
 }
 
+// Each execution keeps the existing admission budget. An incomplete pass yields
+// its worker slot and resumes the same durable job, rather than waiting for the
+// next ordinary tick. EOF ends the pass; scoring can still be pending and updates
+// behind the cursor belong to a later pass. Whole-pass work can exceed one slice.
+const enrichSweepContinuationDelay = 2 * time.Second
+
+func (w *EnrichSweepWorker) driftPassActive(ctx context.Context) (bool, error) {
+	if w.progress == nil {
+		return false, nil
+	}
+	progress, err := w.progress.GetSweepProgress(ctx)
+	if err != nil {
+		return false, fmt.Errorf("driftPassActive: read progress: %w", err)
+	}
+	return !progress.Before.IsZero(), nil
+}
+
 func (w *EnrichSweepWorker) drainDrift(ctx context.Context, budget int) (int, error) {
 	if w.progress == nil {
 		// With no change-gate cache, scoring updates enriched_at on each visit.

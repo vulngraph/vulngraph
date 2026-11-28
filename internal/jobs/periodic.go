@@ -174,10 +174,6 @@ func buildPeriodicJobs(cfg PeriodicConfig) []*river.PeriodicJob {
 	if correlateEvery <= 0 {
 		correlateEvery = defaultCorrelateInterval
 	}
-	enrichEvery := cfg.EnrichInterval
-	if enrichEvery <= 0 {
-		enrichEvery = defaultEnrichInterval
-	}
 
 	periodic := []*river.PeriodicJob{
 		// RunOnStart: true — connector sync must kick off immediately at startup
@@ -204,13 +200,7 @@ func buildPeriodicJobs(cfg PeriodicConfig) []*river.PeriodicJob {
 		//
 		// Offset past the sync/correlate boot storm, same as KEV/OSV, so the
 		// original "don't pile onto the sync wave" concern still holds.
-		river.NewPeriodicJob(
-			river.PeriodicInterval(enrichEvery),
-			func() (river.JobArgs, *river.InsertOpts) {
-				return EnrichSweepArgs{}, scheduledOn(EnrichSweepArgs{}, 8*time.Minute)
-			},
-			&river.PeriodicJobOpts{RunOnStart: true},
-		),
+		newEnrichSweepPeriodic(cfg.EnrichInterval),
 		// RunOnStart: true — aws_org discovery is the only producer of org
 		// child connectors, and an hourly interval on a worker that restarts
 		// more often would never fire. Offset a minute so the first wave of
@@ -434,4 +424,15 @@ func buildPeriodicJobs(cfg PeriodicConfig) []*river.PeriodicJob {
 		)
 	}
 	return periodic
+}
+
+// newEnrichSweepPeriodic is shared with the isolated pipeline fixture. Each
+// admitted tick has the production offset; the recurrence is a separate limit.
+func newEnrichSweepPeriodic(interval time.Duration) *river.PeriodicJob {
+	if interval <= 0 {
+		interval = defaultEnrichInterval
+	}
+	return river.NewPeriodicJob(river.PeriodicInterval(interval), func() (river.JobArgs, *river.InsertOpts) {
+		return EnrichSweepArgs{}, scheduledOn(EnrichSweepArgs{}, 8*time.Minute)
+	}, &river.PeriodicJobOpts{RunOnStart: true})
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/riverqueue/river"
 	"github.com/stretchr/testify/require"
+	"github.com/vulngraph/vulngraph/internal/app/enrichcache"
 	"github.com/vulngraph/vulngraph/internal/app/finding"
 )
 
@@ -33,7 +34,7 @@ func (p *backfillPruner) PruneAlertStates(context.Context, time.Time) (int64, er
 func TestDemandBackfillSnoozesUntilMeasuredAndSkipsDrift(t *testing.T) {
 	list := &backfillOnlyLister{pending: true}
 	prune := &backfillPruner{}
-	worker := &EnrichSweepWorker{findings: list, alerts: prune}
+	worker := &EnrichSweepWorker{findings: list, alerts: prune, progress: &progressMemoryStore{state: enrichcache.SweepProgress{Before: time.Now()}}}
 	job := &river.Job[EnrichSweepArgs]{Args: EnrichSweepArgs{BackfillOnly: true}}
 	err := worker.Work(t.Context(), job)
 	var snooze *river.JobSnoozeError

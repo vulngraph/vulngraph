@@ -437,3 +437,24 @@ func scheduledKinds(t *testing.T, cfg PeriodicConfig) map[string]bool {
 	}
 	return out
 }
+
+func TestEnrichSweepPeriodicKeepsRecurrenceAndOffsetDistinct(t *testing.T) {
+	for _, configured := range []time.Duration{0, 3 * time.Minute} {
+		job := newEnrichSweepPeriodic(configured)
+		every := configured
+		if every == 0 {
+			every = 15 * time.Minute
+		}
+		value := reflect.ValueOf(job).Elem()
+		schedule := *(*river.PeriodicSchedule)(unsafe.Pointer(value.FieldByName("scheduleFunc").UnsafeAddr()))
+		now := time.Now()
+		require.Equal(t, now.Add(every), schedule.Next(now))
+		for range 2 {
+			before := time.Now()
+			args, opts, start := periodicByKind(t, []*river.PeriodicJob{job}, "enrich_sweep")
+			require.Equal(t, EnrichSweepArgs{}, args)
+			require.True(t, start)
+			require.WithinRange(t, opts.ScheduledAt, before.Add(8*time.Minute), time.Now().Add(8*time.Minute))
+		}
+	}
+}

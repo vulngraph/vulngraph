@@ -306,3 +306,11 @@ part of the mixed-load measurements, with no full-profile coverage credit.
 PERF-05/PERF-11 now retain [production graph-source projection measurements](performance/graph-projection-measurements.md): exact 5k/100k/1m asset reads, all projection modes and lifecycle replay, and three matched concurrent source/read/ingestion pairs. Query memory and worker allocations fall; isolated reads slow down and ClickHouse CPU rises. The fixed-rate mixed workload improves memory and read tails. Native construction, aged integration, saturation and full-profile acceptance remain open; this adds no workload coverage credit.
 
 PERF-07 also retains the [typed correlation source comparison](performance/source-read-measurements.md#typed-reads-without-declaration-annotations): omitting an unused annotation join restores headroom at the 100k native guard, while the million-input memory regression and unchanged 600k refusal remain explicit. Full and mixed declaration views retain their annotation semantics and cost; no full-profile credit is added.
+
+PERF-07/11/12 now retain the million-asset diagnostic's explicit enrichment
+freshness failure: 8,207 of 10,392 expected static factors remained stale with no
+pending scoring jobs. [Sweep continuation](specs/enrichment-sweep-progress.md)
+addresses idle time between incomplete bounded passes while preserving ordinary
+new-pass scheduling, queue limits and urgent backfill. Whole-pass cost and the
+independent all-finding oracle remain required; no profile gains coverage from
+the failed diagnostic or from a small replay alone.

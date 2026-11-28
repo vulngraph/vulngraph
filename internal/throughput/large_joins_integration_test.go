@@ -56,6 +56,8 @@ type largeJoinReport struct {
 	CandidateLifecycle        []string                             `json:"candidate_lifecycle,omitempty"`
 	ResourceCohort            string                               `json:"resource_cohort"`
 	CandidateSettings         map[string]any                       `json:"candidate_settings,omitempty"`
+	CandidateSettingsScope    string                               `json:"candidate_settings_scope,omitempty"`
+	DefaultJoinSettings       map[string]string                    `json:"default_join_settings,omitempty"`
 	OperationErrors           map[string]string                    `json:"operation_errors"`
 	VerifiedSamples           []string                             `json:"verified_samples"`
 	ObservedSettings          map[string]map[string]string         `json:"observed_settings"`
@@ -242,14 +244,58 @@ func TestLargeJoinCosts(t *testing.T) {
 	report := largeJoinReport{FixtureVersion: 5, Source: os.Getenv("PERF_COMMIT"), Platform: runtime.GOOS + "/" + runtime.GOARCH, GoVersion: runtime.Version(), Profile: p, Findings: n, Enrichment: n * 5, Versions: 3, MembershipVersionFraction: "two extra versions for every tenth image and package", AppConcurrency: 8, OutputSHA256: map[string]string{}, Plans: map[string][]string{}, Experiment: os.Getenv("PERF_JOIN_EXPERIMENT"), OperationErrors: map[string]string{}, ObservedSettings: map[string]map[string]string{}}
 	report.FailureDrainSeconds = map[string]float64{}
 	report.ResourceCohort = os.Getenv("PERF_JOIN_RESOURCES")
+	currentProduction := false
+	switch report.Experiment {
+	case "join_spill", "merge_join", "merge_join_bounded", "merge_join_blocks":
+		currentProduction = true
+	}
+	if report.Experiment == "join_spill" {
+		// Compare the current production shape with an earlier spill trigger.
+		// Keep the server/query caps and the absolute cost guard unchanged.
+		report.CandidateSettings = map[string]any{"max_bytes_before_external_join": 128 << 20}
+	}
+	if report.Experiment == "merge_join" {
+		// Enrichment is sorted by id; measure a merge instead of retaining a
+		// hash table. Bound any required sorting without changing the SQL.
+		report.CandidateSettings = map[string]any{"join_algorithm": "full_sorting_merge", "max_bytes_before_external_sort": 128 << 20}
+	}
+	if report.Experiment == "merge_join_bounded" || report.Experiment == "merge_join_blocks" {
+		// Both byte and ratio thresholds must be exceeded in the deployed
+		// MergeSortingTransform. Disable the ratio gate to honor the byte bound.
+		// Source-filtered aggregation retains its existing join and pruning.
+		report.CandidateSettings = map[string]any{"join_algorithm": "full_sorting_merge", "max_bytes_before_external_sort": 128 << 20, "max_bytes_ratio_before_external_sort": 0}
+		report.CandidateSettingsScope = "broad-only"
+	}
+	if report.Experiment == "merge_join_blocks" {
+		// FINAL and ordered merge inputs retain blocks across source parts.
+		// Measure smaller input buffers independently of sort spill thresholds.
+		report.CandidateSettings["max_block_size"] = 4096
+	}
+	if currentProduction {
+		report.DefaultJoinSettings = map[string]string{}
+		require.NoError(t, app.Select(ctx, func(rows driver.Rows) error {
+			for rows.Next() {
+				var name, value string
+				if e := rows.Scan(&name, &value); e != nil {
+					return e
+				}
+				report.DefaultJoinSettings[name] = value
+			}
+			return rows.Err()
+		}, `SELECT name,value FROM system.settings WHERE name IN ('join_algorithm','max_bytes_before_external_sort','max_bytes_ratio_before_external_sort','max_block_size')`))
+	}
 	defer func() {
 		report.Passed = !t.Failed()
 		data, e := json.MarshalIndent(report, "", "  ")
 		require.NoError(t, e)
 		require.NoError(t, os.WriteFile(filepath.Join(os.Getenv("PERF_QUERY_DIR"), "large-joins.json"), append(data, '\n'), 0o600))
 	}()
-	if report.Experiment == "latest_rows" && os.Getenv("PERF_JOIN_PROFILE") == "smoke" {
-		report.CandidateLifecycle = checkLatestRowLifecycle(t, ctx, admin, app)
+	if (report.Experiment == "latest_rows" || currentProduction) && os.Getenv("PERF_JOIN_PROFILE") == "smoke" {
+		lifecycleCtx := ctx
+		if report.CandidateSettings != nil {
+			lifecycleCtx = app.WithQuerySettings(ctx, report.CandidateSettings)
+		}
+		report.CandidateLifecycle = checkLatestRowLifecycle(t, lifecycleCtx, admin, app)
 	}
 	start := time.Now()
 	stamp := start.Add(-time.Hour).Unix()
@@ -283,7 +329,7 @@ func TestLargeJoinCosts(t *testing.T) {
 	findingRepo := finding.NewCHRepo(app)
 	assetRepo := asset.NewCHRepo(app)
 	modes := []string{"baseline"}
-	if report.Experiment == "enrichment_keys" || report.Experiment == "ordered" || report.Experiment == "ordered_blocks" || report.Experiment == "latest_rows" {
+	if report.Experiment == "enrichment_keys" || report.Experiment == "ordered" || report.Experiment == "ordered_blocks" || report.Experiment == "latest_rows" || currentProduction {
 		modes = append(modes, "candidate")
 	} else {
 		require.Empty(t, report.Experiment)
@@ -302,29 +348,36 @@ func TestLargeJoinCosts(t *testing.T) {
 		report.MaxBaselineMemoryPercent = 75
 	}
 	if os.Getenv("PERF_JOIN_MIXED_SECONDS") != "" {
-		require.Contains(t, []string{"ordered_blocks", "latest_rows"}, report.Experiment)
-		runConcurrentJoins(t, ctx, admin, app, p, n, stamp, report.CandidateSettings, report.Experiment)
+		require.True(t, currentProduction || report.Experiment == "ordered_blocks" || report.Experiment == "latest_rows")
+		runConcurrentJoins(t, ctx, admin, app, p, n, stamp, report.CandidateSettings, report.Experiment, currentProduction)
 		return
 	}
 	for _, source := range []string{"", "sample"} {
+		settingsEnabled := report.CandidateSettingsScope != "broad-only" || source == ""
 		wantSummary, wantClusters := largeJoinOracle(n, stamp, source)
 		for _, kind := range []string{"summary", "clusters"} {
 			name := "findings-" + kind + "-" + source
 			for repeat := 0; repeat < 3; repeat++ {
-				for _, mode := range modes {
+				pairModes := modes
+				if currentProduction && repeat%2 == 1 {
+					pairModes = []string{"candidate", "baseline"}
+				}
+				for _, mode := range pairModes {
 					key := name + "-" + mode
 					sampleName := fmt.Sprintf("%s-%d", key, repeat)
 					sample, runErr := perfassurance.Measure(ctx, admin, logAccess, sampleName, func(ctx context.Context) error {
 						// Match the repository's ten-second interactive deadline for the candidate.
 						ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 						defer cancel()
-						if mode == "candidate" && report.CandidateSettings != nil {
+						if mode == "candidate" && settingsEnabled && report.CandidateSettings != nil {
 							ctx = app.WithQuerySettings(ctx, report.CandidateSettings)
 						}
 						var got, want any
 						var callErr error
 						if kind == "summary" {
-							if mode == "candidate" && (report.Experiment == "enrichment_keys" || report.Experiment == "latest_rows") {
+							if currentProduction {
+								got, callErr = findingRepo.Summary(ctx, finding.Filter{Source: source})
+							} else if mode == "candidate" && (report.Experiment == "enrichment_keys" || report.Experiment == "latest_rows") {
 								got, callErr = readJoinSummaryCandidate(ctx, app, source, report.Experiment)
 							} else if report.Experiment == "" {
 								got, callErr = findingRepo.Summary(ctx, finding.Filter{Source: source})
@@ -335,7 +388,9 @@ func TestLargeJoinCosts(t *testing.T) {
 						} else {
 							var rows []finding.Cluster
 							var total int
-							if mode == "candidate" && (report.Experiment == "enrichment_keys" || report.Experiment == "latest_rows") {
+							if currentProduction {
+								rows, total, callErr = findingRepo.Clusters(ctx, finding.Filter{Source: source})
+							} else if mode == "candidate" && (report.Experiment == "enrichment_keys" || report.Experiment == "latest_rows") {
 								rows, total, callErr = readJoinClustersCandidate(ctx, app, source, report.Experiment)
 							} else if report.Experiment == "" {
 								rows, total, callErr = findingRepo.Clusters(ctx, finding.Filter{Source: source})
@@ -415,14 +470,19 @@ func TestLargeJoinCosts(t *testing.T) {
 						}
 						return rows.Err()
 					}, `SELECT Settings FROM system.query_log WHERE log_comment=? AND type IN ('QueryFinish','ExceptionWhileProcessing','ExceptionBeforeStart')`, sample.Name))
-					if mode == "candidate" && runErr == nil {
+					if mode == "candidate" && settingsEnabled && runErr == nil {
 						for setting, value := range report.CandidateSettings {
 							require.Equal(t, fmt.Sprint(value), report.ObservedSettings[sample.Name][setting], "candidate setting %s", setting)
 						}
 					}
+					if mode == "candidate" && !settingsEnabled {
+						for setting := range report.CandidateSettings {
+							require.NotContains(t, report.ObservedSettings[sample.Name], setting, "selective query must retain its default settings")
+						}
+					}
 					if _, ok := report.Plans[key]; !ok && len(sample.Queries) > 0 {
 						planCtx := ctx
-						if mode == "candidate" && report.CandidateSettings != nil {
+						if mode == "candidate" && settingsEnabled && report.CandidateSettings != nil {
 							planCtx = admin.WithQuerySettings(ctx, report.CandidateSettings)
 						}
 						plan, e := perfassurance.Explain(planCtx, admin, sample.Queries[0].SQL)

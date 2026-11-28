@@ -475,6 +475,7 @@ var bulkEdgeTypes = graphschema.TierEdgeTypes(graphschema.TierBulk)
 // properties remain part of the query; this does not sort the full result.
 // Bound ordered blocks to 4 MiB: the default 50 MB buffering regresses the
 // smaller workload's peak even when ordered aggregation helps large inputs.
+// Input blocks separately use 4,096 rows to limit upstream buffering.
 //
 // connected_via_sg is the one uncapped edge that could be huge. The dst_id
 // filter below only fetches memberships whose destination is a real
@@ -489,7 +490,7 @@ var criticalEdgesQ = fmt.Sprintf(
 		  AND (edge_type != 'connected_via_sg'
 		       OR dst_id IN (SELECT id FROM assets WHERE type = 'security_group'))
 		GROUP BY src_id, src_type, dst_id, dst_type, edge_type
-		SETTINGS max_bytes_before_external_group_by = 2000000000, optimize_aggregation_in_order = 1, aggregation_in_order_max_block_bytes = 4194304`,
+		SETTINGS max_bytes_before_external_group_by = 2000000000, optimize_aggregation_in_order = 1, aggregation_in_order_max_block_bytes = 4194304, max_block_size = 4096`,
 	quotedCSV(criticalEdgeTypes))
 
 // bulkEdgesQ loads high-volume context edges, capped per type AND in total.

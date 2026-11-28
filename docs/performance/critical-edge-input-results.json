@@ -1,0 +1,334 @@
+{
+  "date": "2026-11-28",
+  "full_profile_accepted": false,
+  "memory_guards_unchanged": {
+    "target": 67108864,
+    "million": 536870912
+  },
+  "scope": "Critical-query input buffering only. Current ordered production query versus identical query with max_block_size4096; bulk query and outputs unchanged.",
+  "fixtures": [
+    {
+      "artifact": "critical-input-block-target-v1",
+      "report_sha256": "abdcc62f6a059207fff97c7e8b33c12e0c09a7b7ee822de141a8937c860ee127",
+      "logical_edges": 100000,
+      "physical_edge_rows": 200003,
+      "source": "78b30fd535c62d7a0963a92b2c6071c779dbca5a",
+      "samples": [
+        {
+          "name": "critical-edges:baseline:0",
+          "whole_operation_seconds": 0.168583186,
+          "critical_query_ms": 72,
+          "critical_query_memory_bytes": 95486415,
+          "critical_query_cpu_seconds": 0.118377,
+          "read_rows": 200005,
+          "logical_read_bytes": 24677985,
+          "exception": "",
+          "query_sha256": "a7060b42944d2557e38f0c913720432d54329265cc61eb81d125524a6104fcfc"
+        },
+        {
+          "name": "critical-edges:production:0",
+          "whole_operation_seconds": 0.174424555,
+          "critical_query_ms": 105,
+          "critical_query_memory_bytes": 31706133,
+          "critical_query_cpu_seconds": 0.10888,
+          "read_rows": 200005,
+          "logical_read_bytes": 24677985,
+          "exception": "",
+          "query_sha256": "6f95e32c461401a07254dcefcfe8040ea05d72802c7e11d055884fe3550020b2"
+        },
+        {
+          "name": "critical-edges:production:1",
+          "whole_operation_seconds": 0.185475413,
+          "critical_query_ms": 72,
+          "critical_query_memory_bytes": 30619447,
+          "critical_query_cpu_seconds": 0.108868,
+          "read_rows": 200005,
+          "logical_read_bytes": 24677985,
+          "exception": "",
+          "query_sha256": "6f95e32c461401a07254dcefcfe8040ea05d72802c7e11d055884fe3550020b2"
+        },
+        {
+          "name": "critical-edges:baseline:1",
+          "whole_operation_seconds": 0.169978611,
+          "critical_query_ms": 71,
+          "critical_query_memory_bytes": 53051733,
+          "critical_query_cpu_seconds": 0.120983,
+          "read_rows": 200005,
+          "logical_read_bytes": 24677985,
+          "exception": "",
+          "query_sha256": "a7060b42944d2557e38f0c913720432d54329265cc61eb81d125524a6104fcfc"
+        },
+        {
+          "name": "critical-edges:baseline:2",
+          "whole_operation_seconds": 0.173016213,
+          "critical_query_ms": 79,
+          "critical_query_memory_bytes": 61259502,
+          "critical_query_cpu_seconds": 0.11936,
+          "read_rows": 200005,
+          "logical_read_bytes": 24677985,
+          "exception": "",
+          "query_sha256": "a7060b42944d2557e38f0c913720432d54329265cc61eb81d125524a6104fcfc"
+        },
+        {
+          "name": "critical-edges:production:2",
+          "whole_operation_seconds": 0.16521425,
+          "critical_query_ms": 54,
+          "critical_query_memory_bytes": 32776652,
+          "critical_query_cpu_seconds": 0.102507,
+          "read_rows": 200005,
+          "logical_read_bytes": 24677985,
+          "exception": "",
+          "query_sha256": "6f95e32c461401a07254dcefcfe8040ea05d72802c7e11d055884fe3550020b2"
+        }
+      ]
+    },
+    {
+      "artifact": "critical-input-block-million-v1",
+      "report_sha256": "ad87207c82e88bb248cfc175a6951314ce63c826b5e11e5a6d4b26651672dae2",
+      "logical_edges": 1000000,
+      "physical_edge_rows": 2000003,
+      "source": "78b30fd535c62d7a0963a92b2c6071c779dbca5a",
+      "samples": [
+        {
+          "name": "critical-edges:baseline:0",
+          "whole_operation_seconds": 1.691944608,
+          "critical_query_ms": 1489,
+          "critical_query_memory_bytes": 100504200,
+          "critical_query_cpu_seconds": 1.210011,
+          "read_rows": 2000005,
+          "logical_read_bytes": 248775681,
+          "exception": "",
+          "query_sha256": "a7060b42944d2557e38f0c913720432d54329265cc61eb81d125524a6104fcfc"
+        },
+        {
+          "name": "critical-edges:production:0",
+          "whole_operation_seconds": 1.564367336,
+          "critical_query_ms": 1357,
+          "critical_query_memory_bytes": 43436726,
+          "critical_query_cpu_seconds": 1.010499,
+          "read_rows": 2000005,
+          "logical_read_bytes": 248775681,
+          "exception": "",
+          "query_sha256": "6f95e32c461401a07254dcefcfe8040ea05d72802c7e11d055884fe3550020b2"
+        },
+        {
+          "name": "critical-edges:production:1",
+          "whole_operation_seconds": 1.475112921,
+          "critical_query_ms": 1320,
+          "critical_query_memory_bytes": 39649258,
+          "critical_query_cpu_seconds": 0.996633,
+          "read_rows": 2000005,
+          "logical_read_bytes": 248775681,
+          "exception": "",
+          "query_sha256": "6f95e32c461401a07254dcefcfe8040ea05d72802c7e11d055884fe3550020b2"
+        },
+        {
+          "name": "critical-edges:baseline:1",
+          "whole_operation_seconds": 1.7593595990000002,
+          "critical_query_ms": 1421,
+          "critical_query_memory_bytes": 101869019,
+          "critical_query_cpu_seconds": 1.241198,
+          "read_rows": 2000005,
+          "logical_read_bytes": 248775681,
+          "exception": "",
+          "query_sha256": "a7060b42944d2557e38f0c913720432d54329265cc61eb81d125524a6104fcfc"
+        },
+        {
+          "name": "critical-edges:baseline:2",
+          "whole_operation_seconds": 1.607941722,
+          "critical_query_ms": 1307,
+          "critical_query_memory_bytes": 63229602,
+          "critical_query_cpu_seconds": 1.151409,
+          "read_rows": 2000005,
+          "logical_read_bytes": 248775681,
+          "exception": "",
+          "query_sha256": "a7060b42944d2557e38f0c913720432d54329265cc61eb81d125524a6104fcfc"
+        },
+        {
+          "name": "critical-edges:production:2",
+          "whole_operation_seconds": 1.649820433,
+          "critical_query_ms": 1235,
+          "critical_query_memory_bytes": 39848756,
+          "critical_query_cpu_seconds": 1.005504,
+          "read_rows": 2000005,
+          "logical_read_bytes": 248775681,
+          "exception": "",
+          "query_sha256": "6f95e32c461401a07254dcefcfe8040ea05d72802c7e11d055884fe3550020b2"
+        }
+      ]
+    }
+  ],
+  "aged": {
+    "artifact": "critical-input-block-aged-v2",
+    "report_sha256": "3e6d64663a2895f4122bb11701762317a05594e23f0a85d899a1ec273ce83df7",
+    "scope": "Aged versioned critical query only; no concurrent source/worker/native-build footprint claim",
+    "source_query_sha256": "a7060b42944d2557e38f0c913720432d54329265cc61eb81d125524a6104fcfc",
+    "samples": [
+      {
+        "variant": "current",
+        "repeat": 0,
+        "rows": 999496,
+        "exact_parity": true,
+        "output_sha256": "23d6c997601d63e7bfd619f999a380b0691b2acf655aa1a5843b2a8381c05d55",
+        "query_memory_bytes": 70073112,
+        "query_ms": 975,
+        "cpu_seconds": 0.72454,
+        "read_rows": 1072062,
+        "logical_read_bytes": 137576260,
+        "exception": ""
+      },
+      {
+        "variant": "blocks4096",
+        "repeat": 0,
+        "rows": 999496,
+        "exact_parity": true,
+        "output_sha256": "23d6c997601d63e7bfd619f999a380b0691b2acf655aa1a5843b2a8381c05d55",
+        "query_memory_bytes": 31473978,
+        "query_ms": 382,
+        "cpu_seconds": 0.579644,
+        "read_rows": 1072062,
+        "logical_read_bytes": 137576044,
+        "exception": ""
+      },
+      {
+        "variant": "blocks4096",
+        "repeat": 1,
+        "rows": 999496,
+        "exact_parity": true,
+        "output_sha256": "23d6c997601d63e7bfd619f999a380b0691b2acf655aa1a5843b2a8381c05d55",
+        "query_memory_bytes": 31473978,
+        "query_ms": 378,
+        "cpu_seconds": 0.580749,
+        "read_rows": 1072062,
+        "logical_read_bytes": 137576044,
+        "exception": ""
+      },
+      {
+        "variant": "current",
+        "repeat": 1,
+        "rows": 999496,
+        "exact_parity": true,
+        "output_sha256": "23d6c997601d63e7bfd619f999a380b0691b2acf655aa1a5843b2a8381c05d55",
+        "query_memory_bytes": 60878987,
+        "query_ms": 440,
+        "cpu_seconds": 0.647377,
+        "read_rows": 1072062,
+        "logical_read_bytes": 137576260,
+        "exception": ""
+      },
+      {
+        "variant": "current",
+        "repeat": 2,
+        "rows": 999496,
+        "exact_parity": true,
+        "output_sha256": "23d6c997601d63e7bfd619f999a380b0691b2acf655aa1a5843b2a8381c05d55",
+        "query_memory_bytes": 58941472,
+        "query_ms": 449,
+        "cpu_seconds": 0.652162,
+        "read_rows": 1072062,
+        "logical_read_bytes": 137576260,
+        "exception": ""
+      },
+      {
+        "variant": "blocks4096",
+        "repeat": 2,
+        "rows": 999496,
+        "exact_parity": true,
+        "output_sha256": "23d6c997601d63e7bfd619f999a380b0691b2acf655aa1a5843b2a8381c05d55",
+        "query_memory_bytes": 32252034,
+        "query_ms": 387,
+        "cpu_seconds": 0.583918,
+        "read_rows": 1072062,
+        "logical_read_bytes": 137576044,
+        "exception": ""
+      }
+    ]
+  },
+  "retained_ci_failure": {
+    "pr": 32,
+    "head": "82f4e945e6a74b0739460b63a855671b5a758b5a",
+    "artifact_report_sha256": "08d9789a3127b9dc3ee8cce7146787689cdcc529c9395635b65d26e4780cc762",
+    "passed": false,
+    "samples": [
+      {
+        "name": "critical-edges:baseline:0",
+        "query_memory_bytes": 92037709,
+        "exception": ""
+      },
+      {
+        "name": "critical-edges:production:0",
+        "query_memory_bytes": 70136359,
+        "exception": ""
+      },
+      {
+        "name": "critical-edges:production:1",
+        "query_memory_bytes": 41871987,
+        "exception": ""
+      },
+      {
+        "name": "critical-edges:baseline:1",
+        "query_memory_bytes": 92034101,
+        "exception": ""
+      },
+      {
+        "name": "critical-edges:baseline:2",
+        "query_memory_bytes": 94083426,
+        "exception": ""
+      },
+      {
+        "name": "critical-edges:production:2",
+        "query_memory_bytes": 60091165,
+        "exception": ""
+      }
+    ]
+  },
+  "setup_failure": {
+    "artifact": "critical-input-block-aged-v1",
+    "stage": "setup before measurements",
+    "cause": "wrapper expected query instead of sql field",
+    "measurement_count": 0
+  },
+  "production_replay": {
+    "artifact": "critical-input-production-target-v1",
+    "report_sha256": "17288e0f19d01e0d3735ceb0fd5b4826484e2c8e00462b8a6a63e9506880b06c",
+    "passed": true,
+    "samples": [
+      {
+        "name": "critical-edges:baseline:0",
+        "query_memory_bytes": 91906797,
+        "query_ms": 67,
+        "exception": ""
+      },
+      {
+        "name": "critical-edges:production:0",
+        "query_memory_bytes": 29660078,
+        "query_ms": 64,
+        "exception": ""
+      },
+      {
+        "name": "critical-edges:production:1",
+        "query_memory_bytes": 30807039,
+        "query_ms": 52,
+        "exception": ""
+      },
+      {
+        "name": "critical-edges:baseline:1",
+        "query_memory_bytes": 93821074,
+        "query_ms": 33,
+        "exception": ""
+      },
+      {
+        "name": "critical-edges:baseline:2",
+        "query_memory_bytes": 93821074,
+        "query_ms": 30,
+        "exception": ""
+      },
+      {
+        "name": "critical-edges:production:2",
+        "query_memory_bytes": 39817476,
+        "query_ms": 58,
+        "exception": ""
+      }
+    ]
+  }
+}

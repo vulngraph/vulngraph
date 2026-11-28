@@ -58,6 +58,7 @@ func TestCriticalEdgeSourceBudget(t *testing.T) {
 	defer func() { criticalEdgesQ = original }()
 	baseline := strings.Replace(original, ", optimize_aggregation_in_order = 1", "", 1)
 	baseline = strings.Replace(baseline, ", aggregation_in_order_max_block_bytes = 4194304", "", 1)
+	baseline = strings.Replace(baseline, ", max_block_size = 4096", "", 1)
 	memoryBudget := uint64(64 << 20)
 	if n >= 1_000_000 {
 		memoryBudget = 512 << 20

@@ -32,6 +32,16 @@ func (f *fakeRepo) List(_ context.Context, filter Filter) ([]Finding, error) {
 	return f.stored, nil
 }
 
+func (f *fakeRepo) EnrichmentCandidates(ctx context.Context, filter Filter) (EnrichmentPage, error) {
+	rows, err := f.List(ctx, filter)
+	var page EnrichmentPage
+	for _, row := range rows {
+		page.IDs = append(page.IDs, row.ID)
+		page.Cursor = EncodeStaleCursor(row)
+	}
+	return page, err
+}
+
 func (f *fakeRepo) Get(_ context.Context, id string) (Finding, error) {
 	for _, fnd := range f.stored {
 		if fnd.ID == id {

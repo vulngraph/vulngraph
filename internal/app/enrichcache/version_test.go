@@ -14,9 +14,23 @@ import (
 
 // fakeVersionRepo records SetLastFullPassVersion calls and serves a canned version.
 type fakeVersionRepo struct {
+	sweep   SweepProgress
 	stored  string
 	readErr error
 	setTo   []string
+}
+
+func (f *fakeVersionRepo) GetSweepProgress(context.Context) (SweepProgress, error) {
+	return f.sweep, f.readErr
+}
+
+func (f *fakeVersionRepo) AdvanceSweepProgress(_ context.Context, revision int64, next SweepProgress) (bool, error) {
+	if f.sweep.Revision != revision {
+		return false, nil
+	}
+	next.Revision = revision + 1
+	f.sweep = next
+	return true, nil
 }
 
 func (f *fakeVersionRepo) Get(context.Context, string) (Entry, error) { return Entry{}, ErrNotFound }

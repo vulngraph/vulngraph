@@ -12,6 +12,16 @@ import (
 	"time"
 )
 
+// SweepProgress is durable enumeration state, not evidence of fresh scoring.
+// A zero Before starts a new pass; the cursor uses millisecond enrichment time.
+type SweepProgress struct {
+	Cursor   string
+	Before   time.Time
+	Revision int64
+}
+
+var ErrSweepProgressConflict = errors.New("enrichcache: sweep progress changed")
+
 // LogicVersion identifies the CURRENT enrichment logic — the scoring sources, the
 // must-fix classifier, and the consistency gate. It does two jobs, and it must be
 // one constant doing both or they can disagree:

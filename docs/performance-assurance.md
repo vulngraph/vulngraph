@@ -292,3 +292,11 @@ Ordered aggregation with bounded blocks passes the isolated 5,000/100,000/millio
 query budgets and exact-output checks, with smaller-input latency costs retained.
 Concurrent retained-result replay passes; whole-pipeline freshness, resource and
 recovery acceptance remains open, with no full-profile coverage credit.
+
+PERF-07/12 also track [durable enrichment sweep progress](specs/enrichment-sweep-progress.md).
+A real-store fixture reproduces starvation behind 2,500 unchanged cached findings.
+The checkpointed sweep reaches the changed tail through a fresh worker instance;
+committed-enqueue/lost-checkpoint replay preserves pending work. These are bounded
+correctness and restart checks, not elapsed scheduling or large-backlog freshness
+acceptance. The fixed sweep budget, queue admission and periodic cadence remain
+part of the mixed-load measurements, with no full-profile coverage credit.

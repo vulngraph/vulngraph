@@ -78,6 +78,7 @@ type SuppressionChecker interface {
 // enrichcache.Service implements it. Optional — a nil cache disables the gate
 // (every job enriches) and the dedupe (every alertable enrich alerts).
 type EnrichCache interface {
+	SweepProgressStore
 	Get(ctx context.Context, findingID string) (enrichcache.Entry, error)
 	Put(ctx context.Context, e enrichcache.Entry) error
 	InvalidateFingerprints(ctx context.Context, findingIDs []string) error
@@ -371,6 +372,7 @@ type EnrichSweepWorker struct {
 	river.WorkerDefaults[EnrichSweepArgs]
 	findings FindingLister
 	alerts   AlertStatePruner // nil => alert state is never pruned
+	progress SweepProgressStore
 }
 
 // AlertStatePruner drops alert state for findings gone without a resolve.
@@ -455,10 +457,9 @@ func (w *EnrichSweepWorker) Work(ctx context.Context, job *river.Job[EnrichSweep
 	// since they were last enriched. Sorted oldest-enriched-first (StaleFirst), NOT
 	// most-recently-detected: a plain finding.Filter{} sorts by detected_at desc and
 	// restarts from the newest finding every tick, so on a corpus bigger than one
-	// tick's budget the older tail is never reached at all. StaleFirst self-balances
-	// instead of needing a persisted cursor: re-enriching a finding bumps its
-	// enriched_at, pushing it to the back of this same sort, so every tick makes
-	// forward progress and the whole corpus is eventually covered. Only the budget
+	// tick's budget the older tail is never reached at all. Cache hits leave that
+	// sort key unchanged, so the production sweep persists its enumeration cursor
+	// and pass cutoff across ticks. Admission is not scoring completion. Only the budget
 	// Phase 1 left unused, so a large never-enriched backlog still drains first.
 	//
 	// Phase 2 IS gated on queue depth (unlike Phase 1 above): re-scoring a finding
@@ -466,8 +467,7 @@ func (w *EnrichSweepWorker) Work(ctx context.Context, job *river.Job[EnrichSweep
 	// deep queue. It also stays at enrichSweepPriority so it can never outrank a new
 	// detection or a KEV escalation.
 	if total < enrichSweepMax && sweepHasCapacity(ctx, enrichQueueMax) {
-		n, err := w.drain(ctx, finding.Filter{StaleFirst: true},
-			enrichSweepMax-total, enrichSweepPriority)
+		n, err := w.drainDrift(ctx, enrichSweepMax-total)
 		if err != nil {
 			return fmt.Errorf("Work: drift pass: %w", err)
 		}
@@ -664,7 +664,9 @@ func enqueueEnrichPriority(ctx context.Context, found []finding.Finding, priorit
 		log.FromContext(ctx).Error().Err(err).Msg("enqueue enrich: no river client in context")
 		return
 	}
-	insertEnrichBatches(ctx, client, found, priority)
+	// Best-effort producers retain the existing logged-error behavior. The
+	// checkpointed sweep checks the same batch result before advancing progress.
+	_ = insertEnrichBatches(ctx, client, found, priority)
 }
 
 // respondQueueMax caps the number of pending decide jobs. When the respond

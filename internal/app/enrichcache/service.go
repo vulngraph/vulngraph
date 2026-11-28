@@ -9,6 +9,8 @@ import (
 
 // Repo persists enrich-cache entries and alert state. PGRepo implements it.
 type Repo interface {
+	GetSweepProgress(context.Context) (SweepProgress, error)
+	AdvanceSweepProgress(context.Context, int64, SweepProgress) (bool, error)
 	Get(ctx context.Context, findingID string) (Entry, error)
 	Upsert(ctx context.Context, e Entry) error
 	// InvalidateFingerprints forces the next enrich of each finding past the

@@ -4775,6 +4775,7 @@
         "module:internal/jobs/enrich_backfill.go",
         "module:internal/jobs/enrich_fetch.go",
         "module:internal/jobs/enrich_fingerprint.go",
+        "module:internal/jobs/enrich_sweep_progress.go",
         "module:internal/jobs/reenrich.go"
       ],
       "next_action": "Measure required scenarios on all profiles/native architectures; retain raw costs and independent persisted-output readback."
@@ -5276,7 +5277,9 @@
         "module:internal/app/enrichcache/domain.go",
         "module:internal/app/enrichcache/fingerprint.go",
         "module:internal/app/enrichcache/repo.go",
-        "module:internal/app/enrichcache/service.go"
+        "module:internal/app/enrichcache/repo_sweep.go",
+        "module:internal/app/enrichcache/service.go",
+        "module:internal/app/enrichcache/service_sweep.go"
       ],
       "next_action": "Measure required scenarios on all profiles/native architectures; retain raw costs and independent persisted-output readback."
     },
@@ -5350,6 +5353,7 @@
         "module:internal/app/finding/repo_base_risk.go",
         "module:internal/app/finding/repo_compliance.go",
         "module:internal/app/finding/repo_enrichment.go",
+        "module:internal/app/finding/repo_enrichment_page.go",
         "module:internal/app/finding/repo_observation.go",
         "module:internal/app/finding/repo_read.go",
         "module:internal/app/finding/repo_write_size.go",
@@ -5358,6 +5362,7 @@
         "module:internal/app/finding/routing.go",
         "module:internal/app/finding/service.go",
         "module:internal/app/finding/service_base_risk.go",
+        "module:internal/app/finding/service_enrichment_page.go",
         "module:internal/app/finding/service_observation.go",
         "module:internal/app/finding/service_resolve.go",
         "module:internal/app/finding/source_activity.go",
@@ -5793,6 +5798,7 @@
         "module:internal/db/sqlcgen/disk_scan_packages.sql.go",
         "module:internal/db/sqlcgen/drift_batches.sql.go",
         "module:internal/db/sqlcgen/enrichcache.sql.go",
+        "module:internal/db/sqlcgen/enrichment_sweep.sql.go",
         "module:internal/db/sqlcgen/executor_grant.sql.go",
         "module:internal/db/sqlcgen/kev.sql.go",
         "module:internal/db/sqlcgen/llm_usage.sql.go",
@@ -5834,6 +5840,7 @@
         "migration:migrations/postgres/00008_user_authority.sql",
         "migration:migrations/postgres/00009_inventory_retirement.sql",
         "migration:migrations/postgres/00010_deletion_confirmation.sql",
+        "migration:migrations/postgres/00011_enrichment_sweep_progress.sql",
         "module:internal/migrate/migrate.go",
         "module:internal/migrate/scanner.go",
         "module:internal/migrate/status.go"

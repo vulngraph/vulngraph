@@ -36,7 +36,7 @@ func TestEnrichBulkEnqueueBoundsCallsAndContinuesAfterFailedBatch(t *testing.T) 
 		findings = append(findings, finding.Finding{ID: fmt.Sprint(i)})
 	}
 	fake := &batchEnrichFake{}
-	insertEnrichBatches(context.Background(), fake, findings, enrichSweepPriority)
+	require.ErrorIs(t, insertEnrichBatches(context.Background(), fake, findings, enrichSweepPriority), context.DeadlineExceeded)
 	require.Equal(t, []int{500, 500, 201}, fake.sizes)
 	require.Len(t, fake.ids, 701)
 	require.Equal(t, "1200", fake.ids[len(fake.ids)-1], "a failed middle batch must not lose later batches")
@@ -45,6 +45,6 @@ func TestEnrichBulkEnqueueBoundsCallsAndContinuesAfterFailedBatch(t *testing.T) 
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	insertEnrichBatches(ctx, fake, findings, river.PriorityDefault)
+	require.ErrorIs(t, insertEnrichBatches(ctx, fake, findings, river.PriorityDefault), context.Canceled)
 	require.Equal(t, 3, fake.calls)
 }
